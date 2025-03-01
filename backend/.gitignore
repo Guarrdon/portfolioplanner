@@ -1,0 +1,58 @@
+# Byte-compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment variables
+.env
+
+# Virtual environment
+venv/
+.env/
+env/
+.venv/
+
+# IDE settings
+.vscode/
+.idea/
+
+# Logs and debugging files
+*.log
+*.pid
+*.out
+*.err
+*.coverage
+
+# Cache files
+*.egg-info/
+.eggs/
+*.cache
+*.pytest_cache/
+.coverage
+.tox/
+
+# Static and media files (if dynamically generated)
+staticfiles/
+mediafiles/
+
+# Migrations
+migrations/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Test results
+htmlcov/
+pytestdebug.log
+
+# Docker
+docker-compose.override.yml
+.dockerignore
+
+# Other
+*.swp
+*.swo

@@ -1,0 +1,50 @@
+# Node Modules
+node_modules/
+
+# Build output
+build/
+dist/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor/IDE settings
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.ps1
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+
+# Coverage reports (for testing)
+coverage/
+
+# React cache (for React 18 and higher)
+.react/
+
+# Storybook files
+storybook-static/
+
+# Generated service worker
+service-worker.js
+
+# Other
+*.log
+*.cache

@@ -1,0 +1,61 @@
+portfolio-planner/
+├── frontend/
+│   ├── public/
+│   │   ├── index.html
+│   │   ├── favicon.ico
+│   │   └── manifest.json
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── calendar/
+│   │   │   │   ├── CalendarView.jsx
+│   │   │   │   ├── EventList.jsx
+│   │   │   │   └── EventDetail.jsx
+│   │   │   ├── portfolio/
+│   │   │   │   ├── PortfolioView.jsx
+│   │   │   │   ├── StrategyCard.jsx
+│   │   │   │   └── PositionDetail.jsx
+│   │   │   ├── forms/
+│   │   │   │   ├── CoveredCallForm.jsx
+│   │   │   │   ├── PutSpreadForm.jsx
+│   │   │   │   ├── BigOptionForm.jsx
+│   │   │   │   ├── DividendForm.jsx
+│   │   │   │   └── MiscForm.jsx
+│   │   │   └── common/
+│   │   │       ├── Header.jsx
+│   │   │       ├── Navigation.jsx
+│   │   │       └── TagSystem.jsx
+│   │   ├── contexts/
+│   │   │   ├── PortfolioContext.jsx
+│   │   │   └── CalendarContext.jsx
+│   │   ├── hooks/
+│   │   │   ├── usePortfolio.js
+│   │   │   └── useCalendar.js
+│   │   ├── utils/
+│   │   │   ├── dateUtils.js
+│   │   │   ├── portfolioCalculations.js
+│   │   │   └── validation.js
+│   │   ├── styles/
+│   │   │   └── index.css
+│   │   ├── App.jsx
+│   │   └── index.js
+│   ├── package.json
+│   └── README.md
+├── backend/
+│   ├── app/
+│   │   ├── routes/
+│   │   │   ├── portfolio.py
+│   │   │   ├── calendar.py
+│   │   │   └── auth.py
+│   │   ├── models/
+│   │   │   ├── portfolio.py
+│   │   │   ├── calendar.py
+│   │   │   └── user.py
+│   │   ├── utils/
+│   │   │   ├── validation.py
+│   │   │   └── calculations.py
+│   │   └── __init__.py
+│   ├── config/
+│   │   └── config.py
+│   ├── requirements.txt
+│   └── README.md
+└── README.md
