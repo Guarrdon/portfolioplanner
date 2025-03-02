@@ -56,7 +56,7 @@ const StrategyView = ({
       position.sharedAt &&
       position.sharedBy;
   };
-
+  
 
   useEffect(() => {
     //console.log('StrategyView mounted');
@@ -77,38 +77,42 @@ const StrategyView = ({
   // Get positions, ensuring we recalculate when user changes
   const positions = useMemo(() => {
     if (!currentUser?.id) return [];
-
+  
     if (initialPositions.length > 0) {
       return initialPositions.filter(position =>
         position.userId === currentUser.id ||
         isValidSharedPosition(position, currentUser.id)
       );
     }
-
+  
     // Otherwise, combine owned and shared positions
     const ownedPositions = ownedStrategies?.[strategyType] || [];
     const sharedPositions = sharedStrategies?.[strategyType] || [];
-
+  
     // Create a Map using position ID as key to handle duplicates
     const positionMap = new Map();
-
+  
+    // First add owned positions (they take priority)
     ownedPositions
       .filter(position => position.userId === currentUser.id)
       .forEach(position => {
         positionMap.set(position.id, position);
       });
-
+  
+    // Then add shared positions, but avoid adding if we already have the original
     sharedPositions
       .filter(position => isValidSharedPosition(position, currentUser.id))
       .forEach(position => {
+        // Check if we already have the original position
+        // If not, add this shared position to the map
         if (!positionMap.has(position.originalId)) {
           positionMap.set(position.id, position);
         }
       });
-
+  
     return Array.from(positionMap.values());
   }, [initialPositions, ownedStrategies, sharedStrategies, strategyType, currentUser?.id]);
-
+  
   // In useEffect for filtered positions
   useEffect(() => {
     setFilteredPositions([]);

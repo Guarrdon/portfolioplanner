@@ -26,10 +26,15 @@ const SharePositionModal = ({ position, isOpen, onClose }) => {
   };
 
 
-
   const handleShare = async () => {
     if (selectedFriends.size === 0) {
       setError('Please select at least one friend to share with');
+      return;
+    }
+
+    // Only owners can share positions
+    if (position.ownerId !== currentUser.id) {
+      setError('Only the position owner can share');
       return;
     }
 
@@ -39,12 +44,19 @@ const SharePositionModal = ({ position, isOpen, onClose }) => {
     try {
       // Update original owner's position to mark as shared
       const currentTimestamp = new Date().toISOString();
+      
+      // Create a copy of currently selected friends and any previously shared friends
+      const allSharedWith = new Set([
+        ...(position.sharedWith || []),
+        ...Array.from(selectedFriends)
+      ]);
+      
       const updatedPosition = {
         ...position,
         shared: true,
-        sharedWith: Array.from(selectedFriends),
-        sharedAt: currentTimestamp, // Ensure we always use a fresh timestamp
-        sharedBy: {
+        sharedWith: Array.from(allSharedWith),
+        sharedAt: position.sharedAt || currentTimestamp, // Preserve original shared timestamp if it exists
+        sharedBy: position.sharedBy || {
           id: currentUser.id,
           name: currentUser.displayName
         }
@@ -58,6 +70,11 @@ const SharePositionModal = ({ position, isOpen, onClose }) => {
 
       // Share with each selected friend by saving to their storage
       const sharePromises = Array.from(selectedFriends).map(async (friendId) => {
+        // Skip if already shared with this friend
+        if (isAlreadySharedWith(friendId)) {
+          return true;
+        }
+        
         // Create the shared copy for this recipient
         const sharedPosition = {
           ...position, // Start with original position
@@ -87,6 +104,8 @@ const SharePositionModal = ({ position, isOpen, onClose }) => {
       if (results.some(success => !success)) {
         throw new Error('Failed to share with some recipients');
       }
+      
+      // Reload our positions to reflect the updated sharing status
       await loadPositions();
 
       onClose();

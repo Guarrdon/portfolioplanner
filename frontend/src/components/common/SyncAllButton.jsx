@@ -9,6 +9,7 @@ const SyncAllButton = () => {
   const [hasUpdates, setHasUpdates] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncComplete, setSyncComplete] = useState(false);
+  const [positionsToSync, setPositionsToSync] = useState([]);
 
   // Check if there are any updates available
   useEffect(() => {
@@ -16,11 +17,23 @@ const SyncAllButton = () => {
       // Check for positions with unsaved changes
       const positionsWithChanges = getPositionsWithChanges();
       
-      // Check for any shared positions (for initial sync)
-      const sharedPositionCount = Object.values(sharedStrategies)
-        .reduce((count, positions) => count + positions.length, 0);
-        
-      setHasUpdates(positionsWithChanges.length > 0 || sharedPositionCount > 0);
+      // Check for shared positions that need synchronization
+      // (rather than ALL shared positions)
+      const sharedPositionsNeedingSync = Object.values(sharedStrategies)
+        .flat()
+        .filter(position => {
+          // Filter for positions that actually need sync
+          // 1. Never synced positions (no lastSyncedAt)
+          // 2. Positions not synced recently (could add a threshold here)
+          return !position.lastSyncedAt;
+        })
+        .map(position => position.id);
+      
+      // Combine and deduplicate
+      const syncNeeded = [...new Set([...positionsWithChanges, ...sharedPositionsNeedingSync])];
+      
+      setPositionsToSync(syncNeeded);
+      setHasUpdates(syncNeeded.length > 0);
     };
 
     checkForUpdates();
@@ -31,23 +44,12 @@ const SyncAllButton = () => {
   }, [sharedStrategies]);
 
   const handleSyncAll = async () => {
-    if (syncing) return;
+    if (syncing || positionsToSync.length === 0) return;
     
     setSyncing(true);
     setSyncComplete(false);
     
     try {
-      // Get all positions with unsaved changes
-      const positionsWithChanges = getPositionsWithChanges();
-      
-      // Get all shared positions
-      const allSharedPositions = Object.values(sharedStrategies)
-        .flat()
-        .map(position => position.id);
-      
-      // Combine and deduplicate
-      const positionsToSync = [...new Set([...positionsWithChanges, ...allSharedPositions])];
-      
       // Sync each position
       const syncPromises = positionsToSync.map(positionId => 
         syncSharedPosition(positionId)
@@ -58,6 +60,7 @@ const SyncAllButton = () => {
       
       // Show success state briefly
       setSyncComplete(true);
+      setPositionsToSync([]);
       setTimeout(() => {
         setSyncComplete(false);
         setHasUpdates(false);
@@ -86,7 +89,7 @@ const SyncAllButton = () => {
       {syncing ? (
         <>
           <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-          <span>Syncing...</span>
+          <span>Syncing {positionsToSync.length} {positionsToSync.length === 1 ? 'Position' : 'Positions'}...</span>
         </>
       ) : syncComplete ? (
         <>
@@ -96,7 +99,7 @@ const SyncAllButton = () => {
       ) : (
         <>
           <RefreshCw className="w-4 h-4 mr-2" />
-          <span>Sync All Positions</span>
+          <span>Sync {positionsToSync.length} {positionsToSync.length === 1 ? 'Position' : 'Positions'}</span>
         </>
       )}
     </button>

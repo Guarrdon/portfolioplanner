@@ -9,7 +9,6 @@ import {
   // We'll use logSyncPerformedActivity later when needed
 } from '../utils/activityTracking';
 import { 
-  hasUnsavedChanges, 
   getUnsavedChanges, 
   clearChanges,
   unsyncedChanges 
@@ -412,108 +411,147 @@ export function PortfolioProvider({ children }) {
       if (!currentUser?.id) return false;
     
       try {
-        // First get the shared position
+        // First get the shared position - whether it's in owned or shared collections
         const sharedPosition = value.getPositionById(sharedPositionId);
-        if (!sharedPosition || !sharedPosition.shared || !sharedPosition.originalId) {
-          throw new Error('Invalid shared position');
+        if (!sharedPosition) {
+          throw new Error('Position not found');
         }
     
-        // Check if the original position still exists
-        const originalOwnerId = sharedPosition.ownerId;
-        if (!originalOwnerId) {
-          throw new Error('Original owner info missing');
-        }
-    
-        // Get the original position from the owner
-        const ownerPositions = userStorage.getOwnedPositions(originalOwnerId);
-        const originalPosition = ownerPositions.find(p => p.id === sharedPosition.originalId);
-    
-        if (!originalPosition) {
-          throw new Error('Original position no longer exists');
-        }
-    
-        // Check for local changes before syncing
-        const hasLocalChanges = unsyncedChanges.has(sharedPositionId);
+        // Handle differently based on whether current user is the owner or receiver
+        const isOwner = sharedPosition.ownerId === currentUser.id;
         
-        // Notify the user about potential data loss if there are local changes
-        if (hasLocalChanges) {
-          // In a real app, this would be a modal confirmation
-          // For this implementation, we'll just log a warning and proceed
-          console.warn('Syncing will overwrite local changes');
+        if (isOwner) {
+          // For owners - we don't sync because they have the original
+          // Instead we should update shared copies sent to other users
+          console.log('Current user is the owner - no need to sync');
+          return true;
+        } else {
+          // For recipients - sync with original owner's copy
+          if (!sharedPosition.originalId || !sharedPosition.ownerId) {
+            throw new Error('Cannot sync - missing original position info');
+          }
           
-          // Add merge logic here for handling conflicts
-          // For now, let's just preserve local comments when syncing
-          const localChanges = getUnsavedChanges(sharedPositionId);
-          const localComments = localChanges?.changes?.comments || [];
+          // Get the original position from the owner
+          const originalOwnerId = sharedPosition.ownerId;
+          const ownerPositions = userStorage.getOwnedPositions(originalOwnerId);
+          const originalPosition = ownerPositions.find(p => p.id === sharedPosition.originalId);
           
-          // Extract the comments we need to preserve
-          const commentsToPreserve = localComments
-            .filter(change => change.data.action === 'add')
-            .map(change => change.data.comment);
+          if (!originalPosition) {
+            throw new Error('Original position no longer exists');
+          }
           
-          // Make sure comments don't get lost in sync
-          if (commentsToPreserve.length > 0) {
-            originalPosition.comments = [
-              ...(originalPosition.comments || []),
-              ...commentsToPreserve
-            ];
+          // Check for local changes before syncing
+          const hasLocalChanges = unsyncedChanges.has(sharedPositionId);
+          
+          if (hasLocalChanges) {
+            // In a real app, this would be a modal confirmation
+            // For now, we'll just proceed with sync but preserve important local data
+            const localChanges = getUnsavedChanges(sharedPositionId);
+            const localCommentsChanges = localChanges?.changes?.comments || [];
+            
+            // Extract comments we need to preserve
+            const commentsToPreserve = localCommentsChanges
+              .filter(change => change.data.action === 'add')
+              .map(change => change.data.comment);
+            
+            // Get all existing comments from the shared position that aren't in original
+            const existingLocalComments = (sharedPosition.comments || [])
+              .filter(comment => {
+                // Keep comments authored by current user
+                return comment.userId === currentUser.id;
+              });
+            
+            // Combine preserved comments
+            const localComments = [...existingLocalComments, ...commentsToPreserve];
+            
+            // Log the sync activity
+            const syncActivity = {
+              id: `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              type: 'sync_performed',
+              userId: currentUser.id,
+              userName: currentUser.displayName || 'User',
+              timestamp: new Date().toISOString(),
+              data: {
+                originalOwnerId: originalPosition.ownerId,
+                syncTime: new Date().toISOString(),
+                changeCount: 1
+              }
+            };
+            
+            // Apply updates from original position but keep shared metadata
+            // and preserve local comments
+            const updatedSharedPosition = {
+              ...sharedPosition,
+              // Update core data from original
+              symbol: originalPosition.symbol,
+              account: originalPosition.account,
+              tags: originalPosition.tags || [],
+              legs: originalPosition.legs || [],
+              // Merge comments (original + local)
+              comments: [
+                ...(originalPosition.comments || []),
+                ...localComments
+              ],
+              // Update activity log with new sync entry
+              activityLog: [...(sharedPosition.activityLog || []), syncActivity],
+              // Update sync timestamp
+              lastSyncedAt: new Date().toISOString()
+            };
+            
+            // Ensure we keep shared metadata intact
+            updatedSharedPosition.shared = true;
+            updatedSharedPosition.originalId = sharedPosition.originalId;
+            updatedSharedPosition.ownerId = sharedPosition.ownerId;
+            updatedSharedPosition.sharedAt = sharedPosition.sharedAt;
+            updatedSharedPosition.sharedBy = sharedPosition.sharedBy;
+            
+            // Save the updated shared position
+            const success = userStorage.saveSharedPosition(currentUser.id, updatedSharedPosition);
+            
+            // Clear out the local changes after successful sync
+            if (success && hasLocalChanges) {
+              clearChanges(sharedPositionId);
+            }
+            
+            return success;
+          } else {
+            // No local changes - simpler sync
+            const syncActivity = {
+              id: `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              type: 'sync_performed',
+              userId: currentUser.id,
+              userName: currentUser.displayName || 'User',
+              timestamp: new Date().toISOString()
+            };
+            
+            // Apply updates from original position but keep shared metadata
+            const updatedSharedPosition = {
+              ...originalPosition,
+              // Preserve the shared position's ID and metadata
+              id: sharedPosition.id,
+              userId: currentUser.id,
+              shared: true,
+              originalId: sharedPosition.originalId,
+              ownerId: sharedPosition.ownerId,
+              sharedAt: sharedPosition.sharedAt,
+              sharedBy: sharedPosition.sharedBy,
+              // Add activity log entry and update sync timestamp
+              activityLog: [...(sharedPosition.activityLog || []), syncActivity],
+              lastSyncedAt: new Date().toISOString()
+            };
+            
+            // Save the updated shared position
+            const success = userStorage.saveSharedPosition(currentUser.id, updatedSharedPosition);
+            return success;
           }
         }
-    
-        // Log the sync activity
-        const syncActivity = {
-          id: `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          type: 'sync_performed',
-          userId: currentUser.id,
-          userName: currentUser.displayName || 'User',
-          timestamp: new Date().toISOString(),
-          data: {
-            originalOwnerId: originalPosition.ownerId,
-            syncTime: new Date().toISOString(),
-            changeCount: 1 // You could calculate actual changes here
-          }
-        };
-    
-        // Apply updates from original to shared position
-        const updatedSharedPosition = {
-          ...sharedPosition,
-          // Update shared position with original position's data, keeping shared metadata
-          symbol: originalPosition.symbol,
-          account: originalPosition.account,
-          tags: originalPosition.tags || [],
-          legs: originalPosition.legs || [],
-          comments: originalPosition.comments || [],
-          // Update activity log with new sync entry
-          activityLog: [...(sharedPosition.activityLog || []), syncActivity],
-          // Update sync timestamp
-          lastSyncedAt: new Date().toISOString()
-        };
-    
-        // Save the updated shared position
-        const success = userStorage.saveSharedPosition(currentUser.id, updatedSharedPosition);
-    
-        // Clear out the local changes after successful sync
-        if (success && hasLocalChanges) {
-          clearChanges(sharedPositionId);
-        }
-    
-        // Refresh shared positions in state
-        if (success) {
-          const sharedPositions = userStorage.getSharedPositions(currentUser.id);
-          dispatch({
-            type: 'LOAD_SHARED_POSITIONS',
-            payload: { userId: currentUser.id, positions: sharedPositions }
-          });
-        }
-    
-        return success;
       } catch (error) {
         console.error('Error syncing shared position:', error);
         dispatch({ type: 'SET_ERROR', payload: error.message });
         return false;
       }
     },
-    
+
     updatePosition: (position) => {
       if (!currentUser?.id) return false;
 
