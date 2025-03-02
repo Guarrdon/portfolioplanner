@@ -1,13 +1,30 @@
-import React from 'react';
-import { ChevronDown, ChevronRight, Tag, PlusCircle, Link, RefreshCw } from 'lucide-react';
+import React, { useState } from 'react';
+import {
+  ChevronDown,
+  ChevronRight,
+  Tag,
+  PlusCircle,
+  Link,
+  RefreshCw,
+  AlertCircle
+} from 'lucide-react';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import Comments from '../common/Comments';
 import PositionActions from './PositionActions';
 import ActivityLog from './ActivityLog';
 import { useAccounts } from '../../contexts/AccountsContext';
 import SharedPositionBadge from '../common/SharedPositionBadge';
+import SyncStatusBadge from './SyncStatusBadge';
+import UnsyncedChangesBadge from './UnsyncedChangesBadge';
 import { useUser } from '../../contexts/UserContext';
 import SharedUpdatesIndicator from './SharedUpdatesIndicator';
+import ConflictResolution from './ConflictResolution';
+import {
+  hasUnsavedChanges,
+  getUnsavedChanges,
+  recordChange,
+  clearChanges
+} from '../../utils/optimisticUpdates';
 
 const ExpandedPositionCard = ({
   position,
@@ -23,15 +40,51 @@ const ExpandedPositionCard = ({
   const { accounts } = useAccounts();
   const { currentUser } = useUser();
   const { syncSharedPosition } = usePortfolio();
+  const [showConflictModal, setShowConflictModal] = useState(false);
+  const [syncInProgress, setSyncInProgress] = useState(false);
+  const [syncError, setSyncError] = useState(null);
+
+  // Check for local unsaved changes
+  const hasLocalChanges = hasUnsavedChanges(position.id);
+  const unsavedChanges = hasLocalChanges ? getUnsavedChanges(position.id) : null;
+  
+  // Add this function to extract hashtags from text
+  const extractHashtags = (text) => {
+    const hashtagRegex = /#(\w+)/g;
+    const matches = text.match(hashtagRegex) || [];
+    return matches.map(match => match.slice(1)); // Remove the # character
+  };
 
   const handleSyncPosition = async () => {
     // Only allow syncing shared positions that the current user doesn't own
-    if (position.shared && position.ownerId !== currentUser?.id) {
-      const success = await syncSharedPosition(position.id);
-      if (success) {
-        // You could add a notification here if you want
-        console.log('Position synced successfully');
+    if (!position.shared || position.ownerId === currentUser?.id) return;
+
+    setSyncInProgress(true);
+    setSyncError(null);
+
+    try {
+      // Check for local changes that might need conflict resolution
+      if (hasLocalChanges) {
+        // In a real implementation, show the conflict resolution modal
+        setShowConflictModal(true);
+        setSyncInProgress(false);
+        return;
       }
+
+      // No conflicts, proceed with sync
+      const success = await syncSharedPosition(position.id);
+      
+      if (success) {
+        // Clear any existing local changes
+        clearChanges(position.id);
+      } else {
+        setSyncError('Failed to sync position. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error syncing position:', error);
+      setSyncError(error.message || 'Sync failed. Please try again.');
+    } finally {
+      setSyncInProgress(false);
     }
   };
 
@@ -148,24 +201,12 @@ const ExpandedPositionCard = ({
     );
   };
 
-  // Add this function to extract hashtags from text
-  const extractHashtags = (text) => {
-    const hashtagRegex = /#(\w+)/g;
-    const matches = text.match(hashtagRegex) || [];
-    return matches.map(match => match.slice(1)); // Remove the # character
-  };
 
 
   // Handle comment adding/editing for this position
   const handleAddComment = (commentText) => {
     // Extract hashtags from the comment
     const extractedTags = extractHashtags(commentText);
-
-    // Get current tags (or empty array if none)
-    const currentTags = position.tags || [];
-
-    // Add new unique tags (prevent duplicates)
-    const newTags = [...new Set([...currentTags, ...extractedTags])];
 
     // Create a properly attributed comment
     const newComment = {
@@ -179,6 +220,28 @@ const ExpandedPositionCard = ({
       extractedTags: extractedTags.length > 0 ? extractedTags : undefined
     };
 
+    // Record change for optimistic updates
+    if (position.shared) {
+      recordChange(position.id, 'comments', {
+        action: 'add',
+        comment: newComment
+      });
+
+      // If tags were extracted, record those changes too
+      if (extractedTags.length > 0) {
+        recordChange(position.id, 'tags', {
+          action: 'add',
+          tags: extractedTags
+        });
+      }
+    }
+
+    // Get current tags (or empty array if none)
+    const currentTags = position.tags || [];
+
+    // Add new unique tags (prevent duplicates)
+    const newTags = [...new Set([...currentTags, ...extractedTags])];
+
     const updatedPosition = {
       ...position,
       comments: [...(position.comments || []), newComment],
@@ -191,10 +254,22 @@ const ExpandedPositionCard = ({
         userName: currentUser.displayName || 'User'
       }
     };
+    
     onUpdatePosition(updatedPosition);
   };
 
+
   const handleEditComment = (commentId, updates) => {
+    // For optimistic updates
+    if (position.shared) {
+      recordChange(position.id, 'comments', {
+        action: 'edit',
+        commentId,
+        updates
+      });
+    }
+
+    // Find the comment and update it
     const updatedComments = (position.comments || []).map(comment =>
       comment.id === commentId
         ? { ...comment, ...updates, editedAt: new Date().toISOString() }
@@ -205,10 +280,20 @@ const ExpandedPositionCard = ({
       ...position,
       comments: updatedComments
     };
+    
     onUpdatePosition(updatedPosition);
   };
 
   const handleDeleteComment = (commentId) => {
+    // For optimistic updates
+    if (position.shared) {
+      recordChange(position.id, 'comments', {
+        action: 'delete',
+        commentId
+      });
+    }
+
+    // Filter out the deleted comment
     const updatedComments = (position.comments || []).filter(
       comment => comment.id !== commentId
     );
@@ -217,9 +302,69 @@ const ExpandedPositionCard = ({
       ...position,
       comments: updatedComments
     };
+    
     onUpdatePosition(updatedPosition);
   };
 
+  const handleAddLeg = () => {
+    // We'll track the change when the leg is actually added in the parent
+    onAddLeg(position);
+  };
+  const handleRemoveLeg = (legId) => {
+    // Record change for optimistic updates if this is a shared position
+    if (position.shared) {
+      recordChange(position.id, 'legs', {
+        action: 'remove',
+        legId
+      });
+    }
+
+    // Call the original onRemoveLeg prop
+    onRemoveLeg(legId);
+  };
+  // Create wrapped version of onRemoveTag
+  const handleRemoveTag = (tag) => {
+    // Record change for optimistic updates if this is a shared position
+    if (position.shared) {
+      recordChange(position.id, 'tags', {
+        action: 'remove',
+        tag
+      });
+    }
+
+    // Call the original onRemoveTag prop
+    onRemoveTag(position, tag);
+  };
+
+  const handleResolveConflicts = async (resolvedPosition) => {
+    setShowConflictModal(false);
+    setSyncInProgress(true);
+    
+    try {
+      // Apply the resolved position
+      const success = await onUpdatePosition(resolvedPosition);
+      
+      if (success) {
+        // Clear local changes after successful resolution
+        clearChanges(position.id);
+        
+        // Update the lastSyncedAt timestamp
+        const updatedPosition = {
+          ...resolvedPosition,
+          lastSyncedAt: new Date().toISOString()
+        };
+        
+        await onUpdatePosition(updatedPosition);
+      } else {
+        setSyncError('Failed to apply conflict resolution');
+      }
+    } catch (error) {
+      console.error('Error resolving conflicts:', error);
+      setSyncError(error.message || 'Failed to apply changes');
+    } finally {
+      setSyncInProgress(false);
+    }
+  };
   return (
     <div className="bg-white shadow rounded-lg hover:shadow-md transition-shadow">
       <div className="p-6">
@@ -240,16 +385,36 @@ const ExpandedPositionCard = ({
                   <div className="flex items-center gap-4">
                     <h3 className="text-lg font-medium text-gray-900">{position.symbol}</h3>
                     <SharedPositionBadge position={position} />
+                    
+                    {/* Add SyncStatusBadge */}
+                    {position.shared && (
+                      <SyncStatusBadge position={position} />
+                    )}
+                    
+                    {/* Show Unsynced Changes Badge if needed */}
+                    {hasLocalChanges && (
+                      <UnsyncedChangesBadge 
+                        changes={unsavedChanges?.changes} 
+                        lastSyncedAt={position.lastSyncedAt} 
+                        isOwner={position.ownerId === currentUser?.id}
+                      />
+                    )}
 
                     {position.shared && position.ownerId !== currentUser?.id && (
                       <button
                         onClick={handleSyncPosition}
-                        className="inline-flex items-center rounded-full p-1 text-purple-600 hover:bg-purple-100"
+                        disabled={syncInProgress}
+                        className={`inline-flex items-center rounded-full p-1 
+                          ${syncInProgress 
+                            ? 'text-gray-400 cursor-not-allowed' 
+                            : 'text-purple-600 hover:bg-purple-100'
+                          }`}
                         title="Sync with original position"
                       >
-                        <RefreshCw className="w-4 h-4" />
+                        <RefreshCw className={`w-4 h-4 ${syncInProgress ? 'animate-spin' : ''}`} />
                       </button>
                     )}
+                    
                     {position.shared && position.ownerId === currentUser?.id && (
                       <SharedUpdatesIndicator positionId={position.id} />
                     )}
@@ -264,7 +429,7 @@ const ExpandedPositionCard = ({
                             <Tag className="h-3.5 w-3.5 mr-1" />
                             {tag}
                             <button
-                              onClick={() => onRemoveTag(position, tag)}
+                              onClick={() => handleRemoveTag(tag)}
                               className="ml-1.5 inline-flex items-center justify-center w-4 h-4 rounded-full text-blue-400 hover:bg-blue-200 hover:text-blue-600 focus:outline-none"
                             >
                               <span className="sr-only">Remove tag</span>
@@ -295,6 +460,14 @@ const ExpandedPositionCard = ({
               {renderMetrics()}
             </div>
 
+            {/* Sync error message */}
+            {syncError && (
+              <div className="mt-4 p-2 bg-red-50 text-red-600 text-sm rounded border border-red-200">
+                <AlertCircle className="inline-block h-4 w-4 mr-1" />
+                {syncError}
+              </div>
+            )}
+
             {isExpanded && (
               <div className="mt-6 space-y-4">
                 {/* Activity Log Section */}
@@ -309,7 +482,7 @@ const ExpandedPositionCard = ({
                   <div className="flex justify-between items-center mb-2">
                     <h4 className="text-sm font-medium text-gray-700">Position Legs</h4>
                     <button
-                      onClick={() => onAddLeg(position)}
+                      onClick={handleAddLeg}
                       className="inline-flex items-center px-2 py-1 text-sm font-medium text-blue-600 hover:text-blue-700"
                     >
                       <PlusCircle className="h-4 w-4 mr-1" />
@@ -331,7 +504,7 @@ const ExpandedPositionCard = ({
                             </div>
                           </div>
                           <button
-                            onClick={() => onRemoveLeg(leg.id)}
+                            onClick={() => handleRemoveLeg(leg.id)}
                             className="p-1 text-gray-400 hover:text-red-500 rounded-full hover:bg-gray-100"
                           >
                             <span className="sr-only">Remove leg</span>
@@ -363,6 +536,17 @@ const ExpandedPositionCard = ({
           </div>
         </div>
       </div>
+
+      {/* Conflict Resolution Modal */}
+      {showConflictModal && (
+        <ConflictResolution
+          isOpen={showConflictModal}
+          onClose={() => setShowConflictModal(false)}
+          localPosition={position}
+          remotePosition={null} // In a real implementation, fetch the remote position
+          onResolve={handleResolveConflicts}
+        />
+      )}
     </div>
   );
 };

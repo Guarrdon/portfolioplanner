@@ -36,6 +36,8 @@ import { CommentsProvider } from './contexts/CommentsContext';
 import { AccountsProvider } from './contexts/AccountsContext';
 import { FriendsProvider } from './contexts/FriendsContext';
 
+import SyncNotification from './components/common/SyncNotification';
+
 const queryClient = new QueryClient();
 
 function App() {
@@ -52,6 +54,8 @@ function App() {
               <RequireAuth>
                 <FriendsProvider>
                   <PortfolioProvider>
+                  <SyncNotification />
+
                     <AccountsProvider>
                       <CommentsProvider>
                         <CalendarProvider>

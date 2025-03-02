@@ -1,18 +1,19 @@
 import React, { useMemo } from 'react';
 import { useLocation, Link } from 'react-router-dom';
-import { 
-  Briefcase, 
-  PhoneCall, 
-  PieChart, 
-  DollarSign, 
+import {
+  Briefcase,
+  PhoneCall,
+  PieChart,
+  DollarSign,
   Currency,
-  Package, 
+  Package,
   BarChart2,
   Calendar,
-  ChevronRight 
+  ChevronRight
 } from 'lucide-react';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { addDays } from 'date-fns';
+import SyncAllButton from './SyncAllButton';
 
 const Navigation = () => {
   const location = useLocation();
@@ -27,9 +28,9 @@ const Navigation = () => {
     // Count pending actions (positions with alerts/watch tags)
     const pendingActions = Object.values(strategies || {})
       .flat()
-      .filter(position => 
-        position?.tags?.some(tag => 
-          tag.toLowerCase().includes('alert') || 
+      .filter(position =>
+        position?.tags?.some(tag =>
+          tag.toLowerCase().includes('alert') ||
           tag.toLowerCase().includes('watch') ||
           tag.toLowerCase().includes('close')
         )
@@ -138,19 +139,19 @@ const Navigation = () => {
               {section.items.map((item) => {
                 const isActive = location.pathname === item.path;
                 const Icon = item.icon;
-                
+
                 return (
                   <Link
                     key={item.name}
                     to={item.path}
                     className={`group flex items-center justify-between px-3 py-2 rounded-md text-sm font-medium 
-                      ${isActive 
+                      ${isActive
                         ? 'bg-blue-50 text-blue-700'
                         : 'text-gray-700 hover:bg-gray-100'
                       }`}
                   >
                     <div className="flex items-center min-w-0">
-                      <Icon 
+                      <Icon
                         className={`flex-shrink-0 h-5 w-5 mr-3
                           ${isActive ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-500'}
                         `}
@@ -160,7 +161,7 @@ const Navigation = () => {
                         <p className="text-xs text-gray-500 truncate">{item.description}</p>
                       </div>
                     </div>
-                    <ChevronRight 
+                    <ChevronRight
                       className={`flex-shrink-0 h-4 w-4 ml-2 
                         ${isActive ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-500'}
                       `}
@@ -178,7 +179,8 @@ const Navigation = () => {
         <h3 className="px-3 text-sm font-semibold text-gray-500 uppercase tracking-wider">
           Additional Actions
         </h3>
-        <div className="mt-4 px-3">
+        <div className="mt-4 px-3 space-y-3">
+          <SyncAllButton />
           <button
             className="w-full flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           >
@@ -186,7 +188,7 @@ const Navigation = () => {
           </button>
         </div>
       </div>
-      
+
       {/* Summary Section */}
       <div className="mt-8 px-3">
         <div className="rounded-lg bg-blue-50 p-4">

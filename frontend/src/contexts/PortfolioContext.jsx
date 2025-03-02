@@ -8,6 +8,12 @@ import {
   logPositionEditedActivity
   // We'll use logSyncPerformedActivity later when needed
 } from '../utils/activityTracking';
+import { 
+  hasUnsavedChanges, 
+  getUnsavedChanges, 
+  clearChanges,
+  unsyncedChanges 
+} from '../utils/optimisticUpdates';
 
 const PortfolioContext = createContext();
 
@@ -412,21 +418,46 @@ export function PortfolioProvider({ children }) {
           throw new Error('Invalid shared position');
         }
     
-        // Check if the original position still exists (in any user's owned positions)
-        // First check the original owner's storage
+        // Check if the original position still exists
         const originalOwnerId = sharedPosition.ownerId;
         if (!originalOwnerId) {
           throw new Error('Original owner info missing');
         }
     
         // Get the original position from the owner
-        // Note: In a real-world scenario with server architecture, this would be an API call
-        // Here we're directly accessing localStorage, which works for the demo
         const ownerPositions = userStorage.getOwnedPositions(originalOwnerId);
         const originalPosition = ownerPositions.find(p => p.id === sharedPosition.originalId);
     
         if (!originalPosition) {
           throw new Error('Original position no longer exists');
+        }
+    
+        // Check for local changes before syncing
+        const hasLocalChanges = unsyncedChanges.has(sharedPositionId);
+        
+        // Notify the user about potential data loss if there are local changes
+        if (hasLocalChanges) {
+          // In a real app, this would be a modal confirmation
+          // For this implementation, we'll just log a warning and proceed
+          console.warn('Syncing will overwrite local changes');
+          
+          // Add merge logic here for handling conflicts
+          // For now, let's just preserve local comments when syncing
+          const localChanges = getUnsavedChanges(sharedPositionId);
+          const localComments = localChanges?.changes?.comments || [];
+          
+          // Extract the comments we need to preserve
+          const commentsToPreserve = localComments
+            .filter(change => change.data.action === 'add')
+            .map(change => change.data.comment);
+          
+          // Make sure comments don't get lost in sync
+          if (commentsToPreserve.length > 0) {
+            originalPosition.comments = [
+              ...(originalPosition.comments || []),
+              ...commentsToPreserve
+            ];
+          }
         }
     
         // Log the sync activity
@@ -448,7 +479,7 @@ export function PortfolioProvider({ children }) {
           ...sharedPosition,
           // Update shared position with original position's data, keeping shared metadata
           symbol: originalPosition.symbol,
-          account: originalPosition.account, // May want to exclude this
+          account: originalPosition.account,
           tags: originalPosition.tags || [],
           legs: originalPosition.legs || [],
           comments: originalPosition.comments || [],
@@ -460,6 +491,11 @@ export function PortfolioProvider({ children }) {
     
         // Save the updated shared position
         const success = userStorage.saveSharedPosition(currentUser.id, updatedSharedPosition);
+    
+        // Clear out the local changes after successful sync
+        if (success && hasLocalChanges) {
+          clearChanges(sharedPositionId);
+        }
     
         // Refresh shared positions in state
         if (success) {
@@ -476,8 +512,8 @@ export function PortfolioProvider({ children }) {
         dispatch({ type: 'SET_ERROR', payload: error.message });
         return false;
       }
-    }, 
-
+    },
+    
     updatePosition: (position) => {
       if (!currentUser?.id) return false;
 
