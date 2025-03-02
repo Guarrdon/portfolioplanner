@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Tag, PlusCircle, Link, RefreshCw } from 'luc
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import Comments from '../common/Comments';
 import PositionActions from './PositionActions';
+import ActivityLog from './ActivityLog';
 import { useAccounts } from '../../contexts/AccountsContext';
 import SharedPositionBadge from '../common/SharedPositionBadge';
 import { useUser } from '../../contexts/UserContext';
@@ -296,6 +297,13 @@ const ExpandedPositionCard = ({
 
             {isExpanded && (
               <div className="mt-6 space-y-4">
+                {/* Activity Log Section */}
+                {position.activityLog && position.activityLog.length > 0 && (
+                  <div className="border-t pt-4">
+                    <ActivityLog activities={position.activityLog} />
+                  </div>
+                )}
+
                 {/* Position Legs Section */}
                 <div>
                   <div className="flex justify-between items-center mb-2">

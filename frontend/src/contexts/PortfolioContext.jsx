@@ -1,6 +1,13 @@
 import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
 import { useUser } from './UserContext';
 import { userStorage } from '../utils/storage/storage';
+import { 
+  logCommentActivity, 
+  logTagAddedActivity, 
+  logTagRemovedActivity,
+  logPositionEditedActivity
+  // We'll use logSyncPerformedActivity later when needed
+} from '../utils/activityTracking';
 
 const PortfolioContext = createContext();
 
@@ -87,6 +94,7 @@ const standardizePosition = (position, userId) => {
     })),
     comments: position.comments || [],
     tags: position.tags || [],
+    activityLog: position.activityLog || [], // Ensure activityLog array exists
     // Add shared fields preservation
     shared: position.shared,
     sharedWith: position.sharedWith || [],
@@ -321,10 +329,22 @@ export function PortfolioProvider({ children }) {
           sharedStrategies: userId ? state.sharedStrategies : initialState.sharedStrategies,
           userId: currentUser.id,
           ownerId: currentUser.id,
-          id: position.id || `pos_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+          id: position.id || `pos_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          activityLog: [] // Initialize activity log
         };
 
         validatePosition(enrichedPosition);
+
+        // Create initial activity log entry for position creation
+        const initialActivity = {
+          id: `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          type: 'position_created',
+          userId: currentUser.id,
+          userName: currentUser.displayName || 'User',
+          timestamp: new Date().toISOString()
+        };
+
+        enrichedPosition.activityLog.push(initialActivity);
 
         // Retrieve existing positions
         const existingPositions = userStorage.getOwnedPositions(currentUser.id);
@@ -362,7 +382,8 @@ export function PortfolioProvider({ children }) {
         const updatedPositions = [...sharedPositions, {
           ...position,
           shared: true,
-          receivedAt: new Date().toISOString()
+          receivedAt: new Date().toISOString(),
+          activityLog: position.activityLog || [] // Preserve activity log
         }];
 
         const success = userStorage.saveSharedPositions(currentUser.id, updatedPositions);
@@ -408,6 +429,20 @@ export function PortfolioProvider({ children }) {
           throw new Error('Original position no longer exists');
         }
     
+        // Log the sync activity
+        const syncActivity = {
+          id: `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          type: 'sync_performed',
+          userId: currentUser.id,
+          userName: currentUser.displayName || 'User',
+          timestamp: new Date().toISOString(),
+          data: {
+            originalOwnerId: originalPosition.ownerId,
+            syncTime: new Date().toISOString(),
+            changeCount: 1 // You could calculate actual changes here
+          }
+        };
+    
         // Apply updates from original to shared position
         const updatedSharedPosition = {
           ...sharedPosition,
@@ -417,6 +452,8 @@ export function PortfolioProvider({ children }) {
           tags: originalPosition.tags || [],
           legs: originalPosition.legs || [],
           comments: originalPosition.comments || [],
+          // Update activity log with new sync entry
+          activityLog: [...(sharedPosition.activityLog || []), syncActivity],
           // Update sync timestamp
           lastSyncedAt: new Date().toISOString()
         };
@@ -446,10 +483,70 @@ export function PortfolioProvider({ children }) {
 
       try {
         const isOwned = position.ownerId === currentUser.id;
+        
+        // Get the original position for comparison
+        const originalPosition = value.getPositionById(position.id);
+        
+        if (!originalPosition) {
+          throw new Error('Position not found');
+        }
+        
+        // Track changes for activity logging
+        const changedFields = [];
+        let updatedPosition = { ...position };
+        
+        // Initialize activityLog if it doesn't exist
+        if (!Array.isArray(updatedPosition.activityLog)) {
+          updatedPosition.activityLog = [];
+        }
+        
+        // Track tag changes
+        if (isOwned) {
+          const originalTags = originalPosition.tags || [];
+          const newTags = updatedPosition.tags || [];
+          
+          // Find added tags
+          const addedTags = newTags.filter(tag => !originalTags.includes(tag));
+          // Find removed tags
+          const removedTags = originalTags.filter(tag => !newTags.includes(tag));
+          
+          // Log tag additions
+          addedTags.forEach(tag => {
+            updatedPosition = logTagAddedActivity(updatedPosition, currentUser, tag);
+            changedFields.push(`Added tag "${tag}"`);
+          });
+          
+          // Log tag removals
+          removedTags.forEach(tag => {
+            updatedPosition = logTagRemovedActivity(updatedPosition, currentUser, tag);
+            changedFields.push(`Removed tag "${tag}"`);
+          });
+          
+          // Find new comments (only log once)
+          const originalCommentIds = new Set((originalPosition.comments || []).map(c => c.id));
+          const newComments = (updatedPosition.comments || []).filter(c => !originalCommentIds.has(c.id));
+          
+          // Log new comments
+          newComments.forEach(comment => {
+            updatedPosition = logCommentActivity(updatedPosition, currentUser, comment.text);
+            changedFields.push('Added comment');
+          });
+          
+          // If other fields changed, log position edit activity
+          const coreFields = ['symbol', 'account', 'legs'];
+          const changedCoreFields = coreFields.filter(field => 
+            JSON.stringify(originalPosition[field]) !== JSON.stringify(updatedPosition[field])
+          );
+          
+          if (changedCoreFields.length > 0) {
+            updatedPosition = logPositionEditedActivity(updatedPosition, currentUser, changedCoreFields);
+            changedFields.push(...changedCoreFields.map(field => `Changed ${field}`));
+          }
+        }
 
         if (isOwned) {
-          validatePosition(position);
-          userStorage.saveOwnedPosition(currentUser.id, position);
+          validatePosition(updatedPosition);
+          userStorage.saveOwnedPosition(currentUser.id, updatedPosition);
 
           // Reload owned positions after update
           const ownedPositions = userStorage.getOwnedPositions(currentUser.id);
@@ -461,7 +558,12 @@ export function PortfolioProvider({ children }) {
           // For shared positions, only update comments and tags
           const sharedPositions = userStorage.getSharedPositions(currentUser.id);
           const updatedSharedPositions = sharedPositions.map(p =>
-            p.id === position.id ? { ...p, comments: position.comments, tags: position.tags } : p
+            p.id === position.id ? {
+              ...p,
+              comments: updatedPosition.comments,
+              tags: updatedPosition.tags,
+              activityLog: updatedPosition.activityLog
+            } : p
           );
           userStorage.saveSharedPositions(currentUser.id, updatedSharedPositions);
 
@@ -651,7 +753,10 @@ export function PortfolioProvider({ children }) {
 
     clearError: () => {
       dispatch({ type: 'CLEAR_ERROR' });
-    }
+    },
+    
+    // Load positions method for external use
+    loadPositions
   };
 
   return (
