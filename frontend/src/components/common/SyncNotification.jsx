@@ -4,43 +4,42 @@ import { usePortfolio } from '../../contexts/PortfolioContext';
 import { RefreshCw, X, ArrowRight } from 'lucide-react';
 
 const SyncNotification = () => {
-  const { sharedStrategies, syncSharedPosition } = usePortfolio();
+  const { checkForSharedPositionUpdates, syncSharedPosition } = usePortfolio();
   const [showNotification, setShowNotification] = useState(false);
-  const [syncCount, setSyncCount] = useState(0);
+  const [positionsNeedingUpdate, setPositionsNeedingUpdate] = useState([]);
   const [dismissed, setDismissed] = useState(false);
+  const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
     // Check for positions that need sync
-    const checkForUpdates = () => {
-      // Count shared positions across all strategies
-      const sharedPositionCount = Object.values(sharedStrategies)
-        .reduce((count, positions) => count + positions.length, 0);
-
-      setSyncCount(sharedPositionCount);
+    const checkForUpdates = async () => {
+      // Get positions that need updates
+      const updates = await checkForSharedPositionUpdates();
+      setPositionsNeedingUpdate(updates);
       
       // Only show notification if:
-      // 1. There are shared positions
+      // 1. There are positions needing updates
       // 2. User hasn't dismissed it
-      // 3. We haven't shown it yet this session
-      setShowNotification(sharedPositionCount > 0 && !dismissed);
+      setShowNotification(updates.length > 0 && !dismissed);
     };
 
     // Wait a moment after component mount to check (gives time for data to load)
     const timer = setTimeout(checkForUpdates, 3000);
     return () => clearTimeout(timer);
-  }, [sharedStrategies, dismissed]);
+  }, [checkForSharedPositionUpdates, dismissed]);
 
   // Handle sync all action
   const handleSyncAll = async () => {
+    if (processing) return;
+    
+    setProcessing(true);
     try {
-      // Get all shared position IDs
-      const allSharedPositionIds = Object.values(sharedStrategies)
-        .flat()
-        .map(position => position.id);
+      // Get all position IDs that need updates
+      const positionIds = positionsNeedingUpdate.map(p => p.id);
       
       // Sync each position
       let successCount = 0;
-      for (const positionId of allSharedPositionIds) {
+      for (const positionId of positionIds) {
         const success = await syncSharedPosition(positionId);
         if (success) successCount++;
       }
@@ -50,9 +49,11 @@ const SyncNotification = () => {
       setShowNotification(false);
       
       // Show success feedback (in a real app, this would be a toast notification)
-      console.log(`Successfully synced ${successCount} of ${allSharedPositionIds.length} positions`);
+      console.log(`Successfully synced ${successCount} of ${positionIds.length} positions`);
     } catch (error) {
       console.error('Error syncing all positions:', error);
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -72,10 +73,10 @@ const SyncNotification = () => {
           <div className="flex justify-between items-start">
             <div>
               <h3 className="text-sm font-medium text-gray-900">
-                Shared Positions Available
+                Updates Available
               </h3>
               <p className="mt-1 text-sm text-gray-500">
-                {syncCount} shared {syncCount === 1 ? 'position' : 'positions'} can be synchronized
+                {positionsNeedingUpdate.length} shared {positionsNeedingUpdate.length === 1 ? 'position has' : 'positions have'} updates available
               </p>
             </div>
             
@@ -94,10 +95,20 @@ const SyncNotification = () => {
           <div className="mt-3 flex justify-end space-x-3">
             <button
               onClick={handleSyncAll}
-              className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              disabled={processing}
+              className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Sync All
-              <ArrowRight className="ml-1.5 h-4 w-4" />
+              {processing ? (
+                <>
+                  <RefreshCw className="mr-1.5 h-4 w-4 animate-spin" />
+                  Syncing...
+                </>
+              ) : (
+                <>
+                  Sync All
+                  <ArrowRight className="ml-1.5 h-4 w-4" />
+                </>
+              )}
             </button>
           </div>
         </div>

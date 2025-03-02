@@ -1,15 +1,9 @@
 // frontend/src/components/positions/ConflictResolution.jsx
-import React, { useState } from 'react';
-import { AlertTriangle, Check, X, Tag, MessageSquare } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { AlertTriangle, Tag, MessageSquare } from 'lucide-react';
 
 /**
  * Modal component for resolving conflicts during position synchronization
- * @param {Object} props
- * @param {boolean} props.isOpen - Whether the modal is open
- * @param {Function} props.onClose - Handler for closing the modal
- * @param {Object} props.localPosition - The local version of the position
- * @param {Object} props.remotePosition - The remote version of the position
- * @param {Function} props.onResolve - Handler for resolving conflicts
  */
 const ConflictResolution = ({ isOpen, onClose, localPosition, remotePosition, onResolve }) => {
   const [resolution, setResolution] = useState({
@@ -18,24 +12,47 @@ const ConflictResolution = ({ isOpen, onClose, localPosition, remotePosition, on
     details: 'remote' // 'local' or 'remote'
   });
 
-  if (!isOpen || !localPosition || !remotePosition) return null;
+  // Calculate conflicts - must be called before any conditional returns
+  const conflicts = useMemo(() => {
+    if (!localPosition || !remotePosition) {
+      return {
+        tags: { added: [], removed: [] },
+        comments: { added: [], removed: [] },
+        details: { changed: false, changes: {} }
+      };
+    }
+    
+    return {
+      tags: compareArrays(localPosition.tags || [], remotePosition.tags || []),
+      comments: compareArrays(
+        (localPosition.comments || []).map(c => c.id),
+        (remotePosition.comments || []).map(c => c.id)
+      ),
+      details: compareObjects(
+        { symbol: localPosition.symbol, account: localPosition.account },
+        { symbol: remotePosition.symbol, account: remotePosition.account }
+      )
+    };
+  }, [localPosition, remotePosition]);
 
-  // Extract conflicts
-  const conflicts = {
-    tags: compareArrays(localPosition.tags || [], remotePosition.tags || []),
-    comments: compareArrays(
-      (localPosition.comments || []).map(c => c.id),
-      (remotePosition.comments || []).map(c => c.id)
-    ),
-    details: compareObjects(
-      { symbol: localPosition.symbol, account: localPosition.account },
-      { symbol: remotePosition.symbol, account: remotePosition.account }
-    )
+  // Calculate if there are conflicts - also must be before conditional returns
+  const hasConflicts = useMemo(() => {
+    if (!localPosition || !remotePosition) return false;
+    
+    return Object.values(conflicts).some(conflict =>
+      conflict.added?.length > 0 || conflict.removed?.length > 0 || conflict.changed
+    );
+  }, [conflicts, localPosition, remotePosition]);
+
+  // Format date helper function
+  const formatDate = (dateString) => {
+    if (!dateString) return 'Never';
+    try {
+      return new Date(dateString).toLocaleString();
+    } catch (e) {
+      return 'Unknown date';
+    }
   };
-
-  const hasConflicts = Object.values(conflicts).some(conflict =>
-    conflict.added.length > 0 || conflict.removed.length > 0
-  );
 
   const handleResolve = () => {
     // Create resolved position
@@ -80,6 +97,10 @@ const ConflictResolution = ({ isOpen, onClose, localPosition, remotePosition, on
     onResolve(resolvedPosition);
   };
 
+  // Now we can do the conditional return for rendering
+  if (!isOpen || !localPosition || !remotePosition) return null;
+
+  // Rest of the component UI rendering...
   return (
     <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full p-6 max-h-[90vh] overflow-y-auto">
@@ -91,6 +112,12 @@ const ConflictResolution = ({ isOpen, onClose, localPosition, remotePosition, on
         {!hasConflicts ? (
           <div className="py-4 text-center">
             <p className="text-gray-700">No conflicts detected. Safe to continue.</p>
+            {remotePosition && (
+              <div className="mt-4 text-sm text-gray-500">
+                <p>Last updated by owner: {formatDate(remotePosition.updatedAt || remotePosition.createdAt)}</p>
+                <p>Your last sync: {formatDate(localPosition.lastSyncedAt || localPosition.sharedAt)}</p>
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-6">

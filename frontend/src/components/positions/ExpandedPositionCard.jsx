@@ -25,6 +25,7 @@ import {
   recordChange,
   clearChanges
 } from '../../utils/optimisticUpdates';
+import { userStorage } from '../../utils/storage/storage';
 
 const ExpandedPositionCard = ({
   position,
@@ -43,11 +44,12 @@ const ExpandedPositionCard = ({
   const [showConflictModal, setShowConflictModal] = useState(false);
   const [syncInProgress, setSyncInProgress] = useState(false);
   const [syncError, setSyncError] = useState(null);
+  const [selectedPosition, setSelectedPosition] = useState(null); // Add this line
 
   // Check for local unsaved changes
   const hasLocalChanges = hasUnsavedChanges(position.id);
   const unsavedChanges = hasLocalChanges ? getUnsavedChanges(position.id) : null;
-  
+
   // Add this function to extract hashtags from text
   const extractHashtags = (text) => {
     const hashtagRegex = /#(\w+)/g;
@@ -65,15 +67,26 @@ const ExpandedPositionCard = ({
     try {
       // Check for local changes that might need conflict resolution
       if (hasLocalChanges) {
-        // In a real implementation, show the conflict resolution modal
-        setShowConflictModal(true);
-        setSyncInProgress(false);
-        return;
+        // Get the original position for conflict resolution
+        const originalOwnerId = position.ownerId;
+        const ownerPositions = userStorage.getOwnedPositions(originalOwnerId);
+        const originalPosition = ownerPositions.find(p => p.id === position.originalId);
+
+        if (originalPosition) {
+          // Show conflict resolution with actual remote data
+          setSelectedPosition(originalPosition);
+          setShowConflictModal(true);
+          setSyncInProgress(false);
+          return;
+        } else {
+          // Original position no longer exists
+          throw new Error('Original position not found. It may have been deleted by the owner.');
+        }
       }
 
       // No conflicts, proceed with sync
       const success = await syncSharedPosition(position.id);
-      
+
       if (success) {
         // Clear any existing local changes
         clearChanges(position.id);
@@ -254,7 +267,7 @@ const ExpandedPositionCard = ({
         userName: currentUser.displayName || 'User'
       }
     };
-    
+
     onUpdatePosition(updatedPosition);
   };
 
@@ -280,7 +293,7 @@ const ExpandedPositionCard = ({
       ...position,
       comments: updatedComments
     };
-    
+
     onUpdatePosition(updatedPosition);
   };
 
@@ -302,7 +315,7 @@ const ExpandedPositionCard = ({
       ...position,
       comments: updatedComments
     };
-    
+
     onUpdatePosition(updatedPosition);
   };
 
@@ -339,21 +352,21 @@ const ExpandedPositionCard = ({
   const handleResolveConflicts = async (resolvedPosition) => {
     setShowConflictModal(false);
     setSyncInProgress(true);
-    
+
     try {
       // Apply the resolved position
       const success = await onUpdatePosition(resolvedPosition);
-      
+
       if (success) {
         // Clear local changes after successful resolution
         clearChanges(position.id);
-        
+
         // Update the lastSyncedAt timestamp
         const updatedPosition = {
           ...resolvedPosition,
           lastSyncedAt: new Date().toISOString()
         };
-        
+
         await onUpdatePosition(updatedPosition);
       } else {
         setSyncError('Failed to apply conflict resolution');
@@ -385,17 +398,17 @@ const ExpandedPositionCard = ({
                   <div className="flex items-center gap-4">
                     <h3 className="text-lg font-medium text-gray-900">{position.symbol}</h3>
                     <SharedPositionBadge position={position} />
-                    
+
                     {/* Add SyncStatusBadge */}
                     {position.shared && (
                       <SyncStatusBadge position={position} />
                     )}
-                    
+
                     {/* Show Unsynced Changes Badge if needed */}
                     {hasLocalChanges && (
-                      <UnsyncedChangesBadge 
-                        changes={unsavedChanges?.changes} 
-                        lastSyncedAt={position.lastSyncedAt} 
+                      <UnsyncedChangesBadge
+                        changes={unsavedChanges?.changes}
+                        lastSyncedAt={position.lastSyncedAt}
                         isOwner={position.ownerId === currentUser?.id}
                       />
                     )}
@@ -405,8 +418,8 @@ const ExpandedPositionCard = ({
                         onClick={handleSyncPosition}
                         disabled={syncInProgress}
                         className={`inline-flex items-center rounded-full p-1 
-                          ${syncInProgress 
-                            ? 'text-gray-400 cursor-not-allowed' 
+                          ${syncInProgress
+                            ? 'text-gray-400 cursor-not-allowed'
                             : 'text-purple-600 hover:bg-purple-100'
                           }`}
                         title="Sync with original position"
@@ -414,7 +427,7 @@ const ExpandedPositionCard = ({
                         <RefreshCw className={`w-4 h-4 ${syncInProgress ? 'animate-spin' : ''}`} />
                       </button>
                     )}
-                    
+
                     {position.shared && position.ownerId === currentUser?.id && (
                       <SharedUpdatesIndicator positionId={position.id} />
                     )}
@@ -541,13 +554,15 @@ const ExpandedPositionCard = ({
       {showConflictModal && (
         <ConflictResolution
           isOpen={showConflictModal}
-          onClose={() => setShowConflictModal(false)}
+          onClose={() => {
+            setShowConflictModal(false);
+            setSelectedPosition(null);
+          }}
           localPosition={position}
-          remotePosition={null} // In a real implementation, fetch the remote position
+          remotePosition={selectedPosition}
           onResolve={handleResolveConflicts}
         />
-      )}
-    </div>
+      )}    </div>
   );
 };
 
