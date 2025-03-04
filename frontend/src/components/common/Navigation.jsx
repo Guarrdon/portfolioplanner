@@ -15,14 +15,6 @@ import { usePortfolio } from '../../contexts/PortfolioContext';
 import { addDays } from 'date-fns';
 import SyncAllButton from './SyncAllButton';
 
-const strategyColors = {
-  'covered-calls': 'blue',
-  'put-spreads': 'green',
-  'big-options': 'purple',
-  'box-spreads': 'amber',
-  'dividends': 'emerald',
-  'misc': 'gray'
-};
 
 const Navigation = () => {
   const location = useLocation();

@@ -1,4 +1,4 @@
-// src/App1.jsx
+// src/App.jsx
 
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
@@ -36,6 +36,7 @@ import { CommentsProvider } from './contexts/CommentsContext';
 import { AccountsProvider } from './contexts/AccountsContext';
 import { FriendsProvider } from './contexts/FriendsContext';
 
+// Notification Components
 import SyncNotification from './components/common/SyncNotification';
 
 const queryClient = new QueryClient();
@@ -54,7 +55,13 @@ function App() {
               <RequireAuth>
                 <FriendsProvider>
                   <PortfolioProvider>
-                  <SyncNotification />
+                    {/* 
+                      The SyncNotification component will check for updates:
+                      1. When it first mounts (after login)
+                      2. Periodically while the user remains logged in
+                      3. When the current user changes
+                    */}
+                    <SyncNotification />
 
                     <AccountsProvider>
                       <CommentsProvider>

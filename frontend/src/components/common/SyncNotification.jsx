@@ -1,36 +1,28 @@
 // frontend/src/components/common/SyncNotification.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { RefreshCw, X, ArrowRight } from 'lucide-react';
+import { useSyncCheck } from '../../hooks/useSyncCheck';
 
 const SyncNotification = () => {
-  const { checkForSharedPositionUpdates, syncSharedPosition } = usePortfolio();
-  const [showNotification, setShowNotification] = useState(false);
-  const [positionsNeedingUpdate, setPositionsNeedingUpdate] = useState([]);
+  const { syncSharedPosition } = usePortfolio();
   const [dismissed, setDismissed] = useState(false);
   const [processing, setProcessing] = useState(false);
+  
+  // Use our custom hook for sync checks
+  const { 
+    positionsNeedingUpdate, 
+    loading, 
+    performCheck,
+    hasUpdates 
+  } = useSyncCheck(1000, 60000); // Check after 1 second, then every minute
 
-  useEffect(() => {
-    // Check for positions that need sync
-    const checkForUpdates = async () => {
-      // Get positions that need updates
-      const updates = await checkForSharedPositionUpdates();
-      setPositionsNeedingUpdate(updates);
-      
-      // Only show notification if:
-      // 1. There are positions needing updates
-      // 2. User hasn't dismissed it
-      setShowNotification(updates.length > 0 && !dismissed);
-    };
-
-    // Wait a moment after component mount to check (gives time for data to load)
-    const timer = setTimeout(checkForUpdates, 3000);
-    return () => clearTimeout(timer);
-  }, [checkForSharedPositionUpdates, dismissed]);
+  // Only show notification if we have updates and user hasn't dismissed it
+  const showNotification = hasUpdates && !dismissed && !loading;
 
   // Handle sync all action
   const handleSyncAll = async () => {
-    if (processing) return;
+    if (processing || !positionsNeedingUpdate.length) return;
     
     setProcessing(true);
     try {
@@ -46,9 +38,11 @@ const SyncNotification = () => {
       
       // Close notification after sync
       setDismissed(true);
-      setShowNotification(false);
       
-      // Show success feedback (in a real app, this would be a toast notification)
+      // Refresh the sync status
+      await performCheck();
+      
+      // Show success feedback in console
       console.log(`Successfully synced ${successCount} of ${positionIds.length} positions`);
     } catch (error) {
       console.error('Error syncing all positions:', error);
@@ -81,10 +75,7 @@ const SyncNotification = () => {
             </div>
             
             <button
-              onClick={() => {
-                setDismissed(true);
-                setShowNotification(false);
-              }}
+              onClick={() => setDismissed(true)}
               className="bg-white rounded-md text-gray-400 hover:text-gray-500 focus:outline-none"
             >
               <span className="sr-only">Dismiss</span>
