@@ -14,6 +14,8 @@ import {
   unsyncedChanges
 } from '../utils/optimisticUpdates';
 import { detectPositionChanges } from '../utils/activityTracking';
+import { publishChange } from '../utils/changePublisher';
+import { consumeChanges } from '../utils/changeConsumer';
 
 const PortfolioContext = createContext();
 
@@ -227,6 +229,16 @@ function portfolioReducer(state, action) {
       };
     }
 
+    case 'UPDATE_POSITION_SYNC_STATUS':
+      return {
+        ...state,
+        shared: state.shared.map(position =>
+          position.id === action.payload.positionId ?
+            { ...position, hasAvailableUpdates: action.payload.hasAvailableUpdates } :
+            position
+        )
+      }
+
     case 'DELETE_POSITION': {
       const { positionId, strategy } = action.payload;
       const standardStrategy = standardizeStrategy(strategy);
@@ -322,6 +334,80 @@ export function PortfolioProvider({ children }) {
     };
   }, [userId, loadPositions]); // Include loadPositions in dependencies
 
+
+
+  const checkForUpdates = useCallback(() => {
+    if (!currentUser?.id) return;
+
+    const pendingChanges = consumeChanges(currentUser.id);
+
+    pendingChanges.forEach(change => {
+      if (change.type === 'POSITION_UPDATED') {
+        // Find the corresponding position in state
+        const positionsToCheck = state.shared || [];
+        const positionToUpdate = positionsToCheck.find(p =>
+          p.originalId === change.positionId && p.ownerId === change.ownerId
+        );
+
+        if (positionToUpdate) {
+          // Mark it as having updates available
+          dispatch({
+            type: 'UPDATE_POSITION_SYNC_STATUS',
+            payload: {
+              positionId: positionToUpdate.id,
+              hasAvailableUpdates: true
+            }
+          });
+        }
+      }
+    });
+  }, [currentUser?.id, state.shared, dispatch]);
+
+  const syncPosition = useCallback(async (positionId) => {
+    const positionToSync = state.shared.find(p => p.id === positionId);
+    if (!positionToSync || !positionToSync.originalId || !positionToSync.ownerId) return;
+
+    // In a real implementation, this would use the messaging system
+    // For now, use localStorage to get the latest version
+    const ownedPositions = JSON.parse(localStorage.getItem(`positions_${positionToSync.ownerId}`) || '[]');
+    const originalPosition = ownedPositions.find(p => p.id === positionToSync.originalId);
+
+    if (originalPosition) {
+      // Preserve local comments when syncing
+      const localComments = positionToSync.comments?.filter(c => c.userId === currentUser.id) || [];
+      const ownerComments = originalPosition.comments || [];
+
+      // Merge comments (avoid duplicates)
+      const mergedComments = [...ownerComments];
+      localComments.forEach(comment => {
+        if (!mergedComments.some(c => c.id === comment.id)) {
+          mergedComments.push(comment);
+        }
+      });
+
+      // Create synced version
+      const syncedPosition = {
+        ...positionToSync,
+        ...originalPosition,
+        id: positionToSync.id,
+        comments: mergedComments,
+        lastSyncedAt: new Date().toISOString(),
+        hasAvailableUpdates: false
+      };
+
+      // Save to storage and update state
+      userStorage.saveSharedPosition(currentUser.id, syncedPosition);
+      dispatch({
+        type: 'UPDATE_SHARED_POSITION',
+        payload: { position: syncedPosition }
+      });
+
+      return true;
+    }
+
+    return false;
+  }, [state.shared, currentUser?.id, dispatch]);
+
   // Add this function inside the PortfolioProvider component
   const checkForSharedPositionUpdates = useCallback(async (userId) => {
     if (!userId) return [];
@@ -372,6 +458,20 @@ export function PortfolioProvider({ children }) {
       return [];
     }
   }, []);
+
+  useEffect(() => {
+    if (currentUser?.id) {
+      // Existing initialization code...
+
+      // Add check for updates
+      checkForUpdates();
+
+      // Optional: Set up polling for updates
+      const intervalId = setInterval(checkForUpdates, 60000); // Every minute
+      return () => clearInterval(intervalId);
+    }
+  }, [currentUser?.id, checkForUpdates]);
+
 
   const value = {
     ...state,
@@ -464,17 +564,17 @@ export function PortfolioProvider({ children }) {
 
     syncSharedPosition: async (sharedPositionId) => {
       if (!currentUser?.id) return false;
-    
+
       try {
         // Get the shared position
         const sharedPosition = value.getPositionById(sharedPositionId);
         if (!sharedPosition) {
           throw new Error('Position not found');
         }
-    
+
         // Handle differently based on whether current user is the owner or receiver
         const isOwner = sharedPosition.ownerId === currentUser.id;
-        
+
         if (isOwner) {
           // For owners - we don't sync because they have the original
           console.log('Current user is the owner - no need to sync');
@@ -484,40 +584,40 @@ export function PortfolioProvider({ children }) {
           if (!sharedPosition.originalId || !sharedPosition.ownerId) {
             throw new Error('Cannot sync - missing original position info');
           }
-          
+
           // Get the original position from the owner
           const originalOwnerId = sharedPosition.ownerId;
           const ownerPositions = userStorage.getOwnedPositions(originalOwnerId);
           const originalPosition = ownerPositions.find(p => p.id === sharedPosition.originalId);
-          
+
           if (!originalPosition) {
             throw new Error('Original position no longer exists');
           }
-          
+
           // Check for local changes before syncing
           const hasLocalChanges = unsyncedChanges.has(sharedPositionId);
-          
+
           if (hasLocalChanges) {
             // In a real app, this would be handled by the conflict resolution UI
             // For now, we'll preserve important local data
             const localChanges = getUnsavedChanges(sharedPositionId);
             const localCommentsChanges = localChanges?.changes?.comments || [];
-            
+
             // Extract comments we need to preserve
             const commentsToPreserve = localCommentsChanges
               .filter(change => change.data.action === 'add')
               .map(change => change.data.comment);
-            
+
             // Get all existing comments from the shared position that aren't in original
             const existingLocalComments = (sharedPosition.comments || [])
               .filter(comment => comment.userId === currentUser.id);
-            
+
             // Combine preserved comments
             const localComments = [...existingLocalComments, ...commentsToPreserve];
-            
+
             // Detect and log changes between versions
             const changes = detectPositionChanges(sharedPosition, originalPosition);
-            
+
             // Log sync activity with details about changes
             const syncActivity = {
               id: `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -532,7 +632,7 @@ export function PortfolioProvider({ children }) {
                 changesDetected: changes.hasChanges
               }
             };
-            
+
             // Apply updates from original position but keep shared metadata
             // and preserve local comments
             const updatedSharedPosition = {
@@ -555,15 +655,15 @@ export function PortfolioProvider({ children }) {
               // Update sync timestamp
               lastSyncedAt: new Date().toISOString()
             };
-            
+
             // Save the updated shared position
             const success = userStorage.saveSharedPosition(currentUser.id, updatedSharedPosition);
-            
+
             // Clear out the local changes after successful sync
             if (success && hasLocalChanges) {
               clearChanges(sharedPositionId);
             }
-            
+
             return success;
           } else {
             // No local changes - simpler sync
@@ -574,7 +674,7 @@ export function PortfolioProvider({ children }) {
               userName: currentUser.displayName || 'User',
               timestamp: new Date().toISOString()
             };
-            
+
             // Apply updates from original position but keep shared metadata
             const updatedSharedPosition = {
               ...originalPosition,
@@ -590,7 +690,7 @@ export function PortfolioProvider({ children }) {
               activityLog: [...(sharedPosition.activityLog || []), syncActivity],
               lastSyncedAt: new Date().toISOString()
             };
-            
+
             // Save the updated shared position
             const success = userStorage.saveSharedPosition(currentUser.id, updatedSharedPosition);
             return success;
@@ -602,7 +702,7 @@ export function PortfolioProvider({ children }) {
         return false;
       }
     },
-    
+
     updatePosition: (position) => {
       if (!currentUser?.id) return false;
 
@@ -673,6 +773,11 @@ export function PortfolioProvider({ children }) {
           validatePosition(updatedPosition);
           userStorage.saveOwnedPosition(currentUser.id, updatedPosition);
 
+          if (position.ownerId === currentUser.id && position.shared && position.sharedWith?.length > 0) {
+            publishChange('POSITION_UPDATED', position, {
+              updatedAt: position.updatedAt
+            });
+          }
           // Reload owned positions after update
           const ownedPositions = userStorage.getOwnedPositions(currentUser.id);
           dispatch({
@@ -881,7 +986,9 @@ export function PortfolioProvider({ children }) {
     },
 
     // Load positions method for external use
-    loadPositions
+    loadPositions,
+    checkForUpdates,
+    syncPosition
   };
 
   return (
