@@ -6,12 +6,9 @@ import {
   logTagAddedActivity,
   logTagRemovedActivity,
   logPositionEditedActivity,
-  detectPositionChanges
 } from '../utils/activityTracking';
 import {
-  getUnsavedChanges,
   clearChanges,
-  unsyncedChanges
 } from '../utils/optimisticUpdates';
 import { publishChange } from '../utils/changePublisher';
 import { consumeChanges,hasUpdatesForPosition } from '../utils/changeConsumer';

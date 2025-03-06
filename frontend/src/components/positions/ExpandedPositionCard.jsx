@@ -5,8 +5,8 @@ import {
   Tag,
   PlusCircle,
   Link,
-  RefreshCw,
-  AlertCircle
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import Comments from '../common/Comments';
@@ -38,10 +38,8 @@ const ExpandedPositionCard = ({
   const { accounts } = useAccounts();
   const { currentUser } = useUser();
   const { syncSharedPosition } = usePortfolio();
-  const [showConflictModal, setShowConflictModal] = useState(false);
   const [syncInProgress, setSyncInProgress] = useState(false);
   const [syncError, setSyncError] = useState(null);
-  const [selectedPosition, setSelectedPosition] = useState(null);
 
   // Check for local unsaved changes
   const hasLocalChanges = hasUnsavedChanges(position.id);
@@ -71,8 +69,6 @@ const ExpandedPositionCard = ({
 
         if (originalPosition) {
           // Show conflict resolution with actual remote data
-          setSelectedPosition(originalPosition);
-          setShowConflictModal(true);
           setSyncInProgress(false);
           return;
         } else {
@@ -345,35 +341,6 @@ const ExpandedPositionCard = ({
     onRemoveTag(position, tag);
   };
 
-  const handleResolveConflicts = async (resolvedPosition) => {
-    setShowConflictModal(false);
-    setSyncInProgress(true);
-
-    try {
-      // Apply the resolved position
-      const success = await onUpdatePosition(resolvedPosition);
-
-      if (success) {
-        // Clear local changes after successful resolution
-        clearChanges(position.id);
-
-        // Update the lastSyncedAt timestamp
-        const updatedPosition = {
-          ...resolvedPosition,
-          lastSyncedAt: new Date().toISOString()
-        };
-
-        await onUpdatePosition(updatedPosition);
-      } else {
-        setSyncError('Failed to apply conflict resolution');
-      }
-    } catch (error) {
-      console.error('Error resolving conflicts:', error);
-      setSyncError(error.message || 'Failed to apply changes');
-    } finally {
-      setSyncInProgress(false);
-    }
-  };
 
   return (
     <div className="bg-white shadow rounded-lg hover:shadow-md transition-shadow">
@@ -515,6 +482,23 @@ const ExpandedPositionCard = ({
                     onDeleteComment={handleDeleteComment}
                   />
                 </div>
+                {syncInProgress && (
+                  <div className="flex items-center mt-2 text-blue-600">
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                    <span className="text-sm">Syncing changes...</span>
+                  </div>
+                )}
+                {hasLocalChanges && (
+                  <div className="mt-2 px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-md">
+                    <div className="flex items-center text-yellow-700">
+                      <AlertCircle className="w-4 h-4 mr-2" />
+                      <span className="text-sm font-medium">You have unsaved changes</span>
+                    </div>
+                    <div className="mt-1 text-xs text-yellow-600">
+                      Last modified: {new Date(unsavedChanges.timestamp).toLocaleString()}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
