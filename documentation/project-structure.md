@@ -1,7 +1,6 @@
 # Portfolio Planner MVP - Updated Project Structure
 
 ## Directory Structure
-```
 portfolio-planner/
 ├── frontend/
 │   ├── public/
@@ -57,13 +56,10 @@ portfolio-planner/
 │   │   │   │   └── StrategyCard.jsx
 │   │   │   ├── positions/
 │   │   │   │   ├── ActivityLog.jsx
-│   │   │   │   ├── ConflictResolution.jsx
 │   │   │   │   ├── ExpandedPositionCard.jsx
 │   │   │   │   ├── PositionActions.jsx
 │   │   │   │   ├── PositionDetails.jsx
-│   │   │   │   ├── SharedUpdatesIndicator.jsx
-│   │   │   │   ├── SyncStatusBadge.jsx
-│   │   │   │   └── UnsyncedChangesBadge.jsx
+│   │   │   │   └── SyncStatusBadge.jsx
 │   │   │   ├── settings/
 │   │   │   │   ├── AccountManagement.jsx
 │   │   │   │   ├── FriendManagement.jsx
@@ -88,6 +84,8 @@ portfolio-planner/
 │   │   │   └── useSyncCheck.js
 │   │   ├── utils/
 │   │   │   ├── activityTracking.js
+│   │   │   ├── changeConsumer.js
+│   │   │   ├── changePublisher.js
 │   │   │   ├── commentsStorage.js
 │   │   │   ├── optimisticUpdates.js
 │   │   │   ├── storage/
@@ -112,9 +110,9 @@ portfolio-planner/
 │   └── tailwind.config.js
 ├── documentation/
 │   ├── project-plan-review.md
-│   └── project-structure.txt
+│   ├── project-capabilities.md
+│   └── project-structure.md
 └── backend/ (planned but not implemented yet)
-```
 
 ## Component Organization
 
@@ -138,7 +136,7 @@ portfolio-planner/
   - ExpandedPositionCard.jsx
   - PositionActions.jsx
   - ActivityLog.jsx
-  - ConflictResolution.jsx
+  - SyncStatusBadge.jsx
 
 ### Forms 
 - **components/forms/** - Strategy-specific forms
@@ -182,7 +180,9 @@ portfolio-planner/
 - **utils/storage/** - Local storage management
 - **utils/validation/** - Form validation logic
 - **utils/activityTracking.js** - Position activity logging
-- **utils/optimisticUpdates.js** - Optimistic UI updates for shared positions
+- **utils/optimisticUpdates.js** - Managing local changes to shared positions
+- **utils/changeConsumer.js** - Processing incoming position changes
+- **utils/changePublisher.js** - Publishing position changes
 
 ## Custom Hooks
 - **hooks/useSyncCheck.js** - Hook for checking shared position updates

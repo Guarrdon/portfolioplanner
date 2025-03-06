@@ -24,8 +24,8 @@ The Portfolio Planner application is currently implemented as a frontend-only Re
 - **User Authentication**: Basic multi-user support with user profiles
 - **Account Management**: Create and manage trading accounts
 - **Position Sharing**: Share positions with other users
-- **Conflict Resolution**: Detect and resolve conflicts when syncing shared positions
-- **Collaboration Features**: Comment on shared positions, see indicators when updates are available
+- **Simplified Synchronization**: Streamlined process for syncing shared positions
+- **Collaboration Features**: Comment on shared positions, with automatic merging of changes
 
 ### Calendar & Event Planning
 - **Calendar View**: Month-based calendar visualization
@@ -63,9 +63,9 @@ The Portfolio Planner application is currently implemented as a frontend-only Re
 
 ### Collaboration Features
 - **Friend Management**: Add/remove friends for position sharing
-- **Sync Mechanism**: Synchronize shared position data between users
-- **Conflict Detection**: Identify conflicting changes in shared positions
-- **Change Tracking**: Track unsynchronized changes
+- **Simple Sync Mechanism**: Straightforward synchronization of shared positions
+- **Change Tracking**: Minimal, user-friendly change indicators
+- **Comment Merging**: Automatic retention of comments from all users
 
 ## Future Development (Planned But Not Implemented)
 
