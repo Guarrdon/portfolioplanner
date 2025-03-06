@@ -1,18 +1,30 @@
-// src/utils/changePublisher.js
-export const publishChange = (changeType, position, changeData) => {
-    // In the future: This will publish to a message queue/event system
-    // For now: Store in localStorage as a stand-in
-    const changes = JSON.parse(localStorage.getItem('pendingChanges') || '[]');
-    changes.push({
-      id: `change_${Date.now()}`,
-      type: changeType,
-      positionId: position.id,
-      originalId: position.originalId || position.id,
-      ownerId: position.ownerId || position.userId,
-      timestamp: new Date().toISOString(),
-      data: changeData,
-      recipients: position.sharedWith || [],
-      processed: []
-    });
-    localStorage.setItem('pendingChanges', JSON.stringify(changes));
-  };
+// frontend/src/utils/changePublisher.js
+
+/**
+ * Simplified function to publish a change event
+ * @param {string} changeType - Type of change (POSITION_UPDATED, etc)
+ * @param {Object} position - The position that changed
+ * @param {Object} data - Additional change data
+ */
+export const publishChange = (changeType, position, data = {}) => {
+  if (!position || !position.id) return;
+  
+  // Get current changes from localStorage
+  const pendingChanges = JSON.parse(localStorage.getItem('pendingChanges') || '[]');
+  
+  // Add the new change
+  pendingChanges.push({
+    id: `change_${Date.now()}`,
+    type: changeType,
+    positionId: position.id,
+    ownerId: position.ownerId,
+    timestamp: new Date().toISOString(),
+    data: data,
+    // Recipients are either all shared users (if owner is publishing) or just the owner (if shared user is publishing)
+    recipients: position.ownerId === data.publisherId ? (position.sharedWith || []) : [position.ownerId],
+    processed: []
+  });
+  
+  // Save back to localStorage
+  localStorage.setItem('pendingChanges', JSON.stringify(pendingChanges));
+};

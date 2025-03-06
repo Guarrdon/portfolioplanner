@@ -15,10 +15,7 @@ import ActivityLog from './ActivityLog';
 import { useAccounts } from '../../contexts/AccountsContext';
 import SharedPositionBadge from '../common/SharedPositionBadge';
 import SyncStatusBadge from './SyncStatusBadge';
-import UnsyncedChangesBadge from './UnsyncedChangesBadge';
 import { useUser } from '../../contexts/UserContext';
-import SharedUpdatesIndicator from './SharedUpdatesIndicator';
-import ConflictResolution from './ConflictResolution';
 import {
   hasUnsavedChanges,
   getUnsavedChanges,
@@ -44,7 +41,7 @@ const ExpandedPositionCard = ({
   const [showConflictModal, setShowConflictModal] = useState(false);
   const [syncInProgress, setSyncInProgress] = useState(false);
   const [syncError, setSyncError] = useState(null);
-  const [selectedPosition, setSelectedPosition] = useState(null); // Add this line
+  const [selectedPosition, setSelectedPosition] = useState(null);
 
   // Check for local unsaved changes
   const hasLocalChanges = hasUnsavedChanges(position.id);
@@ -54,7 +51,7 @@ const ExpandedPositionCard = ({
   const extractHashtags = (text) => {
     const hashtagRegex = /#(\w+)/g;
     const matches = text.match(hashtagRegex) || [];
-    return matches.map(match => match.slice(1)); // Remove the # character
+    return matches.map(match => match.slice(1));
   };
 
   const handleSyncPosition = async () => {
@@ -214,8 +211,6 @@ const ExpandedPositionCard = ({
     );
   };
 
-
-
   // Handle comment adding/editing for this position
   const handleAddComment = (commentText) => {
     // Extract hashtags from the comment
@@ -271,7 +266,6 @@ const ExpandedPositionCard = ({
     onUpdatePosition(updatedPosition);
   };
 
-
   const handleEditComment = (commentId, updates) => {
     // For optimistic updates
     if (position.shared) {
@@ -323,6 +317,7 @@ const ExpandedPositionCard = ({
     // We'll track the change when the leg is actually added in the parent
     onAddLeg(position);
   };
+
   const handleRemoveLeg = (legId) => {
     // Record change for optimistic updates if this is a shared position
     if (position.shared) {
@@ -335,6 +330,7 @@ const ExpandedPositionCard = ({
     // Call the original onRemoveLeg prop
     onRemoveLeg(legId);
   };
+
   // Create wrapped version of onRemoveTag
   const handleRemoveTag = (tag) => {
     // Record change for optimistic updates if this is a shared position
@@ -378,6 +374,7 @@ const ExpandedPositionCard = ({
       setSyncInProgress(false);
     }
   };
+
   return (
     <div className="bg-white shadow rounded-lg hover:shadow-md transition-shadow">
       <div className="p-6">
@@ -399,37 +396,11 @@ const ExpandedPositionCard = ({
                     <h3 className="text-lg font-medium text-gray-900">{position.symbol}</h3>
                     <SharedPositionBadge position={position} />
 
-                    {/* Add SyncStatusBadge */}
-                    {position.shared && (
-                      <SyncStatusBadge position={position} />
-                    )}
-
-                    {/* Show Unsynced Changes Badge if needed */}
-                    {hasLocalChanges && (
-                      <UnsyncedChangesBadge
-                        changes={unsavedChanges?.changes}
-                        lastSyncedAt={position.lastSyncedAt}
-                        isOwner={position.ownerId === currentUser?.id}
-                      />
-                    )}
-
                     {position.shared && position.ownerId !== currentUser?.id && (
-                      <button
-                        onClick={handleSyncPosition}
-                        disabled={syncInProgress}
-                        className={`inline-flex items-center rounded-full p-1 
-                          ${syncInProgress
-                            ? 'text-gray-400 cursor-not-allowed'
-                            : 'text-purple-600 hover:bg-purple-100'
-                          }`}
-                        title="Sync with original position"
-                      >
-                        <RefreshCw className={`w-4 h-4 ${syncInProgress ? 'animate-spin' : ''}`} />
-                      </button>
-                    )}
-
-                    {position.shared && position.ownerId === currentUser?.id && (
-                      <SharedUpdatesIndicator positionId={position.id} />
+                      <SyncStatusBadge
+                        position={position}
+                        onSync={handleSyncPosition}
+                      />
                     )}
 
                     {position.tags && position.tags.length > 0 && (
@@ -550,19 +521,7 @@ const ExpandedPositionCard = ({
         </div>
       </div>
 
-      {/* Conflict Resolution Modal */}
-      {showConflictModal && (
-        <ConflictResolution
-          isOpen={showConflictModal}
-          onClose={() => {
-            setShowConflictModal(false);
-            setSelectedPosition(null);
-          }}
-          localPosition={position}
-          remotePosition={selectedPosition}
-          onResolve={handleResolveConflicts}
-        />
-      )}    </div>
+    </div>
   );
 };
 

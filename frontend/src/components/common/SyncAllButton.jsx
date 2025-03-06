@@ -2,71 +2,44 @@
 import React, { useState, useEffect } from 'react';
 import { RefreshCw, Check } from 'lucide-react';
 import { usePortfolio } from '../../contexts/PortfolioContext';
-import { getPositionsWithChanges } from '../../utils/optimisticUpdates';
+import { useUser } from '../../contexts/UserContext';
 
 const SyncAllButton = () => {
-  const { sharedStrategies, syncSharedPosition } = usePortfolio();
-  const [hasUpdates, setHasUpdates] = useState(false);
+  const { syncAllSharedPositions } = usePortfolio();
   const [syncing, setSyncing] = useState(false);
   const [syncComplete, setSyncComplete] = useState(false);
-  const [positionsToSync, setPositionsToSync] = useState([]);
+  const [hasUpdates, setHasUpdates] = useState(false);
+  const { currentUser } = useUser();
 
-  // Check if there are any updates available
+  // Check if there are any positions that need syncing
   useEffect(() => {
-    const checkForUpdates = () => {
-      // Check for positions with unsaved changes
-      const positionsWithChanges = getPositionsWithChanges();
+    const checkForUpdates = async () => {
+      if (!currentUser?.id) return;
       
-      // Check for shared positions that need synchronization
-      // (rather than ALL shared positions)
-      const sharedPositionsNeedingSync = Object.values(sharedStrategies)
-        .flat()
-        .filter(position => {
-          // Filter for positions that actually need sync
-          // 1. Never synced positions (no lastSyncedAt)
-          // 2. Positions not synced recently (could add a threshold here)
-          return !position.lastSyncedAt;
-        })
-        .map(position => position.id);
-      
-      // Combine and deduplicate
-      const syncNeeded = [...new Set([...positionsWithChanges, ...sharedPositionsNeedingSync])];
-      
-      setPositionsToSync(syncNeeded);
-      setHasUpdates(syncNeeded.length > 0);
+      const updates = await syncAllSharedPositions(true); // Just check, don't sync
+      setHasUpdates(updates > 0);
     };
-
-    checkForUpdates();
     
-    // Check for updates periodically
-    const interval = setInterval(checkForUpdates, 30000);
-    return () => clearInterval(interval);
-  }, [sharedStrategies]);
+    checkForUpdates();
+  }, [currentUser?.id, syncAllSharedPositions]);
 
   const handleSyncAll = async () => {
-    if (syncing || positionsToSync.length === 0) return;
+    if (syncing) return;
     
     setSyncing(true);
     setSyncComplete(false);
     
     try {
-      // Sync each position
-      const syncPromises = positionsToSync.map(positionId => 
-        syncSharedPosition(positionId)
-      );
-      
-      // Wait for all syncs to complete
-      await Promise.all(syncPromises);
+      await syncAllSharedPositions();
       
       // Show success state briefly
       setSyncComplete(true);
-      setPositionsToSync([]);
+      setHasUpdates(false);
       setTimeout(() => {
         setSyncComplete(false);
-        setHasUpdates(false);
       }, 3000);
     } catch (error) {
-      console.error('Error syncing all positions:', error);
+      console.error('Error syncing positions:', error);
     } finally {
       setSyncing(false);
     }
@@ -82,14 +55,14 @@ const SyncAllButton = () => {
         flex items-center justify-center px-4 py-2 border rounded-md text-sm font-medium
         ${syncComplete 
           ? 'bg-green-100 border-green-300 text-green-800'
-          : 'bg-purple-100 border-purple-300 text-purple-800 hover:bg-purple-200'}
+          : 'bg-blue-100 border-blue-300 text-blue-800 hover:bg-blue-200'}
         transition-colors duration-300
       `}
     >
       {syncing ? (
         <>
           <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-          <span>Syncing {positionsToSync.length} {positionsToSync.length === 1 ? 'Position' : 'Positions'}...</span>
+          <span>Syncing...</span>
         </>
       ) : syncComplete ? (
         <>
@@ -99,7 +72,7 @@ const SyncAllButton = () => {
       ) : (
         <>
           <RefreshCw className="w-4 h-4 mr-2" />
-          <span>Sync {positionsToSync.length} {positionsToSync.length === 1 ? 'Position' : 'Positions'}</span>
+          <span>Sync All Updates</span>
         </>
       )}
     </button>
