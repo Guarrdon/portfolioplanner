@@ -7,13 +7,13 @@ import {
   logTagRemovedActivity,
   logPositionEditedActivity,
 } from '../utils/activityTracking';
-import {
-  clearChanges,
-} from '../utils/optimisticUpdates';
+import { clearChanges } from '../utils/optimisticUpdates';
 import { publishChange } from '../utils/changePublisher';
-import { consumeChanges,hasUpdatesForPosition } from '../utils/changeConsumer';
-
-
+import {
+  consumeChanges,
+  hasUpdatesForPosition,
+  getChangesForPosition
+} from '../utils/changeConsumer';
 const PortfolioContext = createContext();
 
 // Strategy name mapping for standardization
@@ -53,6 +53,7 @@ export const initialState = {
   error: null
 };
 
+// Function Definitions
 const validatePosition = (position) => {
   if (!position.userId || !position.ownerId) {
     throw new Error('User ID and Owner ID are required for position');
@@ -81,9 +82,7 @@ const validatePosition = (position) => {
   return true;
 };
 
-const standardizeStrategy = (strategyName) => {
-  return STRATEGY_MAPPING[strategyName] || strategyName;
-};
+const standardizeStrategy = (strategyName) => STRATEGY_MAPPING[strategyName] || strategyName;
 
 const standardizePosition = (position, userId) => {
   if (!position) return position;
@@ -100,7 +99,6 @@ const standardizePosition = (position, userId) => {
     comments: position.comments || [],
     tags: position.tags || [],
     activityLog: position.activityLog || [], // Ensure activityLog array exists
-    // Add shared fields preservation
     shared: position.shared,
     sharedWith: position.sharedWith || [],
     sharedAt: position.sharedAt,
@@ -170,11 +168,9 @@ function portfolioReducer(state, action) {
     case 'LOAD_SHARED_POSITIONS': {
       const { userId, positions } = action.payload;
 
-      // Group shared positions by strategy
       const groupedPositions = positions.reduce((acc, position) => {
         const strategy = standardizeStrategy(position.strategy);
         if (!acc[strategy]) acc[strategy] = [];
-        // Ensure shared position is properly marked
         const standardizedPosition = {
           ...standardizePosition(position, userId),
           shared: true // Mark as shared position
@@ -395,24 +391,20 @@ export function PortfolioProvider({ children }) {
         return false;
       }
     },
+  
     checkForSharedPositionUpdates: async (userId) => {
       if (!userId) return [];
     
       try {
-        // Get all shared positions for this user
         const sharedPositions = userStorage.getSharedPositions(userId) || [];
     
-        // Array to store positions that need updates
         const positionsNeedingUpdate = [];
     
-        // Check each shared position against its original
         for (const sharedPosition of sharedPositions) {
-          // Skip if not a proper shared position
           if (!sharedPosition.originalId || !sharedPosition.ownerId) {
             continue;
           }
     
-          // Check if there are updates available
           const hasUpdates = hasUpdatesForPosition(userId, sharedPosition.originalId);
           if (hasUpdates) {
             positionsNeedingUpdate.push({
@@ -463,6 +455,7 @@ export function PortfolioProvider({ children }) {
         return false;
       }
     },
+  
     syncSharedPosition: async (sharedPositionId) => {
       if (!currentUser?.id) return false;
     
@@ -477,10 +470,91 @@ export function PortfolioProvider({ children }) {
         const isOwner = sharedPosition.ownerId === currentUser.id;
     
         if (isOwner) {
-          // For owners - nothing to do, they have the original
+          // Owner syncing their own position - this is for handling updates from shared users
+          console.log(`Owner syncing position ${sharedPositionId}`);
+          
+          // Get all changes made to this position by shared users
+          const changes = getChangesForPosition(currentUser.id, sharedPosition.id);
+          
+          // If no changes, nothing to do
+          if (changes.length === 0) {
+            console.log('No changes to sync');
+            return true;
+          }
+          
+          // Apply changes from shared users
+          for (const change of changes) {
+            if (change.type === 'SHARED_POSITION_UPDATED') {
+              // Handle updates from shared users
+              console.log(`Processing change from shared user: ${change.publisherId}`);
+              
+              // Look up the shared user's copy of the position
+              const sharedCopies = userStorage.getSharedPositions(change.publisherId) || [];
+              const userCopy = sharedCopies.find(p => p.originalId === sharedPosition.id);
+              
+              if (userCopy) {
+                // Typically we'd just want to sync comments, tags and other non-structural changes
+                // from shared users
+                
+                // Merge comments from the shared user
+                const sharedUserComments = (userCopy.comments || [])
+                  .filter(comment => comment.userId === change.publisherId);
+                  
+                const ownerComments = sharedPosition.comments || [];
+                
+                // Add comments that don't already exist in owner's position
+                const newComments = sharedUserComments.filter(comment => 
+                  !ownerComments.some(c => c.id === comment.id)
+                );
+                
+                if (newComments.length > 0) {
+                  const updatedComments = [...ownerComments, ...newComments];
+                  
+                  // Update the owner's position
+                  const updatedPosition = {
+                    ...sharedPosition,
+                    comments: updatedComments,
+                    lastSyncedAt: new Date().toISOString()
+                  };
+                  
+                  // Save to storage
+                  userStorage.saveOwnedPosition(currentUser.id, updatedPosition);
+                  
+                  // Log the sync activity
+                  const activity = {
+                    id: `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                    type: 'sync_performed',
+                    userId: currentUser.id,
+                    userName: currentUser.displayName || 'User',
+                    timestamp: new Date().toISOString(),
+                    data: {
+                      changeCount: newComments.length,
+                      fromUser: change.publisherId
+                    }
+                  };
+                  
+                  updatedPosition.activityLog = [
+                    ...(updatedPosition.activityLog || []),
+                    activity
+                  ];
+                  
+                  userStorage.saveOwnedPosition(currentUser.id, updatedPosition);
+                }
+              }
+            }
+          }
+          
+          const ownedPositions = userStorage.getOwnedPositions(currentUser.id);
+          dispatch({
+            type: 'LOAD_OWNED_POSITIONS',
+            payload: { userId: currentUser.id, positions: ownedPositions }
+          });
+          
           return true;
         } else {
-          // For recipients - sync with original owner's copy
+          // Shared user syncing with original owner's copy
+          console.log(`Shared user syncing position ${sharedPositionId}`);
+          
           if (!sharedPosition.originalId || !sharedPosition.ownerId) {
             throw new Error('Cannot sync - missing original position info');
           }
@@ -522,6 +596,23 @@ export function PortfolioProvider({ children }) {
             comments: mergedComments,
             lastSyncedAt: new Date().toISOString()
           };
+          
+          // Add a sync activity
+          const activity = {
+            id: `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            type: 'sync_performed',
+            userId: currentUser.id,
+            userName: currentUser.displayName || 'User',
+            timestamp: new Date().toISOString(),
+            data: {
+              changeCount: 1
+            }
+          };
+          
+          updatedPosition.activityLog = [
+            ...(updatedPosition.activityLog || []),
+            activity
+          ];
     
           // Save updated position
           const success = userStorage.saveSharedPosition(currentUser.id, updatedPosition);
@@ -529,6 +620,12 @@ export function PortfolioProvider({ children }) {
           // Mark changes as processed
           if (success) {
             clearChanges(sharedPositionId);
+            
+            const sharedPositions = userStorage.getSharedPositions(currentUser.id);
+            dispatch({
+              type: 'LOAD_SHARED_POSITIONS',
+              payload: { userId: currentUser.id, positions: sharedPositions }
+            });
           }
     
           return success;
@@ -543,13 +640,11 @@ export function PortfolioProvider({ children }) {
       if (!currentUser?.id) return 0;
       
       try {
-        // Get all shared positions for this user
         const sharedPositions = [];
         Object.values(state.sharedStrategies).forEach(strategyPositions => {
           sharedPositions.push(...strategyPositions);
         });
         
-        // Filter to positions with updates available
         const positionsWithUpdates = [];
         for (const position of sharedPositions) {
           if (position.ownerId !== currentUser.id && position.originalId) {
@@ -560,12 +655,10 @@ export function PortfolioProvider({ children }) {
           }
         }
         
-        // If just checking, return the count
         if (checkOnly) {
           return positionsWithUpdates.length;
         }
         
-        // Otherwise, sync each position
         for (const position of positionsWithUpdates) {
           await value.syncSharedPosition(position.id);
         }
@@ -579,74 +672,83 @@ export function PortfolioProvider({ children }) {
     
     updatePosition: (position) => {
       if (!currentUser?.id) return false;
-
+    
       try {
         const isOwned = position.ownerId === currentUser.id;
-
+    
         const originalPosition = value.getPositionById(position.id);
-
+    
         if (!originalPosition) {
           throw new Error('Position not found');
         }
-
+    
         const changedFields = [];
         let updatedPosition = { ...position };
-
+    
         if (!Array.isArray(updatedPosition.activityLog)) {
           updatedPosition.activityLog = [];
         }
-
+    
         if (isOwned) {
           const originalTags = originalPosition.tags || [];
           const newTags = updatedPosition.tags || [];
-
+    
           const addedTags = newTags.filter(tag => !originalTags.includes(tag));
           const removedTags = originalTags.filter(tag => !newTags.includes(tag));
-
+    
           addedTags.forEach(tag => {
             updatedPosition = logTagAddedActivity(updatedPosition, currentUser, tag);
             changedFields.push(`Added tag "${tag}"`);
           });
-
+    
           removedTags.forEach(tag => {
             updatedPosition = logTagRemovedActivity(updatedPosition, currentUser, tag);
             changedFields.push(`Removed tag "${tag}"`);
           });
-
+    
           const originalCommentIds = new Set((originalPosition.comments || []).map(c => c.id));
           const newComments = (updatedPosition.comments || []).filter(c => !originalCommentIds.has(c.id));
-
+    
           newComments.forEach(comment => {
             updatedPosition = logCommentActivity(updatedPosition, currentUser, comment.text);
             changedFields.push('Added comment');
           });
-
+    
           const coreFields = ['symbol', 'account', 'legs'];
           const changedCoreFields = coreFields.filter(field =>
             JSON.stringify(originalPosition[field]) !== JSON.stringify(updatedPosition[field])
           );
-
+    
           if (changedCoreFields.length > 0) {
             updatedPosition = logPositionEditedActivity(updatedPosition, currentUser, changedCoreFields);
             changedFields.push(...changedCoreFields.map(field => `Changed ${field}`));
           }
         }
-
+    
+        // Set updatedAt timestamp
+        updatedPosition.updatedAt = new Date().toISOString();
+    
         if (isOwned) {
           validatePosition(updatedPosition);
           userStorage.saveOwnedPosition(currentUser.id, updatedPosition);
-
-          if (position.ownerId === currentUser.id && position.shared && position.sharedWith?.length > 0) {
-            publishChange('POSITION_UPDATED', position, {
-              updatedAt: position.updatedAt
-            });
+    
+          // Publish changes if this is a shared position and there are recipients
+          if (updatedPosition.shared && updatedPosition.sharedWith?.length > 0 && changedFields.length > 0) {
+            publishChange('POSITION_UPDATED', updatedPosition, {
+              updatedAt: updatedPosition.updatedAt,
+              changedFields, // Include specific changes for better tracking
+              changelog: updatedPosition.activityLog?.slice(-1)[0] // Include the latest activity log entry
+            }, currentUser.id); // Pass current user ID as the publisher
           }
+          
           const ownedPositions = userStorage.getOwnedPositions(currentUser.id);
           dispatch({
             type: 'LOAD_OWNED_POSITIONS',
             payload: { userId: currentUser.id, positions: ownedPositions }
           });
         } else {
+          // This is a shared position the user has received
+          // Record changes to be synced back to the original owner
           const sharedPositions = userStorage.getSharedPositions(currentUser.id);
           const updatedSharedPositions = sharedPositions.map(p =>
             p.id === position.id ? {
@@ -657,19 +759,29 @@ export function PortfolioProvider({ children }) {
             } : p
           );
           userStorage.saveSharedPositions(currentUser.id, updatedSharedPositions);
-
+    
+          // Publish changes back to the owner
+          if (changedFields.length > 0) {
+            publishChange('SHARED_POSITION_UPDATED', updatedPosition, {
+              updatedAt: updatedPosition.updatedAt,
+              changedFields,
+              changelog: updatedPosition.activityLog?.slice(-1)[0]
+            }, currentUser.id); // Pass current user ID as the publisher
+          }
+    
           dispatch({
             type: 'LOAD_SHARED_POSITIONS',
             payload: { userId: currentUser.id, positions: updatedSharedPositions }
           });
         }
-
+    
         return true;
       } catch (error) {
         dispatch({ type: 'SET_ERROR', payload: error.message });
         return false;
       }
     },
+    
     deletePosition: async (id, strategy) => {
       if (!currentUser?.id) return false;
 
@@ -707,8 +819,10 @@ export function PortfolioProvider({ children }) {
         return false;
       }
     },
+  
     calculatePositionMetrics,
     validatePosition,
+    
     getStrategyPositions: (strategyType) => {
       const standardizedType = standardizeStrategy(strategyType);
       const ownedPositions = state.ownedStrategies[standardizedType] || [];
@@ -728,6 +842,7 @@ export function PortfolioProvider({ children }) {
 
       return Array.from(positionMap.values());
     },
+    
     getPositionById: (id) => {
       for (const strategy of Object.values(state.ownedStrategies)) {
         const position = strategy.find(p => p.id === id);
@@ -741,6 +856,7 @@ export function PortfolioProvider({ children }) {
 
       return null;
     },
+    
     getSharedPositionUpdates: (positionId) => {
       if (!currentUser?.id) return [];
 
@@ -787,6 +903,7 @@ export function PortfolioProvider({ children }) {
         return [];
       }
     },
+    
     saveOwnedPosition: (userId, position) => {
       try {
         const positions = userStorage.getOwnedPositions(userId);
@@ -804,6 +921,7 @@ export function PortfolioProvider({ children }) {
         return false;
       }
     },
+    
     saveOwnedPositions: (userId, positions) => {
       try {
         localStorage.setItem(userStorage.buildOwnedPositionsKey(userId), JSON.stringify(positions));
@@ -813,13 +931,16 @@ export function PortfolioProvider({ children }) {
         return false;
       }
     },
+    
     isPositionOwner: (positionId) => {
       const position = value.getPositionById(positionId);
       return position?.ownerId === currentUser?.id;
     },
+    
     clearError: () => {
       dispatch({ type: 'CLEAR_ERROR' });
     },
+
     loadPositions,
     checkForUpdates
   };
