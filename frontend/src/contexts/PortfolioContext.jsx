@@ -2,10 +2,9 @@ import React, { createContext, useContext, useReducer, useEffect, useCallback } 
 import { useUser } from './UserContext';
 import { userStorage } from '../utils/storage/storage';
 import {
-  logCommentActivity,
-  logTagAddedActivity,
-  logTagRemovedActivity,
-  logPositionEditedActivity,
+  createActivityEntry,
+  addActivityToPosition,
+
 } from '../utils/activityTracking';
 import { clearChanges } from '../utils/optimisticUpdates';
 import { publishChange } from '../utils/changePublisher';
@@ -14,6 +13,7 @@ import {
   hasUpdatesForPosition,
   getChangesForPosition
 } from '../utils/changeConsumer';
+
 const PortfolioContext = createContext();
 
 // Strategy name mapping for standardization
@@ -455,187 +455,6 @@ export function PortfolioProvider({ children }) {
         return false;
       }
     },
-  
-    syncSharedPosition: async (sharedPositionId) => {
-      if (!currentUser?.id) return false;
-    
-      try {
-        // Get the shared position
-        const sharedPosition = value.getPositionById(sharedPositionId);
-        if (!sharedPosition) {
-          throw new Error('Position not found');
-        }
-    
-        // Handle differently based on whether current user is the owner or receiver
-        const isOwner = sharedPosition.ownerId === currentUser.id;
-    
-        if (isOwner) {
-          // Owner syncing their own position - this is for handling updates from shared users
-          console.log(`Owner syncing position ${sharedPositionId}`);
-          
-          // Get all changes made to this position by shared users
-          const changes = getChangesForPosition(currentUser.id, sharedPosition.id);
-          
-          // If no changes, nothing to do
-          if (changes.length === 0) {
-            console.log('No changes to sync');
-            return true;
-          }
-          
-          // Apply changes from shared users
-          for (const change of changes) {
-            if (change.type === 'SHARED_POSITION_UPDATED') {
-              // Handle updates from shared users
-              console.log(`Processing change from shared user: ${change.publisherId}`);
-              
-              // Look up the shared user's copy of the position
-              const sharedCopies = userStorage.getSharedPositions(change.publisherId) || [];
-              const userCopy = sharedCopies.find(p => p.originalId === sharedPosition.id);
-              
-              if (userCopy) {
-                // Typically we'd just want to sync comments, tags and other non-structural changes
-                // from shared users
-                
-                // Merge comments from the shared user
-                const sharedUserComments = (userCopy.comments || [])
-                  .filter(comment => comment.userId === change.publisherId);
-                  
-                const ownerComments = sharedPosition.comments || [];
-                
-                // Add comments that don't already exist in owner's position
-                const newComments = sharedUserComments.filter(comment => 
-                  !ownerComments.some(c => c.id === comment.id)
-                );
-                
-                if (newComments.length > 0) {
-                  const updatedComments = [...ownerComments, ...newComments];
-                  
-                  // Update the owner's position
-                  const updatedPosition = {
-                    ...sharedPosition,
-                    comments: updatedComments,
-                    lastSyncedAt: new Date().toISOString()
-                  };
-                  
-                  // Save to storage
-                  userStorage.saveOwnedPosition(currentUser.id, updatedPosition);
-                  
-                  // Log the sync activity
-                  const activity = {
-                    id: `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                    type: 'sync_performed',
-                    userId: currentUser.id,
-                    userName: currentUser.displayName || 'User',
-                    timestamp: new Date().toISOString(),
-                    data: {
-                      changeCount: newComments.length,
-                      fromUser: change.publisherId
-                    }
-                  };
-                  
-                  updatedPosition.activityLog = [
-                    ...(updatedPosition.activityLog || []),
-                    activity
-                  ];
-                  
-                  userStorage.saveOwnedPosition(currentUser.id, updatedPosition);
-                }
-              }
-            }
-          }
-          
-          const ownedPositions = userStorage.getOwnedPositions(currentUser.id);
-          dispatch({
-            type: 'LOAD_OWNED_POSITIONS',
-            payload: { userId: currentUser.id, positions: ownedPositions }
-          });
-          
-          return true;
-        } else {
-          // Shared user syncing with original owner's copy
-          console.log(`Shared user syncing position ${sharedPositionId}`);
-          
-          if (!sharedPosition.originalId || !sharedPosition.ownerId) {
-            throw new Error('Cannot sync - missing original position info');
-          }
-    
-          // Get the original position from the owner
-          const originalOwnerId = sharedPosition.ownerId;
-          const ownerPositions = userStorage.getOwnedPositions(originalOwnerId);
-          const originalPosition = ownerPositions.find(p => p.id === sharedPosition.originalId);
-    
-          if (!originalPosition) {
-            throw new Error('Original position no longer exists');
-          }
-    
-          // Simple merge - keep local comments and tags, take everything else from original
-          const localComments = sharedPosition.comments?.filter(comment => 
-            comment.userId === currentUser.id
-          ) || [];
-          
-          const originalComments = originalPosition.comments || [];
-          
-          // Merge comments - original first, then local
-          const mergedComments = [...originalComments];
-          localComments.forEach(comment => {
-            if (!mergedComments.some(c => c.id === comment.id)) {
-              mergedComments.push(comment);
-            }
-          });
-          
-          // Create the updated position
-          const updatedPosition = {
-            ...originalPosition,
-            id: sharedPosition.id,
-            userId: currentUser.id,
-            shared: true,
-            originalId: sharedPosition.originalId,
-            ownerId: sharedPosition.ownerId,
-            sharedAt: sharedPosition.sharedAt,
-            sharedBy: sharedPosition.sharedBy,
-            comments: mergedComments,
-            lastSyncedAt: new Date().toISOString()
-          };
-          
-          // Add a sync activity
-          const activity = {
-            id: `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            type: 'sync_performed',
-            userId: currentUser.id,
-            userName: currentUser.displayName || 'User',
-            timestamp: new Date().toISOString(),
-            data: {
-              changeCount: 1
-            }
-          };
-          
-          updatedPosition.activityLog = [
-            ...(updatedPosition.activityLog || []),
-            activity
-          ];
-    
-          // Save updated position
-          const success = userStorage.saveSharedPosition(currentUser.id, updatedPosition);
-          
-          // Mark changes as processed
-          if (success) {
-            clearChanges(sharedPositionId);
-            
-            const sharedPositions = userStorage.getSharedPositions(currentUser.id);
-            dispatch({
-              type: 'LOAD_SHARED_POSITIONS',
-              payload: { userId: currentUser.id, positions: sharedPositions }
-            });
-          }
-    
-          return success;
-        }
-      } catch (error) {
-        console.error('Error syncing shared position:', error);
-        return false;
-      }
-    },
-    
     syncAllSharedPositions: async (checkOnly = false) => {
       if (!currentUser?.id) return 0;
       
@@ -669,7 +488,7 @@ export function PortfolioProvider({ children }) {
         return 0;
       }
     },
-    
+
     updatePosition: (position) => {
       if (!currentUser?.id) return false;
     
@@ -697,12 +516,16 @@ export function PortfolioProvider({ children }) {
           const removedTags = originalTags.filter(tag => !newTags.includes(tag));
     
           addedTags.forEach(tag => {
-            updatedPosition = logTagAddedActivity(updatedPosition, currentUser, tag);
+            // Create new tag activity entry
+            const tagActivity = createActivityEntry('tag_added', currentUser, { tag });
+            updatedPosition = addActivityToPosition(updatedPosition, tagActivity);
             changedFields.push(`Added tag "${tag}"`);
           });
     
           removedTags.forEach(tag => {
-            updatedPosition = logTagRemovedActivity(updatedPosition, currentUser, tag);
+            // Create tag removed activity entry
+            const tagActivity = createActivityEntry('tag_removed', currentUser, { tag });
+            updatedPosition = addActivityToPosition(updatedPosition, tagActivity);
             changedFields.push(`Removed tag "${tag}"`);
           });
     
@@ -710,7 +533,9 @@ export function PortfolioProvider({ children }) {
           const newComments = (updatedPosition.comments || []).filter(c => !originalCommentIds.has(c.id));
     
           newComments.forEach(comment => {
-            updatedPosition = logCommentActivity(updatedPosition, currentUser, comment.text);
+            // Create comment activity entry
+            const commentActivity = createActivityEntry('comment_added', currentUser, { text: comment.text });
+            updatedPosition = addActivityToPosition(updatedPosition, commentActivity);
             changedFields.push('Added comment');
           });
     
@@ -720,7 +545,9 @@ export function PortfolioProvider({ children }) {
           );
     
           if (changedCoreFields.length > 0) {
-            updatedPosition = logPositionEditedActivity(updatedPosition, currentUser, changedCoreFields);
+            // Create position edited activity
+            const editActivity = createActivityEntry('position_edited', currentUser, { fields: changedCoreFields });
+            updatedPosition = addActivityToPosition(updatedPosition, editActivity);
             changedFields.push(...changedCoreFields.map(field => `Changed ${field}`));
           }
         }
@@ -781,45 +608,207 @@ export function PortfolioProvider({ children }) {
         return false;
       }
     },
-    
-    deletePosition: async (id, strategy) => {
-      if (!currentUser?.id) return false;
 
-      try {
-        const ownedSuccess = userStorage.deleteOwnedPosition(currentUser.id, id);
+syncSharedPosition: async (sharedPositionId) => {
+    if (!currentUser?.id) return false;
 
-        const allUsers = JSON.parse(localStorage.getItem(userStorage.STORAGE_KEYS.USERS) || '[]');
+    try {
+      // Get the shared position
+      const sharedPosition = value.getPositionById(sharedPositionId);
+      if (!sharedPosition) {
+        throw new Error('Position not found');
+      }
 
-        allUsers.forEach(user => {
-          const sharedPositions = userStorage.getSharedPositions(user.id);
-          const updatedSharedPositions = sharedPositions.filter(
-            pos => pos.id !== id && pos.originalId !== id
-          );
-          userStorage.saveSharedPositions(user.id, updatedSharedPositions);
+      // Handle differently based on whether current user is the owner or receiver
+      const isOwner = sharedPosition.ownerId === currentUser.id;
+
+      if (isOwner) {
+        // Owner syncing their own position - this is for handling updates from shared users
+        console.log(`Owner syncing position ${sharedPositionId}`);
+        
+        // Get all changes made to this position by shared users
+        const changes = getChangesForPosition(currentUser.id, sharedPosition.id);
+        
+        // If no changes, nothing to do
+        if (changes.length === 0) {
+          console.log('No changes to sync');
+          return true;
+        }
+        
+        // Apply changes from shared users
+        for (const change of changes) {
+          if (change.type === 'SHARED_POSITION_UPDATED') {
+            // Handle updates from shared users
+            console.log(`Processing change from shared user: ${change.publisherId}`);
+            
+            // Look up the shared user's copy of the position
+            const sharedCopies = userStorage.getSharedPositions(change.publisherId) || [];
+            const userCopy = sharedCopies.find(p => p.originalId === sharedPosition.id);
+            
+            if (userCopy) {
+              // Typically we'd just want to sync comments, tags and other non-structural changes
+              // from shared users
+              
+              // Merge comments from the shared user
+              const sharedUserComments = (userCopy.comments || [])
+                .filter(comment => comment.userId === change.publisherId);
+                
+              const ownerComments = sharedPosition.comments || [];
+              
+              // Add comments that don't already exist in owner's position
+              const newComments = sharedUserComments.filter(comment => 
+                !ownerComments.some(c => c.id === comment.id)
+              );
+              
+              if (newComments.length > 0) {
+                const updatedComments = [...ownerComments, ...newComments];
+                
+                // Update the owner's position
+                const updatedPosition = {
+                  ...sharedPosition,
+                  comments: updatedComments,
+                  lastSyncedAt: new Date().toISOString()
+                };
+                
+                // Save to storage
+                userStorage.saveOwnedPosition(currentUser.id, updatedPosition);
+                
+                // Log the sync activity
+                const activity = {
+                  id: `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                  type: 'sync_performed',
+                  userId: currentUser.id,
+                  userName: currentUser.displayName || 'User',
+                  timestamp: new Date().toISOString(),
+                  data: {
+                    changeCount: newComments.length,
+                    fromUser: change.publisherId
+                  }
+                };
+                
+                updatedPosition.activityLog = [
+                  ...(updatedPosition.activityLog || []),
+                  activity
+                ];
+                
+                userStorage.saveOwnedPosition(currentUser.id, updatedPosition);
+              }
+            }
+          }
+        }
+        
+        const ownedPositions = userStorage.getOwnedPositions(currentUser.id);
+        dispatch({
+          type: 'LOAD_OWNED_POSITIONS',
+          payload: { userId: currentUser.id, positions: ownedPositions }
         });
+        
+        return true;
+      } else {
+        // Shared user syncing with original owner's copy
+        console.log(`Shared user syncing position ${sharedPositionId}`);
+        
+        if (!sharedPosition.originalId || !sharedPosition.ownerId) {
+          throw new Error('Cannot sync - missing original position info');
+        }
 
-        if (ownedSuccess) {
-          dispatch({
-            type: 'DELETE_POSITION',
-            payload: { userId: currentUser.id, positionId: id, strategy }
+        // Get the original position from the owner
+        const originalOwnerId = sharedPosition.ownerId;
+        const ownerPositions = userStorage.getOwnedPositions(originalOwnerId);
+        const originalPosition = ownerPositions.find(p => p.id === sharedPosition.originalId);
+
+        if (!originalPosition) {
+          throw new Error('Original position no longer exists');
+        }
+
+        // Simple merge - keep local comments and tags, take everything else from original
+        const localComments = sharedPosition.comments?.filter(comment => 
+          comment.userId === currentUser.id
+        ) || [];
+        
+        const originalComments = originalPosition.comments || [];
+        
+        // Merge comments - original first, then local
+        const mergedComments = [...originalComments];
+        localComments.forEach(comment => {
+          if (!mergedComments.some(c => c.id === comment.id)) {
+            mergedComments.push(comment);
+          }
+        });
+        
+        // Create the updated position
+        const updatedPosition = {
+          ...originalPosition,
+          id: sharedPosition.id,
+          userId: currentUser.id,
+          shared: true,
+          originalId: sharedPosition.originalId,
+          ownerId: sharedPosition.ownerId,
+          sharedAt: sharedPosition.sharedAt,
+          sharedBy: sharedPosition.sharedBy,
+          comments: mergedComments,
+          lastSyncedAt: new Date().toISOString()
+        };
+        
+        // Add a sync activity
+        const activity = {
+          id: `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          type: 'sync_performed',
+          userId: currentUser.id,
+          userName: currentUser.displayName || 'User',
+          timestamp: new Date().toISOString(),
+          data: {
+            changeCount: 1
+          }
+        };
+        
+        updatedPosition.activityLog = [
+          ...(updatedPosition.activityLog || []),
+          activity
+        ];
+
+        // Save updated position
+        const success = userStorage.saveSharedPosition(currentUser.id, updatedPosition);
+        
+        // Mark changes as processed
+        if (success) {
+          clearChanges(sharedPositionId);
+          
+          // IMPORTANT FIX: Also mark any published changes from the owner as processed
+          // This ensures the "Update Available" notification disappears after syncing
+          const allChanges = JSON.parse(localStorage.getItem('pendingChanges') || '[]');
+          const updatedChanges = allChanges.map(change => {
+            // Check if this change is for the original position and targeted at current user
+            if ((change.positionId === sharedPosition.originalId || 
+                 change.originalId === sharedPosition.originalId) && 
+                change.recipients.includes(currentUser.id) &&
+                !change.processed.includes(currentUser.id)) {
+                  
+              return {
+                ...change,
+                processed: [...change.processed, currentUser.id]
+              };
+            }
+            return change;
           });
-
+          
+          // Save the updated changes back to storage
+          localStorage.setItem('pendingChanges', JSON.stringify(updatedChanges));
+          
+          const sharedPositions = userStorage.getSharedPositions(currentUser.id);
           dispatch({
             type: 'LOAD_SHARED_POSITIONS',
-            payload: {
-              userId: currentUser.id,
-              positions: userStorage.getSharedPositions(currentUser.id)
-            }
+            payload: { userId: currentUser.id, positions: sharedPositions }
           });
         }
 
-        return ownedSuccess;
-      } catch (error) {
-        dispatch({ type: 'SET_ERROR', payload: error.message });
-        return false;
+        return success;
       }
-    },
-  
+    } catch (error) {
+      console.error('Error syncing shared position:', error);
+      return false;
+    }
+  },    
     calculatePositionMetrics,
     validatePosition,
     
