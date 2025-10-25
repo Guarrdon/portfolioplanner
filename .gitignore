@@ -1,2 +1,22 @@
-dynamodb
+# Logs from startup script
+backend.log
+frontend.log
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Reference code (nested git repo)
 ref/LoP-s-Premium-Tracker/

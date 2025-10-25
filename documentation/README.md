@@ -9,6 +9,7 @@ Welcome to the Portfolio Planner documentation. This directory contains comprehe
 - **[architecture-overview.md](./architecture-overview.md)** - High-level system architecture, technology stack, and design decisions
 - **[project-capabilities.md](./project-capabilities.md)** - Current and planned features
 - **[project-structure.md](./project-structure.md)** - File organization and component structure
+- **[implementation-summary.md](./implementation-summary.md)** - Current implementation status and Phase 1 summary
 
 ### 🔧 Technical Documentation
 
