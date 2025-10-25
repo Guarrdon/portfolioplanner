@@ -1,8 +1,18 @@
-# Portfolio Planner MVP - Updated Project Capabilities
+# Portfolio Planner - Project Capabilities
+
+## Project Vision
+
+The Portfolio Planner is a collaborative platform for tracking, planning, and sharing stock and option trading strategies. It integrates with the Schwab API to import real positions while supporting trade idea planning and collaboration features.
 
 ## Current Implementation Status
 
-The Portfolio Planner application is currently implemented as a frontend-only React application using local storage for data persistence. The backend component mentioned in the initial project plan is planned but not yet implemented.
+**Phase 1 (In Progress)**: The application consists of a React frontend with local storage, and we are actively developing a Python FastAPI backend with PostgreSQL database and Schwab API integration.
+
+### Position Flavors
+The system manages three distinct types of positions:
+- **Actual Positions**: Real positions synced from Schwab API (read-only)
+- **Trade Ideas**: User-created planning positions (fully editable, shareable)
+- **Shared Positions**: Trade ideas shared by friends (view + comment)
 
 ## Core Features Implemented
 
@@ -67,21 +77,49 @@ The Portfolio Planner application is currently implemented as a frontend-only Re
 - **Change Tracking**: Minimal, user-friendly change indicators
 - **Comment Merging**: Automatic retention of comments from all users
 
-## Future Development (Planned But Not Implemented)
+## In Development (Phase 1)
 
-### Backend Integration
-- **Python Backend**: RESTful API for data persistence and processing
-- **Authentication**: Enhanced user authentication and authorization
-- **Database Storage**: Replace local storage with proper database
+### Backend Infrastructure
+- ✅ **Architecture Design**: Complete technical architecture defined
+- 🔨 **Python Backend**: FastAPI RESTful API in development
+- 🔨 **Authentication**: JWT-based user authentication and authorization
+- 🔨 **Database**: PostgreSQL schema for positions, users, comments
+- 🔨 **Schwab Integration**: OAuth flow and position sync (mock data initially)
 
-### Advanced Features
-- **Data Import**: Import portfolio data from brokerages
-- **Market Data**: Real-time market data integration
-- **Advanced Analytics**: Performance tracking and risk analysis
-- **Notifications**: Email and push notifications for important events
-- **Enhanced Sharing**: Additional collaboration features and permissions
+### Position Management
+- 🔨 **Actual Positions**: Schwab API sync with account selection
+- ✅ **Trade Ideas**: Already functional in frontend, backend API in progress
+- 🔨 **Shared Positions**: Backend sharing infrastructure in development
 
-### Deployment
-- **AWS Deployment**: Cloud hosting of the application
+## Future Development (Planned)
+
+### Phase 2: Real Schwab Integration
+- **OAuth 2.0 Flow**: Complete Schwab authentication in app
+- **Real-time Sync**: Replace mock data with actual Schwab API calls
+- **Token Management**: Automatic token refresh and error handling
+- **Multiple Accounts**: Support for users with multiple Schwab accounts
+
+### Phase 3: Enhanced Collaboration
+- **Real-time Notifications**: Alert users of position updates and shares
+- **Activity Feeds**: Track friend activity and position changes
+- **Enhanced Permissions**: Granular sharing controls
+- **Performance Analytics**: Track shared position performance
+
+### Phase 4: Advanced Features
+- **Market Data Integration**: Real-time quotes and greeks
+- **P&L Tracking**: Historical performance analysis
+- **Risk Analysis**: Portfolio-level risk metrics
+- **Automated Insights**: AI-powered trade suggestions
+- **Mobile App**: Native iOS/Android applications
+
+### Deployment & Operations
+- **AWS Deployment**: Cloud hosting with auto-scaling
 - **CI/CD Pipeline**: Automated testing and deployment
-- **Production Optimizations**: Performance and security enhancements
+- **Monitoring**: Application performance monitoring
+- **Backup & Recovery**: Automated database backups
+
+## Feature Status Legend
+- ✅ **Complete**: Feature implemented and tested
+- 🔨 **In Progress**: Actively being developed
+- 📋 **Planned**: Designed and scheduled
+- 🔮 **Future**: Long-term roadmap item

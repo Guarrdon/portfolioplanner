@@ -29,6 +29,9 @@ import MiscView from './components/strategies/MiscView';
 import PortfolioAnalytics from './components/analysis/PortfolioAnalytics';
 import SettingsView from './components/settings/SettingsView';
 
+// Schwab Views
+import SchwabPositionsView from './components/schwab/SchwabPositionsView';
+
 // Contexts
 import { PortfolioProvider } from './contexts/PortfolioContext';
 import { CalendarProvider } from './contexts/CalendarContext';
@@ -75,6 +78,9 @@ function App() {
                                   {/* Main routes */}
                                   <Route path="/" element={<PortfolioView />} />
                                   <Route path="/calendar" element={<CalendarView />} />
+                                  
+                                  {/* Schwab routes */}
+                                  <Route path="/schwab/positions" element={<SchwabPositionsView />} />
 
                                   {/* Strategy routes */}
                                   <Route path="/strategies/covered-calls" element={<CoveredCallsView />} />

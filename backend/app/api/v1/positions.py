@@ -1,0 +1,316 @@
+"""Position API endpoints"""
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy.orm import Session
+from typing import List, Optional
+from uuid import UUID
+
+from app.core.database import get_db
+from app.core.security import get_current_active_user
+from app.models.user import User
+from app.schemas.position import (
+    PositionCreate,
+    PositionUpdate,
+    PositionResponse,
+    PositionListResponse,
+    PositionShareCreate,
+    SyncRequest,
+    SyncResponse
+)
+from app.services import position_service
+
+router = APIRouter(prefix="/positions", tags=["positions"])
+
+
+@router.get("/actual", response_model=PositionListResponse)
+def get_actual_positions(
+    status: Optional[str] = Query(None),
+    account_id: Optional[str] = Query(None),
+    symbol: Optional[str] = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Get all actual (Schwab-synced) positions for current user
+    
+    Query parameters:
+    - status: Filter by status (active, closed)
+    - account_id: Filter by Schwab account ID
+    - symbol: Filter by symbol
+    - skip: Pagination offset
+    - limit: Pagination limit
+    """
+    positions = position_service.get_positions(
+        db,
+        user_id=current_user.id,
+        flavor="actual",
+        status=status,
+        skip=skip,
+        limit=limit
+    )
+    
+    # Apply additional filters
+    if account_id:
+        positions = [p for p in positions if p.account_id == account_id]
+    
+    if symbol:
+        positions = [p for p in positions if p.symbol.upper() == symbol.upper()]
+    
+    return PositionListResponse(
+        total=len(positions),
+        positions=positions
+    )
+
+
+@router.post("/sync", response_model=SyncResponse)
+def sync_positions(
+    sync_request: SyncRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Trigger sync from Schwab API
+    
+    Body:
+    - account_ids: Optional list of specific account IDs to sync
+    """
+    try:
+        synced_positions = position_service.sync_schwab_positions(
+            db,
+            user_id=current_user.id,
+            account_ids=sync_request.account_ids
+        )
+        
+        return SyncResponse(
+            success=True,
+            message=f"Successfully synced {len(synced_positions)} positions",
+            synced_count=len(synced_positions),
+            positions=synced_positions
+        )
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Sync failed: {str(e)}"
+        )
+
+
+@router.get("/ideas", response_model=PositionListResponse)
+def get_trade_ideas(
+    status: Optional[str] = Query(None),
+    symbol: Optional[str] = Query(None),
+    strategy_type: Optional[str] = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Get all trade ideas for current user
+    
+    Query parameters:
+    - status: Filter by status (planned, watching, executed, etc.)
+    - symbol: Filter by symbol
+    - strategy_type: Filter by strategy type
+    - skip: Pagination offset
+    - limit: Pagination limit
+    """
+    positions = position_service.get_positions(
+        db,
+        user_id=current_user.id,
+        flavor="idea",
+        status=status,
+        skip=skip,
+        limit=limit
+    )
+    
+    # Apply additional filters
+    if symbol:
+        positions = [p for p in positions if p.symbol.upper() == symbol.upper()]
+    
+    if strategy_type:
+        positions = [p for p in positions if p.strategy_type == strategy_type]
+    
+    return PositionListResponse(
+        total=len(positions),
+        positions=positions
+    )
+
+
+@router.post("/ideas", response_model=PositionResponse, status_code=status.HTTP_201_CREATED)
+def create_trade_idea(
+    position: PositionCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Create a new trade idea
+    
+    Body: PositionCreate schema with position details and legs
+    """
+    try:
+        created_position = position_service.create_trade_idea(
+            db,
+            position_data=position,
+            user_id=current_user.id
+        )
+        return created_position
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to create trade idea: {str(e)}"
+        )
+
+
+@router.get("/ideas/{position_id}", response_model=PositionResponse)
+def get_trade_idea(
+    position_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get a specific trade idea by ID"""
+    position = position_service.get_position_by_id(db, position_id, current_user.id)
+    
+    if not position or position.flavor != "idea":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trade idea not found"
+        )
+    
+    return position
+
+
+@router.put("/ideas/{position_id}", response_model=PositionResponse)
+def update_trade_idea(
+    position_id: UUID,
+    position_update: PositionUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Update a trade idea"""
+    updated_position = position_service.update_position(
+        db,
+        position_id=position_id,
+        user_id=current_user.id,
+        update_data=position_update
+    )
+    
+    if not updated_position:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trade idea not found or cannot be updated"
+        )
+    
+    return updated_position
+
+
+@router.delete("/ideas/{position_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_trade_idea(
+    position_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Delete a trade idea"""
+    success = position_service.delete_position(db, position_id, current_user.id)
+    
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trade idea not found or cannot be deleted"
+        )
+    
+    return None
+
+
+@router.post("/ideas/{position_id}/share", status_code=status.HTTP_200_OK)
+def share_trade_idea(
+    position_id: UUID,
+    share_request: PositionShareCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Share a trade idea with friends
+    
+    Body:
+    - friend_ids: List of friend user IDs to share with
+    - access_level: Access level (view, comment)
+    """
+    try:
+        shares = position_service.share_position(
+            db,
+            position_id=position_id,
+            user_id=current_user.id,
+            friend_ids=share_request.friend_ids
+        )
+        
+        return {
+            "success": True,
+            "message": f"Position shared with {len(shares)} friends",
+            "share_count": len(shares)
+        }
+    
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to share position: {str(e)}"
+        )
+
+
+@router.get("/shared", response_model=PositionListResponse)
+def get_shared_positions(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Get all positions shared with current user
+    
+    Query parameters:
+    - skip: Pagination offset
+    - limit: Pagination limit
+    """
+    # Get positions where user is a recipient of a share
+    from app.models.position import PositionShare
+    
+    shares = db.query(PositionShare).filter(
+        PositionShare.recipient_id == current_user.id,
+        PositionShare.is_active == True
+    ).all()
+    
+    position_ids = [share.position_id for share in shares]
+    
+    from app.models.position import Position
+    positions = db.query(Position).filter(Position.id.in_(position_ids)).all()
+    
+    return PositionListResponse(
+        total=len(positions),
+        positions=positions
+    )
+
+
+@router.get("/{position_id}", response_model=PositionResponse)
+def get_position(
+    position_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get any position by ID (actual, idea, or shared)"""
+    position = position_service.get_position_by_id(db, position_id, current_user.id)
+    
+    if not position:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Position not found"
+        )
+    
+    return position
+

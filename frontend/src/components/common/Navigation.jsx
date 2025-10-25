@@ -9,7 +9,9 @@ import {
   Package,
   BarChart2,
   Calendar,
-  ChevronRight
+  ChevronRight,
+  Building2,
+  Home
 } from 'lucide-react';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { addDays } from 'date-fns';
@@ -62,6 +64,25 @@ const Navigation = () => {
   }, [strategies]);
 
   const navigationItems = [
+    {
+      group: 'Overview',
+      items: [
+        {
+          name: 'Dashboard',
+          path: '/',
+          icon: Home,
+          description: 'Portfolio overview and summary',
+          color: 'blue'
+        },
+        {
+          name: 'Schwab Positions',
+          path: '/schwab/positions',
+          icon: Building2,
+          description: 'Actual positions from Schwab',
+          color: 'indigo'
+        }
+      ]
+    },
     {
       group: 'Strategies',
       items: [

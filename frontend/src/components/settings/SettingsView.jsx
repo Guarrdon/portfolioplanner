@@ -4,7 +4,8 @@ import React, { useState } from 'react';
 import AccountManagement from './AccountManagement';
 import ProfileSettings from './ProfileSettings';
 import FriendManagement from './FriendManagement';
-import { Settings, Users, Wallet, UserPlus } from 'lucide-react';
+import SchwabSettings from './SchwabSettings';
+import { Settings, Users, Wallet, UserPlus, Building2 } from 'lucide-react';
 
 const SettingsView = () => {
   const [activeSection, setActiveSection] = useState('profile');
@@ -15,6 +16,12 @@ const SettingsView = () => {
       label: 'Profile Settings',
       icon: Users,
       component: <ProfileSettings />
+    },
+    {
+      id: 'schwab',
+      label: 'Schwab Integration',
+      icon: Building2,
+      component: <SchwabSettings />
     },
     {
       id: 'accounts',
