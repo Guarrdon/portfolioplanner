@@ -102,9 +102,9 @@ The API will be available at:
 ### Positions - Shared
 - `GET /api/v1/positions/shared` - Get positions shared with you
 
-## Development
+## Schwab API Setup
 
-### Mock Mode
+### Using Mock Data (Default)
 
 The backend starts in mock mode by default (`USE_MOCK_SCHWAB_DATA=true`). This allows development without actual Schwab API credentials.
 
@@ -114,6 +114,46 @@ Mock mode provides realistic test data for:
 - Call spreads
 - Long puts
 - Dividend stocks
+
+### Using Real Schwab API
+
+To connect to your actual Schwab account:
+
+1. **Get API Credentials**: Register at [Schwab Developer Portal](https://developer.schwab.com/)
+
+2. **Configure Credentials**:
+   ```bash
+   cd backend
+   cp schwab_config.toml.template schwab_config.toml
+   # Edit schwab_config.toml with your credentials
+   ```
+
+3. **Generate Token**:
+   ```bash
+   python get_schwab_token.py
+   ```
+   This will open a browser for OAuth authentication.
+
+4. **Update .env**:
+   ```bash
+   USE_MOCK_SCHWAB_DATA=false
+   ```
+
+5. **Restart Backend**: The API will now use real data from Schwab
+
+📖 **Detailed Setup Guide**: See `/documentation/schwab-api-setup.md` for complete instructions.
+
+## Development
+
+### Mock Mode vs Real API
+
+| Feature | Mock Mode | Real API |
+|---------|-----------|----------|
+| Setup Required | None | Schwab Developer Account |
+| Data | Fake test positions | Your actual positions |
+| API Calls | Local only | Calls to Schwab servers |
+| Token Management | Not needed | Auto-refresh (7 day cycle) |
+| Use Case | Development, testing | Production, real trading |
 
 ### Project Structure
 

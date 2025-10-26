@@ -49,8 +49,10 @@ htmlcov/
 portfolio.db
 portfolio.db-*
 
-# Schwab API
+# Schwab API - NEVER commit these files!
 schwab.token_file.json
+schwab_tokens.json
+schwab_config.toml
 config.toml
 
 # Logs

@@ -1,0 +1,23 @@
+# Schwab API Configuration Template
+# Copy this file to schwab_config.toml and fill in your actual credentials
+# NEVER commit schwab_config.toml to git!
+
+# Your Schwab API credentials from developer.schwab.com
+consumer_key = "YOUR_APP_KEY_HERE"
+app_secret = "YOUR_APP_SECRET_HERE"
+
+# OAuth callback URL (must match what you registered with Schwab)
+# Default is localhost:8182 for local development
+callback_url = "https://127.0.0.1:8182"
+
+# Path to store the OAuth token file (relative to this config file)
+token_path = "schwab_tokens.json"
+
+# Optional: Specify a default account number (last 4 digits) to sync
+# Leave empty to sync all accounts
+account_number = ""
+
+# Optional: API timeout settings (in seconds)
+api_timeout = 120
+connect_timeout = 30
+
