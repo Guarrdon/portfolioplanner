@@ -270,13 +270,23 @@ export const SchwabPositionsView = () => {
     return null;
   };
 
-  // Group positions by account
-  const groupedByAccount = positions.reduce((acc, position) => {
+  // Multi-level grouping: Account -> Strategy -> Symbol
+  const groupedData = positions.reduce((acc, position) => {
     const accountKey = position.account_number || 'Unknown';
+    const strategyKey = position.strategy_type || 'unknown';
+    const symbolKey = position.symbol || 'Unknown';
+    
     if (!acc[accountKey]) {
-      acc[accountKey] = [];
+      acc[accountKey] = {};
     }
-    acc[accountKey].push(position);
+    if (!acc[accountKey][strategyKey]) {
+      acc[accountKey][strategyKey] = {};
+    }
+    if (!acc[accountKey][strategyKey][symbolKey]) {
+      acc[accountKey][strategyKey][symbolKey] = [];
+    }
+    
+    acc[accountKey][strategyKey][symbolKey].push(position);
     return acc;
   }, {});
 
@@ -401,20 +411,39 @@ export const SchwabPositionsView = () => {
               </tr>
             </thead>
             <tbody className="bg-white">
-              {Object.entries(groupedByAccount).map(([accountNumber, accountPositions]) => (
+              {Object.entries(groupedData).map(([accountNumber, strategies]) => (
                 <React.Fragment key={accountNumber}>
                   {/* Account Section Header */}
                   <tr className="bg-gray-200 border-y border-gray-300">
                     <td colSpan="11" className="px-2 py-1.5 font-semibold text-gray-900">
                       Account: {accountNumber}
                       <span className="ml-3 text-gray-600 font-normal">
-                        {accountPositions.length} position{accountPositions.length !== 1 ? 's' : ''}
+                        {Object.values(strategies).reduce((sum, symbols) => 
+                          sum + Object.values(symbols).reduce((s, positions) => s + positions.length, 0), 0
+                        )} position{Object.values(strategies).reduce((sum, symbols) => 
+                          sum + Object.values(symbols).reduce((s, positions) => s + positions.length, 0), 0) !== 1 ? 's' : ''}
                       </span>
                     </td>
                   </tr>
                   
-                  {/* Positions for this account */}
-                  {accountPositions.map((position) => {
+                  {/* Strategy Groups */}
+                  {Object.entries(strategies).map(([strategyType, symbols]) => (
+                    <React.Fragment key={`${accountNumber}-${strategyType}`}>
+                      {/* Strategy Section Header */}
+                      <tr className="bg-gray-100 border-b border-gray-200">
+                        <td colSpan="11" className="px-4 py-1 font-medium text-gray-800 text-xs">
+                          {getStrategyLabel(strategyType)}
+                          <span className="ml-2 text-gray-600 font-normal">
+                            ({Object.values(symbols).reduce((sum, positions) => sum + positions.length, 0)})
+                          </span>
+                        </td>
+                      </tr>
+                      
+                      {/* Symbol Groups */}
+                      {Object.entries(symbols).map(([symbol, symbolPositions]) => (
+                        <React.Fragment key={`${accountNumber}-${strategyType}-${symbol}`}>
+                          {/* Positions for this symbol */}
+                          {symbolPositions.map((position) => {
                 const isExpanded = expandedRows.has(position.id);
                 const pnlPercent = position.cost_basis && position.cost_basis !== 0
                   ? ((position.unrealized_pnl / Math.abs(position.cost_basis)) * 100).toFixed(1)
@@ -513,8 +542,8 @@ export const SchwabPositionsView = () => {
                                             </span>
                                             <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${
                                               leg.option_type === 'call' 
-                                                ? 'bg-green-600 text-white' 
-                                                : 'bg-red-600 text-white'
+                                                ? 'bg-blue-600 text-white' 
+                                                : 'bg-purple-600 text-white'
                                             }`}>
                                               {leg.option_type === 'call' ? 'C' : 'P'}
                                             </span>
@@ -552,6 +581,10 @@ export const SchwabPositionsView = () => {
                   </React.Fragment>
                 );
               })}
+                        </React.Fragment>
+                      ))}
+                    </React.Fragment>
+                  ))}
                 </React.Fragment>
               ))}
             </tbody>
