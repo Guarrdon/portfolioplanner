@@ -78,6 +78,33 @@ export const SchwabPositionsView = () => {
 
   const positions = data?.positions || [];
 
+  // Group positions by account
+  const groupedByAccount = positions.reduce((acc, position) => {
+    const accountKey = position.account_number || 'Unknown';
+    if (!acc[accountKey]) {
+      acc[accountKey] = [];
+    }
+    acc[accountKey].push(position);
+    return acc;
+  }, {});
+
+  const formatOptionSymbol = (leg) => {
+    if (leg.asset_type !== 'option' || !leg.expiration) return leg.symbol;
+    
+    // Parse expiration date
+    const expDate = new Date(leg.expiration);
+    const day = expDate.getDate();
+    const month = expDate.toLocaleString('en-US', { month: 'short' }).toUpperCase();
+    const year = expDate.getFullYear().toString().slice(-2);
+    
+    // Format: "SYMBOL DDMMMYY STRIKE C/P"
+    const underlying = leg.symbol.split(' ')[0]; // Extract underlying from OCC symbol
+    const strike = leg.strike ? Math.round(parseFloat(leg.strike)) : '';
+    const type = leg.option_type ? leg.option_type.charAt(0).toUpperCase() : '';
+    
+    return `${underlying} ${day}${month}${year} ${strike} ${type}`;
+  };
+
   return (
     <div className="h-screen flex flex-col bg-gray-50">
       {/* Compact Toolbar */}
@@ -171,7 +198,6 @@ export const SchwabPositionsView = () => {
                 <th className="text-left px-2 py-1.5 font-semibold w-6"></th>
                 <th className="text-left px-2 py-1.5 font-semibold w-16">Symbol</th>
                 <th className="text-left px-2 py-1.5 font-semibold w-32">Strategy</th>
-                <th className="text-left px-2 py-1.5 font-semibold w-24">Account</th>
                 <th className="text-right px-2 py-1.5 font-semibold w-14">Qty</th>
                 <th className="text-right px-2 py-1.5 font-semibold w-20">Cost</th>
                 <th className="text-right px-2 py-1.5 font-semibold w-20">Value</th>
@@ -183,7 +209,20 @@ export const SchwabPositionsView = () => {
               </tr>
             </thead>
             <tbody className="bg-white">
-              {positions.map((position) => {
+              {Object.entries(groupedByAccount).map(([accountNumber, accountPositions]) => (
+                <React.Fragment key={accountNumber}>
+                  {/* Account Section Header */}
+                  <tr className="bg-gray-200 border-y border-gray-300">
+                    <td colSpan="11" className="px-2 py-1.5 font-semibold text-gray-900">
+                      Account: {accountNumber}
+                      <span className="ml-3 text-gray-600 font-normal">
+                        {accountPositions.length} position{accountPositions.length !== 1 ? 's' : ''}
+                      </span>
+                    </td>
+                  </tr>
+                  
+                  {/* Positions for this account */}
+                  {accountPositions.map((position) => {
                 const isExpanded = expandedRows.has(position.id);
                 const pnlPercent = position.cost_basis && position.cost_basis !== 0
                   ? ((position.unrealized_pnl / Math.abs(position.cost_basis)) * 100).toFixed(1)
@@ -208,9 +247,6 @@ export const SchwabPositionsView = () => {
                       <td className="px-2 py-1.5 font-semibold text-gray-900">{position.symbol}</td>
                       <td className="px-2 py-1.5 text-gray-700">
                         {getStrategyLabel(position.strategy_type)}
-                      </td>
-                      <td className="px-2 py-1.5 text-gray-600 font-mono text-xs">
-                        {position.account_number || '-'}
                       </td>
                       <td className="px-2 py-1.5 text-right text-gray-900">
                         {formatQuantity(position.quantity)}
@@ -253,60 +289,56 @@ export const SchwabPositionsView = () => {
                     {/* Expanded Legs Rows */}
                     {isExpanded && position.legs && position.legs.length > 0 && (
                       <tr className="bg-gray-50">
-                        <td colSpan="12" className="px-0 py-0">
+                        <td colSpan="11" className="px-0 py-0">
                           <div className="px-8 py-2">
                             <table className="w-full text-xs">
                               <thead>
                                 <tr className="text-gray-600 border-b border-gray-200">
-                                  <th className="text-left px-2 py-1 font-medium w-16">Type</th>
-                                  <th className="text-left px-2 py-1 font-medium w-24">Symbol</th>
-                                  <th className="text-left px-2 py-1 font-medium w-16">Option</th>
-                                  <th className="text-right px-2 py-1 font-medium w-20">Strike</th>
-                                  <th className="text-right px-2 py-1 font-medium w-20">Expiration</th>
+                                  <th className="text-left px-2 py-1 font-medium w-48">Option/Stock</th>
                                   <th className="text-right px-2 py-1 font-medium w-16">Qty</th>
                                   <th className="text-right px-2 py-1 font-medium w-20">Premium</th>
                                   <th className="text-right px-2 py-1 font-medium w-20">Current</th>
+                                  <th className="text-right px-2 py-1 font-medium w-20">P&L</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                {position.legs.map((leg, index) => (
-                                  <tr key={index} className="border-b border-gray-200 last:border-0">
-                                    <td className="px-2 py-1.5">
-                                      <span className="px-1 py-0.5 bg-gray-200 text-gray-700 rounded text-xs font-mono">
-                                        {leg.asset_type === 'stock' ? 'STK' : 'OPT'}
-                                      </span>
-                                    </td>
-                                    <td className="px-2 py-1.5 font-semibold text-gray-900">
-                                      {leg.symbol || '-'}
-                                    </td>
-                                    <td className="px-2 py-1.5">
-                                      {leg.option_type ? (
-                                        <span className={`font-semibold ${
-                                          leg.option_type === 'call' ? 'text-green-600' : 'text-red-600'
-                                        }`}>
-                                          {leg.option_type === 'call' ? 'C' : 'P'}
-                                        </span>
-                                      ) : '-'}
-                                    </td>
-                                    <td className="px-2 py-1.5 text-right text-gray-900">
-                                      {leg.strike ? `$${parseFloat(leg.strike).toFixed(2)}` : '-'}
-                                    </td>
-                                    <td className="px-2 py-1.5 text-right text-gray-700">
-                                      {formatDate(leg.expiration)}
-                                    </td>
-                                    <td className={`px-2 py-1.5 text-right font-semibold ${
-                                      leg.quantity < 0 ? 'text-red-600' : 'text-green-600'
-                                    }`}>
-                                      {formatQuantity(leg.quantity)}
-                                    </td>
-                                    <td className="px-2 py-1.5 text-right text-gray-700">
-                                      {formatCurrency(leg.premium)}
-                                    </td>
-                                    <td className="px-2 py-1.5 text-right text-gray-900">
-                                      {formatCurrency(leg.current_price)}
-                                    </td>
-                                  </tr>
-                                ))}
+                                {position.legs.map((leg, index) => {
+                                  const legPnL = leg.current_price && leg.premium 
+                                    ? (parseFloat(leg.current_price) - parseFloat(leg.premium)) * parseFloat(leg.quantity)
+                                    : null;
+                                  
+                                  return (
+                                    <tr key={index} className="border-b border-gray-200 last:border-0">
+                                      <td className="px-2 py-1.5">
+                                        {leg.asset_type === 'stock' ? (
+                                          <span className="font-semibold text-gray-900">
+                                            {leg.symbol} <span className="text-gray-600 font-normal ml-1">(Stock)</span>
+                                          </span>
+                                        ) : (
+                                          <span className="font-mono text-gray-900">
+                                            {formatOptionSymbol(leg)}
+                                          </span>
+                                        )}
+                                      </td>
+                                      <td className={`px-2 py-1.5 text-right font-semibold ${
+                                        leg.quantity < 0 ? 'text-red-600' : 'text-green-600'
+                                      }`}>
+                                        {leg.quantity < 0 ? '' : '+'}{formatQuantity(leg.quantity)}
+                                      </td>
+                                      <td className="px-2 py-1.5 text-right text-gray-700">
+                                        {formatCurrency(leg.premium)}
+                                      </td>
+                                      <td className="px-2 py-1.5 text-right text-gray-900">
+                                        {formatCurrency(leg.current_price)}
+                                      </td>
+                                      <td className={`px-2 py-1.5 text-right font-semibold ${
+                                        legPnL > 0 ? 'text-green-600' : legPnL < 0 ? 'text-red-600' : 'text-gray-600'
+                                      }`}>
+                                        {legPnL !== null ? formatCurrency(legPnL) : '-'}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
                               </tbody>
                             </table>
                           </div>
@@ -316,6 +348,8 @@ export const SchwabPositionsView = () => {
                   </React.Fragment>
                 );
               })}
+                </React.Fragment>
+              ))}
             </tbody>
           </table>
         )}
