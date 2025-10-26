@@ -150,6 +150,56 @@ export const SchwabPositionsView = () => {
     return labels[strategyType] || strategyType.replace(/_/g, ' ');
   };
 
+  // Calculate summary metrics
+  const calculateSummary = (positions) => {
+    const totals = positions.reduce((acc, pos) => {
+      acc.count += 1;
+      acc.value += pos.current_value || 0;
+      acc.costBasis += pos.cost_basis || 0;
+      acc.pnl += pos.unrealized_pnl || 0;
+      return acc;
+    }, { count: 0, value: 0, costBasis: 0, pnl: 0 });
+
+    totals.pnlPercent = totals.costBasis !== 0 
+      ? ((totals.pnl / Math.abs(totals.costBasis)) * 100).toFixed(1)
+      : '0.0';
+    
+    return totals;
+  };
+
+  // Render summary row component
+  const renderSummaryRow = (summary, label, level = 'strategy') => {
+    const pnlColor = summary.pnl >= 0 ? 'text-green-600' : 'text-red-600';
+    const bgClass = level === 'overall' 
+      ? 'bg-blue-50 border-y-2 border-blue-200' 
+      : level === 'account'
+      ? 'bg-gray-100 border-y border-gray-300'
+      : 'bg-gray-50 border-b border-gray-200';
+    
+    return (
+      <tr className={bgClass}>
+        <td colSpan="4" className="px-4 py-1.5 text-xs font-semibold text-gray-700">
+          {label} Summary
+        </td>
+        <td className="px-2 py-1.5 text-right text-xs font-semibold text-gray-900">
+          {formatCurrency(summary.costBasis)}
+        </td>
+        <td className="px-2 py-1.5 text-right text-xs font-semibold text-gray-900">
+          {formatCurrency(summary.value)}
+        </td>
+        <td className={`px-2 py-1.5 text-right text-xs font-bold ${pnlColor}`}>
+          {formatCurrency(summary.pnl)}
+        </td>
+        <td className={`px-2 py-1.5 text-right text-xs font-bold ${pnlColor}`}>
+          {summary.pnlPercent}%
+        </td>
+        <td colSpan="3" className="px-2 py-1.5 text-right text-xs font-medium text-gray-600">
+          {summary.count} position{summary.count !== 1 ? 's' : ''}
+        </td>
+      </tr>
+    );
+  };
+
   const positions = data?.positions || [];
 
   // Calculate days until expiration
@@ -711,17 +761,46 @@ export const SchwabPositionsView = () => {
                         </React.Fragment>
                       ))}
                       
+                      {/* Strategy Summary */}
+                      {!isStrategyCollapsed && (() => {
+                        const strategyPositions = [];
+                        Object.values(symbols).forEach(symbolPositions => {
+                          strategyPositions.push(...symbolPositions);
+                        });
+                        const strategySummary = calculateSummary(strategyPositions);
+                        return renderSummaryRow(strategySummary, getStrategyLabel(strategyType), 'strategy');
+                      })()}
+                      
                       </React.Fragment>
                       )}
                     </React.Fragment>
                   );
                 })}
                   
+                  {/* Account Summary */}
+                  {!isAccountCollapsed && (() => {
+                    const accountPositions = [];
+                    Object.values(strategies).forEach(symbols => {
+                      Object.values(symbols).forEach(symbolPositions => {
+                        accountPositions.push(...symbolPositions);
+                      });
+                    });
+                    const accountSummary = calculateSummary(accountPositions);
+                    return renderSummaryRow(accountSummary, `Account ${accountNumber}`, 'account');
+                  })()}
+                  
                   </React.Fragment>
                   )}
                 </React.Fragment>
               );
             })}
+            
+            {/* Overall Summary */}
+            {positions.length > 0 && (() => {
+              const overallSummary = calculateSummary(positions);
+              return renderSummaryRow(overallSummary, 'Overall Portfolio', 'overall');
+            })()}
+            
             </tbody>
           </table>
         )}
