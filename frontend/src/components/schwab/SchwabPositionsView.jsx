@@ -10,6 +10,9 @@ import { RefreshCw, ChevronRight, ChevronDown } from 'lucide-react';
 export const SchwabPositionsView = () => {
   const queryClient = useQueryClient();
   const [expandedRows, setExpandedRows] = useState(new Set());
+  const [collapsedAccounts, setCollapsedAccounts] = useState(new Set());
+  const [collapsedStrategies, setCollapsedStrategies] = useState(new Set());
+  const [allExpanded, setAllExpanded] = useState(true);
   const [filters, setFilters] = useState({
     status: 'active',
     account_id: '',
@@ -38,6 +41,47 @@ export const SchwabPositionsView = () => {
       newExpanded.add(id);
     }
     setExpandedRows(newExpanded);
+  };
+
+  const toggleAccount = (accountNumber) => {
+    const newCollapsed = new Set(collapsedAccounts);
+    if (newCollapsed.has(accountNumber)) {
+      newCollapsed.delete(accountNumber);
+    } else {
+      newCollapsed.add(accountNumber);
+    }
+    setCollapsedAccounts(newCollapsed);
+  };
+
+  const toggleStrategy = (key) => {
+    const newCollapsed = new Set(collapsedStrategies);
+    if (newCollapsed.has(key)) {
+      newCollapsed.delete(key);
+    } else {
+      newCollapsed.add(key);
+    }
+    setCollapsedStrategies(newCollapsed);
+  };
+
+  const toggleAll = () => {
+    if (allExpanded) {
+      // Collapse everything
+      const allAccounts = new Set(Object.keys(groupedData));
+      const allStrats = new Set();
+      Object.entries(groupedData).forEach(([account, strategies]) => {
+        Object.keys(strategies).forEach(strategy => {
+          allStrats.add(`${account}-${strategy}`);
+        });
+      });
+      setCollapsedAccounts(allAccounts);
+      setCollapsedStrategies(allStrats);
+      setExpandedRows(new Set());
+    } else {
+      // Expand everything
+      setCollapsedAccounts(new Set());
+      setCollapsedStrategies(new Set());
+    }
+    setAllExpanded(!allExpanded);
   };
 
   const formatCurrency = (value) => {
@@ -335,6 +379,13 @@ export const SchwabPositionsView = () => {
             {/* Actions */}
             <div className="border-l pl-2 flex gap-1">
               <button
+                onClick={toggleAll}
+                className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                title={allExpanded ? 'Collapse All' : 'Expand All'}
+              >
+                {allExpanded ? 'Collapse All' : 'Expand All'}
+              </button>
+              <button
                 onClick={() => refetch()}
                 disabled={isLoading}
                 className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50 transition-colors"
@@ -410,33 +461,66 @@ export const SchwabPositionsView = () => {
               </tr>
             </thead>
             <tbody className="bg-white">
-              {Object.entries(groupedData).map(([accountNumber, strategies]) => (
+              {Object.entries(groupedData).map(([accountNumber, strategies]) => {
+                const isAccountCollapsed = collapsedAccounts.has(accountNumber);
+                const accountPositionCount = Object.values(strategies).reduce((sum, symbols) => 
+                  sum + Object.values(symbols).reduce((s, positions) => s + positions.length, 0), 0);
+                
+                return (
                 <React.Fragment key={accountNumber}>
                   {/* Account Section Header */}
-                  <tr className="bg-gray-200 border-y border-gray-300">
+                  <tr 
+                    className="bg-gray-200 border-y border-gray-300 cursor-pointer hover:bg-gray-250"
+                    onClick={() => toggleAccount(accountNumber)}
+                  >
                     <td colSpan="11" className="px-2 py-1.5 font-semibold text-gray-900">
-                      Account: {accountNumber}
-                      <span className="ml-3 text-gray-600 font-normal">
-                        {Object.values(strategies).reduce((sum, symbols) => 
-                          sum + Object.values(symbols).reduce((s, positions) => s + positions.length, 0), 0
-                        )} position{Object.values(strategies).reduce((sum, symbols) => 
-                          sum + Object.values(symbols).reduce((s, positions) => s + positions.length, 0), 0) !== 1 ? 's' : ''}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {isAccountCollapsed ? (
+                          <ChevronRight className="w-4 h-4 text-gray-600" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-gray-600" />
+                        )}
+                        <span>Account: {accountNumber}</span>
+                        <span className="ml-1 text-gray-600 font-normal">
+                          ({accountPositionCount} position{accountPositionCount !== 1 ? 's' : ''})
+                        </span>
+                      </div>
                     </td>
                   </tr>
                   
+                  {!isAccountCollapsed && (
+                  <React.Fragment>
+                  
                   {/* Strategy Groups */}
-                  {Object.entries(strategies).map(([strategyType, symbols]) => (
-                    <React.Fragment key={`${accountNumber}-${strategyType}`}>
+                  {Object.entries(strategies).map(([strategyType, symbols]) => {
+                    const strategyKey = `${accountNumber}-${strategyType}`;
+                    const isStrategyCollapsed = collapsedStrategies.has(strategyKey);
+                    const strategyPositionCount = Object.values(symbols).reduce((sum, positions) => sum + positions.length, 0);
+                    
+                    return (
+                    <React.Fragment key={strategyKey}>
                       {/* Strategy Section Header */}
-                      <tr className="bg-gray-100 border-b border-gray-200">
+                      <tr 
+                        className="bg-gray-100 border-b border-gray-200 cursor-pointer hover:bg-gray-150"
+                        onClick={() => toggleStrategy(strategyKey)}
+                      >
                         <td colSpan="11" className="px-4 py-1 font-medium text-gray-800 text-xs">
-                          {getStrategyLabel(strategyType)}
-                          <span className="ml-2 text-gray-600 font-normal">
-                            ({Object.values(symbols).reduce((sum, positions) => sum + positions.length, 0)})
-                          </span>
+                          <div className="flex items-center gap-2">
+                            {isStrategyCollapsed ? (
+                              <ChevronRight className="w-3 h-3 text-gray-600" />
+                            ) : (
+                              <ChevronDown className="w-3 h-3 text-gray-600" />
+                            )}
+                            <span>{getStrategyLabel(strategyType)}</span>
+                            <span className="text-gray-600 font-normal">
+                              ({strategyPositionCount})
+                            </span>
+                          </div>
                         </td>
                       </tr>
+                      
+                      {!isStrategyCollapsed && (
+                      <React.Fragment>
                       
                       {/* Symbol Groups */}
                       {Object.entries(symbols).map(([symbol, symbolPositions]) => (
@@ -582,10 +666,14 @@ export const SchwabPositionsView = () => {
               })}
                         </React.Fragment>
                       ))}
+                      )}
                     </React.Fragment>
-                  ))}
+                    );
+                  })}
+                  )}
                 </React.Fragment>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         )}
