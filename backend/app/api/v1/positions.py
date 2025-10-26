@@ -28,8 +28,9 @@ def get_actual_positions(
     symbol: Optional[str] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    db: Session = Depends(get_db)
+    # TODO: Re-enable auth when frontend login is implemented
+    # current_user: User = Depends(get_current_active_user)
 ):
     """
     Get all actual (Schwab-synced) positions for current user
@@ -41,9 +42,12 @@ def get_actual_positions(
     - skip: Pagination offset
     - limit: Pagination limit
     """
+    # TODO: Use real user_id when auth is enabled
+    test_user_id = "00000000-0000-0000-0000-000000000001"
+    
     positions = position_service.get_positions(
         db,
-        user_id=current_user.id,
+        user_id=test_user_id,
         flavor="actual",
         status=status,
         skip=skip,
@@ -66,8 +70,9 @@ def get_actual_positions(
 @router.post("/sync", response_model=SyncResponse)
 def sync_positions(
     sync_request: SyncRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    db: Session = Depends(get_db)
+    # TODO: Re-enable auth when frontend login is implemented
+    # current_user: User = Depends(get_current_active_user)
 ):
     """
     Trigger sync from Schwab API
@@ -76,9 +81,13 @@ def sync_positions(
     - account_ids: Optional list of specific account IDs to sync
     """
     try:
+        # TODO: Use real user_id when auth is enabled
+        # For now, use a test user ID
+        test_user_id = "00000000-0000-0000-0000-000000000001"
+        
         synced_positions = position_service.sync_schwab_positions(
             db,
-            user_id=current_user.id,
+            user_id=test_user_id,
             account_ids=sync_request.account_ids
         )
         
