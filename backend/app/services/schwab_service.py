@@ -25,21 +25,47 @@ def get_schwab_client(user_id: str, db: Session):
     if settings.USE_MOCK_SCHWAB_DATA:
         return get_mock_schwab_client()
     
-    # TODO: Implement real Schwab API client
-    # credentials = db.query(UserSchwabCredentials).filter(
-    #     UserSchwabCredentials.user_id == user_id
-    # ).first()
-    # 
-    # if not credentials:
-    #     raise ValueError("Schwab credentials not found for user")
-    # 
-    # # Decrypt tokens
-    # access_token = decrypt_data(credentials.access_token)
-    # 
-    # # Create schwab-py client
-    # return create_real_schwab_client(access_token)
+    # Real Schwab API using schwab-py library
+    try:
+        import schwab.auth as schwab_auth
+        import toml
+        import os
+    except ImportError as e:
+        raise RuntimeError(f"Required library not installed: {e}")
     
-    raise NotImplementedError("Real Schwab API not yet implemented")
+    # Load config from schwab_config.toml
+    config_path = os.path.join(os.path.dirname(__file__), '../../schwab_config.toml')
+    if not os.path.exists(config_path):
+        raise ValueError(f"Schwab configuration file not found at {config_path}")
+    
+    with open(config_path, 'r') as f:
+        config = toml.load(f)
+    
+    consumer_key = config.get('consumer_key')
+    app_secret = config.get('app_secret')
+    token_path = config.get('token_path', 'schwab_tokens.json')
+    
+    if not consumer_key or not app_secret:
+        raise ValueError("Schwab credentials not configured in schwab_config.toml")
+    
+    # Make token path absolute
+    if not os.path.isabs(token_path):
+        token_path = os.path.join(os.path.dirname(__file__), '../..', token_path)
+    
+    if not os.path.exists(token_path):
+        raise ValueError(f"Schwab token file not found at {token_path}. Run get_schwab_token.py first.")
+    
+    # Create client from token file
+    try:
+        client = schwab_auth.client_from_token_file(
+            token_path,
+            consumer_key,
+            app_secret,
+            enforce_enums=False
+        )
+        return client
+    except Exception as e:
+        raise RuntimeError(f"Failed to create Schwab client: {e}")
 
 
 def fetch_account_data(user_id: str, db: Session, account_ids: Optional[List[str]] = None) -> Dict[str, Any]:
