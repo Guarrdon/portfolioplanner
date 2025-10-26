@@ -1,10 +1,10 @@
 """Position models"""
-from sqlalchemy import Column, String, Boolean, DateTime, Numeric, Date, ForeignKey, Text, ARRAY
+from sqlalchemy import Column, String, Boolean, DateTime, Numeric, Date, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
 
-from app.core.database import Base, GUID
+from app.core.database import Base, GUID, StringArray
 
 
 class Position(Base):
@@ -45,7 +45,7 @@ class Position(Base):
     
     # Metadata
     notes = Column(Text)
-    tags = Column(ARRAY(String))  # PostgreSQL array of strings
+    tags = Column(StringArray)  # Array of strings (works with both PostgreSQL and SQLite)
     
     # Dates
     entry_date = Column(Date)

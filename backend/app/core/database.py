@@ -1,11 +1,12 @@
 """
 Database configuration and session management
 """
-from sqlalchemy import create_engine, TypeDecorator, CHAR
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy import create_engine, TypeDecorator, CHAR, Text
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID, ARRAY as PG_ARRAY
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from uuid import UUID
+import json
 from .config import settings
 
 
@@ -44,6 +45,44 @@ class GUID(TypeDecorator):
                 return UUID(value)
             else:
                 return value
+
+
+class StringArray(TypeDecorator):
+    """
+    Platform-independent array of strings type.
+    
+    Uses PostgreSQL's ARRAY type when available, otherwise uses
+    JSON encoding for storage in other databases.
+    """
+    impl = Text
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == 'postgresql':
+            return dialect.type_descriptor(PG_ARRAY(Text))
+        else:
+            return dialect.type_descriptor(Text())
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return value
+        elif dialect.name == 'postgresql':
+            return value
+        else:
+            # Store as JSON string for SQLite
+            return json.dumps(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return []
+        elif dialect.name == 'postgresql':
+            return value if value else []
+        else:
+            # Parse JSON string for SQLite
+            try:
+                return json.loads(value) if value else []
+            except (json.JSONDecodeError, TypeError):
+                return []
 
 # Create database engine
 engine = create_engine(
