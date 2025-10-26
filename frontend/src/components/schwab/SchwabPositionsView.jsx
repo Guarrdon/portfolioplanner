@@ -1,15 +1,15 @@
 /**
- * Schwab Positions View
- * 
- * Displays actual positions synced from Schwab API
+ * Schwab Positions View - Compact Data Grid
+ * Dense, application-style interface for managing 100+ positions
  */
 import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tantml:function_calls';
 import { fetchActualPositions, syncSchwabPositions } from '../../services/schwab';
-import { RefreshCw, Lock, TrendingUp, TrendingDown, DollarSign } from 'lucide-react';
+import { RefreshCw, ChevronRight, ChevronDown } from 'lucide-react';
 
 export const SchwabPositionsView = () => {
   const queryClient = useQueryClient();
+  const [expandedRows, setExpandedRows] = useState(new Set());
   const [filters, setFilters] = useState({
     status: 'active',
     account_id: '',
@@ -30,8 +30,14 @@ export const SchwabPositionsView = () => {
     }
   });
 
-  const handleSync = () => {
-    syncMutation.mutate();
+  const toggleRow = (id) => {
+    const newExpanded = new Set(expandedRows);
+    if (newExpanded.has(id)) {
+      newExpanded.delete(id);
+    } else {
+      newExpanded.add(id);
+    }
+    setExpandedRows(newExpanded);
   };
 
   const formatCurrency = (value) => {
@@ -39,7 +45,8 @@ export const SchwabPositionsView = () => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
-      minimumFractionDigits: 2
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
     }).format(value);
   };
 
@@ -47,326 +54,308 @@ export const SchwabPositionsView = () => {
     if (value === null || value === undefined) return '-';
     return new Intl.NumberFormat('en-US', {
       minimumFractionDigits: 0,
-      maximumFractionDigits: 4
+      maximumFractionDigits: 0
     }).format(value);
   };
 
-  const getStrategyLabel = (strategyType) => {
-    const labels = {
-      covered_call: 'Covered Call',
-      put_spread: 'Put Spread',
-      call_spread: 'Call Spread',
-      big_option: 'Option',
-      dividend: 'Dividend Stock',
-      short_stock: 'Short Stock'
+  const formatDate = (date) => {
+    if (!date) return '-';
+    const d = new Date(date);
+    return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear().toString().slice(-2)}`;
+  };
+
+  const getStrategyAbbrev = (strategyType) => {
+    const abbrevs = {
+      covered_call: 'CC',
+      put_spread: 'PS',
+      call_spread: 'CS',
+      big_option: 'OPT',
+      dividend: 'DIV',
+      short_stock: 'SHORT'
     };
-    return labels[strategyType] || strategyType;
+    return abbrevs[strategyType] || strategyType.toUpperCase().slice(0, 4);
   };
-
-  const getPnLColor = (pnl) => {
-    if (!pnl) return 'text-gray-600';
-    return pnl >= 0 ? 'text-green-600' : 'text-red-600';
-  };
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2 text-blue-600" />
-          <p className="text-gray-600">Loading positions...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-        <p className="text-red-800">
-          Error loading positions: {error.message}
-        </p>
-        <button
-          onClick={() => refetch()}
-          className="mt-2 text-red-600 hover:text-red-800 underline"
-        >
-          Try Again
-        </button>
-      </div>
-    );
-  }
 
   const positions = data?.positions || [];
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Schwab Positions</h1>
-          <p className="text-gray-600 mt-1">
-            Your actual positions synced from Schwab
-          </p>
-        </div>
-        
-        <button
-          onClick={handleSync}
-          disabled={syncMutation.isPending}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          <RefreshCw className={`w-4 h-4 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
-          {syncMutation.isPending ? 'Syncing...' : 'Sync Now'}
-        </button>
-      </div>
-
-      {/* Sync Status */}
-      {syncMutation.isSuccess && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-          <p className="text-green-800">
-            ✓ Successfully synced {syncMutation.data.synced_count} positions
-          </p>
-        </div>
-      )}
-
-      {syncMutation.isError && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <p className="text-red-800">
-            ✗ Sync failed: {syncMutation.error.message}
-          </p>
-        </div>
-      )}
-
-      {/* Filters */}
-      <div className="bg-white rounded-lg shadow p-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Status
-            </label>
-            <select
-              value={filters.status}
-              onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="">All</option>
-              <option value="active">Active</option>
-              <option value="closed">Closed</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Symbol
-            </label>
+    <div className="h-screen flex flex-col bg-gray-50">
+      {/* Compact Toolbar */}
+      <div className="bg-white border-b shadow-sm">
+        <div className="px-3 py-2 flex items-center justify-between">
+          <h1 className="text-base font-bold text-gray-900">Schwab Positions</h1>
+          
+          <div className="flex items-center gap-2">
+            {/* Compact Filters */}
             <input
               type="text"
               value={filters.symbol}
               onChange={(e) => setFilters({ ...filters, symbol: e.target.value })}
-              placeholder="Filter by symbol..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Symbol..."
+              className="px-2 py-1 text-xs border border-gray-300 rounded w-20 focus:w-32 transition-all focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
             />
-          </div>
-
-          <div className="flex items-end">
-            <button
-              onClick={() => setFilters({ status: 'active', account_id: '', symbol: '' })}
-              className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
+            <select
+              value={filters.status}
+              onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+              className="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
             >
-              Clear Filters
-            </button>
+              <option value="">All Status</option>
+              <option value="active">Active</option>
+              <option value="closed">Closed</option>
+            </select>
+            
+            {/* Actions */}
+            <div className="border-l pl-2 flex gap-1">
+              <button
+                onClick={() => refetch()}
+                disabled={isLoading}
+                className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50 transition-colors"
+                title="Refresh"
+              >
+                <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} />
+              </button>
+              <button
+                onClick={() => syncMutation.mutate()}
+                disabled={syncMutation.isPending}
+                className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {syncMutation.isPending ? 'Syncing...' : 'Sync'}
+              </button>
+            </div>
           </div>
         </div>
+
+        {/* Status Messages */}
+        {syncMutation.isSuccess && (
+          <div className="px-3 py-1 bg-green-50 border-t border-green-100 text-green-700 text-xs">
+            ✓ Synced {syncMutation.data.synced_count} positions
+          </div>
+        )}
+        {syncMutation.isError && (
+          <div className="px-3 py-1 bg-red-50 border-t border-red-100 text-red-700 text-xs">
+            ✗ Sync failed: {syncMutation.error.message}
+          </div>
+        )}
+        {error && (
+          <div className="px-3 py-1 bg-red-50 border-t border-red-100 text-red-700 text-xs">
+            Error: {error.message}
+          </div>
+        )}
       </div>
 
-      {/* Positions List */}
-      {positions.length === 0 ? (
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
-          <Lock className="w-12 h-12 mx-auto mb-3 text-gray-400" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            No Positions Found
-          </h3>
-          <p className="text-gray-600 mb-4">
-            Click "Sync Now" to fetch your positions from Schwab
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {positions.map((position) => (
-            <PositionCard key={position.id} position={position} />
-          ))}
-        </div>
-      )}
-
-      {/* Summary Stats */}
-      {positions.length > 0 && (
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <StatCard
-              label="Total Positions"
-              value={positions.length}
-              icon={<DollarSign className="w-5 h-5" />}
-            />
-            <StatCard
-              label="Total Value"
-              value={formatCurrency(
-                positions.reduce((sum, p) => sum + (p.current_value || 0), 0)
-              )}
-              icon={<TrendingUp className="w-5 h-5" />}
-            />
-            <StatCard
-              label="Total Cost"
-              value={formatCurrency(
-                positions.reduce((sum, p) => sum + (p.cost_basis || 0), 0)
-              )}
-              icon={<DollarSign className="w-5 h-5" />}
-            />
-            <StatCard
-              label="Total P/L"
-              value={formatCurrency(
-                positions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0)
-              )}
-              valueClass={getPnLColor(
-                positions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0)
-              )}
-              icon={<TrendingUp className="w-5 h-5" />}
-            />
+      {/* Data Grid */}
+      <div className="flex-1 overflow-auto">
+        {isLoading ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center">
+              <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-600" />
+              <p className="text-xs text-gray-600">Loading...</p>
+            </div>
           </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-const PositionCard = ({ position }) => {
-  const formatCurrency = (value) => {
-    if (value === null || value === undefined) return '-';
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2
-    }).format(value);
-  };
-
-  const formatQuantity = (value) => {
-    if (value === null || value === undefined) return '-';
-    return new Intl.NumberFormat('en-US', {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 4
-    }).format(value);
-  };
-
-  const getStrategyLabel = (strategyType) => {
-    const labels = {
-      covered_call: 'Covered Call',
-      put_spread: 'Put Spread',
-      call_spread: 'Call Spread',
-      big_option: 'Option',
-      dividend: 'Dividend Stock',
-      short_stock: 'Short Stock'
-    };
-    return labels[strategyType] || strategyType;
-  };
-
-  const getPnLColor = (pnl) => {
-    if (!pnl) return 'text-gray-600';
-    return pnl >= 0 ? 'text-green-600' : 'text-red-600';
-  };
-
-  const getPnLIcon = (pnl) => {
-    if (!pnl) return null;
-    return pnl >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />;
-  };
-
-  return (
-    <div className="bg-white rounded-lg shadow hover:shadow-md transition-shadow p-6">
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex-1">
-          <div className="flex items-center gap-3 mb-2">
-            <h3 className="text-xl font-bold text-gray-900">{position.symbol}</h3>
-            <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded">
-              {getStrategyLabel(position.strategy_type)}
-            </span>
-            <span className="flex items-center gap-1 text-gray-500">
-              <Lock className="w-3 h-3" />
-              <span className="text-xs">Read Only</span>
-            </span>
+        ) : positions.length === 0 ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center text-gray-500">
+              <p className="text-sm">No positions found</p>
+              <button
+                onClick={() => syncMutation.mutate()}
+                className="mt-2 text-xs text-blue-600 hover:underline"
+              >
+                Click Sync to fetch positions
+              </button>
+            </div>
           </div>
-          <p className="text-sm text-gray-600">
-            Account: {position.account_number || 'N/A'}
-          </p>
-        </div>
-        
-        <div className="text-right">
-          <div className={`flex items-center justify-end gap-1 text-lg font-bold ${getPnLColor(position.unrealized_pnl)}`}>
-            {getPnLIcon(position.unrealized_pnl)}
-            {formatCurrency(position.unrealized_pnl)}
-          </div>
-          <p className="text-sm text-gray-500">P/L</p>
-        </div>
+        ) : (
+          <table className="w-full text-xs border-collapse">
+            <thead className="bg-gray-100 sticky top-0 z-10 border-b">
+              <tr>
+                <th className="text-left px-2 py-1.5 font-semibold w-6"></th>
+                <th className="text-left px-2 py-1.5 font-semibold w-16">Symbol</th>
+                <th className="text-left px-2 py-1.5 font-semibold w-12">Strat</th>
+                <th className="text-left px-2 py-1.5 font-semibold w-24">Account</th>
+                <th className="text-right px-2 py-1.5 font-semibold w-14">Qty</th>
+                <th className="text-right px-2 py-1.5 font-semibold w-20">Cost</th>
+                <th className="text-right px-2 py-1.5 font-semibold w-20">Value</th>
+                <th className="text-right px-2 py-1.5 font-semibold w-20">P&L</th>
+                <th className="text-right px-2 py-1.5 font-semibold w-14">P&L %</th>
+                <th className="text-center px-2 py-1.5 font-semibold w-16">Status</th>
+                <th className="text-right px-2 py-1.5 font-semibold w-16">Entry</th>
+                <th className="text-center px-2 py-1.5 font-semibold w-10">Legs</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white">
+              {positions.map((position) => {
+                const isExpanded = expandedRows.has(position.id);
+                const pnlPercent = position.cost_basis && position.cost_basis !== 0
+                  ? ((position.unrealized_pnl / Math.abs(position.cost_basis)) * 100).toFixed(1)
+                  : null;
+                
+                return (
+                  <React.Fragment key={position.id}>
+                    {/* Main Position Row */}
+                    <tr 
+                      className="border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors"
+                      onClick={() => position.legs && position.legs.length > 0 && toggleRow(position.id)}
+                    >
+                      <td className="px-2 py-1.5">
+                        {position.legs && position.legs.length > 0 ? (
+                          isExpanded ? 
+                            <ChevronDown className="w-3 h-3 text-gray-400" /> : 
+                            <ChevronRight className="w-3 h-3 text-gray-400" />
+                        ) : (
+                          <span className="w-3 inline-block"></span>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 font-semibold text-gray-900">{position.symbol}</td>
+                      <td className="px-2 py-1.5">
+                        <span className="px-1 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">
+                          {getStrategyAbbrev(position.strategy_type)}
+                        </span>
+                      </td>
+                      <td className="px-2 py-1.5 text-gray-600 font-mono text-xs">
+                        {position.account_number || '-'}
+                      </td>
+                      <td className="px-2 py-1.5 text-right text-gray-900">
+                        {formatQuantity(position.quantity)}
+                      </td>
+                      <td className="px-2 py-1.5 text-right text-gray-700">
+                        {formatCurrency(position.cost_basis)}
+                      </td>
+                      <td className="px-2 py-1.5 text-right font-semibold text-gray-900">
+                        {formatCurrency(position.current_value)}
+                      </td>
+                      <td className={`px-2 py-1.5 text-right font-semibold ${
+                        position.unrealized_pnl > 0 ? 'text-green-600' : 
+                        position.unrealized_pnl < 0 ? 'text-red-600' : 'text-gray-600'
+                      }`}>
+                        {formatCurrency(position.unrealized_pnl)}
+                      </td>
+                      <td className={`px-2 py-1.5 text-right ${
+                        pnlPercent > 0 ? 'text-green-600' : 
+                        pnlPercent < 0 ? 'text-red-600' : 'text-gray-600'
+                      }`}>
+                        {pnlPercent !== null ? `${pnlPercent}%` : '-'}
+                      </td>
+                      <td className="px-2 py-1.5 text-center">
+                        <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ${
+                          position.status === 'active' 
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-gray-100 text-gray-600'
+                        }`}>
+                          {position.status === 'active' ? 'ACT' : 'CLS'}
+                        </span>
+                      </td>
+                      <td className="px-2 py-1.5 text-right text-gray-600">
+                        {formatDate(position.entry_date)}
+                      </td>
+                      <td className="px-2 py-1.5 text-center text-gray-600">
+                        {position.legs?.length || 0}
+                      </td>
+                    </tr>
+
+                    {/* Expanded Legs Rows */}
+                    {isExpanded && position.legs && position.legs.length > 0 && (
+                      <tr className="bg-gray-50">
+                        <td colSpan="12" className="px-0 py-0">
+                          <div className="px-8 py-2">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="text-gray-600 border-b border-gray-200">
+                                  <th className="text-left px-2 py-1 font-medium w-16">Type</th>
+                                  <th className="text-left px-2 py-1 font-medium w-24">Symbol</th>
+                                  <th className="text-left px-2 py-1 font-medium w-16">Option</th>
+                                  <th className="text-right px-2 py-1 font-medium w-20">Strike</th>
+                                  <th className="text-right px-2 py-1 font-medium w-20">Expiration</th>
+                                  <th className="text-right px-2 py-1 font-medium w-16">Qty</th>
+                                  <th className="text-right px-2 py-1 font-medium w-20">Premium</th>
+                                  <th className="text-right px-2 py-1 font-medium w-20">Current</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {position.legs.map((leg, index) => (
+                                  <tr key={index} className="border-b border-gray-200 last:border-0">
+                                    <td className="px-2 py-1.5">
+                                      <span className="px-1 py-0.5 bg-gray-200 text-gray-700 rounded text-xs font-mono">
+                                        {leg.asset_type === 'stock' ? 'STK' : 'OPT'}
+                                      </span>
+                                    </td>
+                                    <td className="px-2 py-1.5 font-semibold text-gray-900">
+                                      {leg.symbol || '-'}
+                                    </td>
+                                    <td className="px-2 py-1.5">
+                                      {leg.option_type ? (
+                                        <span className={`font-semibold ${
+                                          leg.option_type === 'call' ? 'text-green-600' : 'text-red-600'
+                                        }`}>
+                                          {leg.option_type === 'call' ? 'C' : 'P'}
+                                        </span>
+                                      ) : '-'}
+                                    </td>
+                                    <td className="px-2 py-1.5 text-right text-gray-900">
+                                      {leg.strike ? `$${parseFloat(leg.strike).toFixed(2)}` : '-'}
+                                    </td>
+                                    <td className="px-2 py-1.5 text-right text-gray-700">
+                                      {formatDate(leg.expiration)}
+                                    </td>
+                                    <td className={`px-2 py-1.5 text-right font-semibold ${
+                                      leg.quantity < 0 ? 'text-red-600' : 'text-green-600'
+                                    }`}>
+                                      {formatQuantity(leg.quantity)}
+                                    </td>
+                                    <td className="px-2 py-1.5 text-right text-gray-700">
+                                      {formatCurrency(leg.premium)}
+                                    </td>
+                                    <td className="px-2 py-1.5 text-right text-gray-900">
+                                      {formatCurrency(leg.current_price)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-gray-100">
-        <div>
-          <p className="text-xs text-gray-500 mb-1">Quantity</p>
-          <p className="font-medium">{formatQuantity(position.quantity)}</p>
-        </div>
-        <div>
-          <p className="text-xs text-gray-500 mb-1">Cost Basis</p>
-          <p className="font-medium">{formatCurrency(position.cost_basis)}</p>
-        </div>
-        <div>
-          <p className="text-xs text-gray-500 mb-1">Current Value</p>
-          <p className="font-medium">{formatCurrency(position.current_value)}</p>
-        </div>
-        <div>
-          <p className="text-xs text-gray-500 mb-1">Status</p>
-          <p className="font-medium capitalize">{position.status}</p>
-        </div>
-      </div>
-
-      {/* Legs */}
-      {position.legs && position.legs.length > 0 && (
-        <div className="mt-4 pt-4 border-t border-gray-100">
-          <p className="text-sm font-medium text-gray-700 mb-2">Position Legs:</p>
-          <div className="space-y-2">
-            {position.legs.map((leg, index) => (
-              <div key={index} className="flex items-center justify-between text-sm bg-gray-50 rounded p-2">
-                <span>
-                  {leg.asset_type === 'stock' ? (
-                    <span className="font-medium">{leg.symbol} Stock</span>
-                  ) : (
-                    <span>
-                      <span className="font-medium">{leg.symbol}</span>
-                      <span className="text-gray-600 ml-2">
-                        {leg.option_type?.toUpperCase()} ${leg.strike} {leg.expiration}
-                      </span>
-                    </span>
-                  )}
+      {/* Compact Status Bar */}
+      <div className="bg-white border-t px-3 py-1 text-xs text-gray-600 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <span className="font-medium">{positions.length} position{positions.length !== 1 ? 's' : ''}</span>
+          {positions.length > 0 && (
+            <>
+              <span className="text-gray-400">|</span>
+              <span>
+                Total Value: <span className="font-semibold text-gray-900">
+                  {formatCurrency(positions.reduce((sum, p) => sum + (p.current_value || 0), 0))}
                 </span>
-                <span className={leg.quantity < 0 ? 'text-red-600' : 'text-green-600'}>
-                  {formatQuantity(leg.quantity)}
+              </span>
+              <span className="text-gray-400">|</span>
+              <span>
+                Total P&L: <span className={`font-semibold ${
+                  positions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0) >= 0
+                    ? 'text-green-600'
+                    : 'text-red-600'
+                }`}>
+                  {formatCurrency(positions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0))}
                 </span>
-              </div>
-            ))}
-          </div>
+              </span>
+            </>
+          )}
         </div>
-      )}
-    </div>
-  );
-};
-
-const StatCard = ({ label, value, valueClass = 'text-gray-900', icon }) => {
-  return (
-    <div className="flex items-center gap-3">
-      <div className="p-3 bg-white rounded-lg">
-        {icon}
-      </div>
-      <div>
-        <p className="text-sm text-gray-600">{label}</p>
-        <p className={`text-lg font-bold ${valueClass}`}>{value}</p>
+        {positions.length > 0 && positions[0].last_synced && (
+          <span className="text-gray-500">
+            Last sync: {formatDate(positions[0].last_synced)} {new Date(positions[0].last_synced).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+          </span>
+        )}
       </div>
     </div>
   );
 };
 
 export default SchwabPositionsView;
-

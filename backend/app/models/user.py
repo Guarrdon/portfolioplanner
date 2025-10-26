@@ -1,5 +1,5 @@
 """User model"""
-from sqlalchemy import Column, String, Boolean, DateTime, Text
+from sqlalchemy import Column, String, Boolean, DateTime, Text, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
@@ -51,7 +51,7 @@ class UserSchwabCredentials(Base):
     __tablename__ = "user_schwab_credentials"
     
     id = Column(GUID, primary_key=True, default=uuid.uuid4)
-    user_id = Column(GUID, nullable=False, unique=True, index=True)
+    user_id = Column(GUID, ForeignKey("users.id"), nullable=False, unique=True, index=True)
     
     # Encrypted tokens
     access_token = Column(Text, nullable=False)  # Encrypted
@@ -78,7 +78,7 @@ class UserSchwabAccount(Base):
     __tablename__ = "user_schwab_accounts"
     
     id = Column(GUID, primary_key=True, default=uuid.uuid4)
-    user_id = Column(GUID, nullable=False, index=True)
+    user_id = Column(GUID, ForeignKey("users.id"), nullable=False, index=True)
     
     # Account details
     account_hash = Column(String(255), nullable=False)
@@ -105,8 +105,8 @@ class Friendship(Base):
     __tablename__ = "friendships"
     
     id = Column(GUID, primary_key=True, default=uuid.uuid4)
-    user_id = Column(GUID, nullable=False, index=True)
-    friend_id = Column(GUID, nullable=False, index=True)
+    user_id = Column(GUID, ForeignKey("users.id"), nullable=False, index=True)
+    friend_id = Column(GUID, ForeignKey("users.id"), nullable=False, index=True)
     
     # Status
     status = Column(String(20), default="pending")  # pending, accepted, rejected, blocked

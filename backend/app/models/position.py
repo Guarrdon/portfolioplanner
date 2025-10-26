@@ -17,7 +17,7 @@ class Position(Base):
     flavor = Column(String(20), nullable=False, index=True)  # actual, idea, shared
     
     # Ownership
-    user_id = Column(GUID, nullable=False, index=True)
+    user_id = Column(GUID, ForeignKey("users.id"), nullable=False, index=True)
     original_position_id = Column(GUID, ForeignKey("positions.id"), nullable=True)
     
     # Account info
@@ -115,8 +115,8 @@ class PositionShare(Base):
     
     id = Column(GUID, primary_key=True, default=uuid.uuid4)
     position_id = Column(GUID, ForeignKey("positions.id", ondelete="CASCADE"), nullable=False, index=True)
-    owner_id = Column(GUID, nullable=False, index=True)
-    recipient_id = Column(GUID, nullable=False, index=True)
+    owner_id = Column(GUID, ForeignKey("users.id"), nullable=False, index=True)
+    recipient_id = Column(GUID, ForeignKey("users.id"), nullable=False, index=True)
     
     # Access control
     access_level = Column(String(20), default="view")  # view, comment

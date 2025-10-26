@@ -13,7 +13,7 @@ class Comment(Base):
     
     id = Column(GUID, primary_key=True, default=uuid.uuid4)
     position_id = Column(GUID, ForeignKey("positions.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id = Column(GUID, nullable=False, index=True)
+    user_id = Column(GUID, ForeignKey("users.id"), nullable=False, index=True)
     
     # Content
     text = Column(Text, nullable=False)
