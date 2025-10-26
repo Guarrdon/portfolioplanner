@@ -299,12 +299,11 @@ export const SchwabPositionsView = () => {
     const month = expDate.toLocaleString('en-US', { month: 'short' }).toUpperCase();
     const year = expDate.getFullYear().toString().slice(-2);
     
-    // Format: "SYMBOL DDMMMYY STRIKE C/P"
+    // Format: "SYMBOL DDMMMYY STRIKE" (without C/P since we show badge separately)
     const underlying = leg.symbol.split(' ')[0]; // Extract underlying from OCC symbol
     const strike = leg.strike ? Math.round(parseFloat(leg.strike)) : '';
-    const type = leg.option_type ? leg.option_type.charAt(0).toUpperCase() : '';
     
-    return `${underlying} ${day}${month}${year} ${strike} ${type}`;
+    return `${underlying} ${day}${month}${year} ${strike}`;
   };
 
   return (
@@ -537,15 +536,15 @@ export const SchwabPositionsView = () => {
                                           </span>
                                         ) : (
                                           <div className="flex items-center gap-2">
-                                            <span className="font-mono font-bold text-gray-900">
-                                              {formatOptionSymbol(leg)}
-                                            </span>
                                             <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${
                                               leg.option_type === 'call' 
                                                 ? 'bg-blue-600 text-white' 
                                                 : 'bg-purple-600 text-white'
                                             }`}>
                                               {leg.option_type === 'call' ? 'C' : 'P'}
+                                            </span>
+                                            <span className="font-mono font-bold text-gray-900">
+                                              {formatOptionSymbol(leg)}
                                             </span>
                                           </div>
                                         )}
