@@ -5,14 +5,15 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchActualPositions, syncSchwabPositions } from '../../services/schwab';
-import { RefreshCw, ChevronRight, ChevronDown } from 'lucide-react';
+import { RefreshCw, ChevronRight, ChevronDown, Minimize2, Maximize2, ChevronsRight, ChevronsDown } from 'lucide-react';
 
 export const SchwabPositionsView = () => {
   const queryClient = useQueryClient();
   const [expandedRows, setExpandedRows] = useState(new Set());
   const [collapsedAccounts, setCollapsedAccounts] = useState(new Set());
   const [collapsedStrategies, setCollapsedStrategies] = useState(new Set());
-  const [allExpanded, setAllExpanded] = useState(true);
+  // Expansion states: 0=collapsed, 1=accounts, 2=strategies, 3=fully expanded
+  const [expansionLevel, setExpansionLevel] = useState(2);
   const [filters, setFilters] = useState({
     status: 'active',
     account_id: '',
@@ -63,25 +64,54 @@ export const SchwabPositionsView = () => {
     setCollapsedStrategies(newCollapsed);
   };
 
-  const toggleAll = () => {
-    if (allExpanded) {
-      // Collapse everything
-      const allAccounts = new Set(Object.keys(groupedData));
-      const allStrats = new Set();
-      Object.entries(groupedData).forEach(([account, strategies]) => {
-        Object.keys(strategies).forEach(strategy => {
-          allStrats.add(`${account}-${strategy}`);
-        });
+  const cycleExpansion = () => {
+    // Cycle through: Collapsed (0) → Accounts (1) → Strategies (2) → Fully Expanded (3) → back to 0
+    const nextLevel = (expansionLevel + 1) % 4;
+    setExpansionLevel(nextLevel);
+    
+    const allAccounts = new Set(Object.keys(groupedData));
+    const allStrats = new Set();
+    Object.entries(groupedData).forEach(([account, strategies]) => {
+      Object.keys(strategies).forEach(strategy => {
+        allStrats.add(`${account}-${strategy}`);
       });
-      setCollapsedAccounts(allAccounts);
-      setCollapsedStrategies(allStrats);
-      setExpandedRows(new Set());
-    } else {
-      // Expand everything
-      setCollapsedAccounts(new Set());
-      setCollapsedStrategies(new Set());
+    });
+    
+    switch (nextLevel) {
+      case 0: // Collapsed - only account headers visible
+        setCollapsedAccounts(allAccounts);
+        setCollapsedStrategies(allStrats);
+        setExpandedRows(new Set());
+        break;
+      case 1: // Accounts expanded - show strategies but keep them collapsed
+        setCollapsedAccounts(new Set());
+        setCollapsedStrategies(allStrats);
+        setExpandedRows(new Set());
+        break;
+      case 2: // Strategies expanded - show positions but keep legs collapsed
+        setCollapsedAccounts(new Set());
+        setCollapsedStrategies(new Set());
+        setExpandedRows(new Set());
+        break;
+      case 3: // Fully expanded - show all legs
+        setCollapsedAccounts(new Set());
+        setCollapsedStrategies(new Set());
+        // Expand all position rows to show legs
+        const allPositionIds = new Set();
+        Object.values(groupedData).forEach(strategies => {
+          Object.values(strategies).forEach(symbols => {
+            Object.values(symbols).forEach(positions => {
+              positions.forEach(position => {
+                if (position.legs && position.legs.length > 0) {
+                  allPositionIds.add(position.id);
+                }
+              });
+            });
+          });
+        });
+        setExpandedRows(allPositionIds);
+        break;
     }
-    setAllExpanded(!allExpanded);
   };
 
   const formatCurrency = (value) => {
@@ -379,11 +409,25 @@ export const SchwabPositionsView = () => {
             {/* Actions */}
             <div className="border-l pl-2 flex gap-1">
               <button
-                onClick={toggleAll}
-                className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
-                title={allExpanded ? 'Collapse All' : 'Expand All'}
+                onClick={cycleExpansion}
+                className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors flex items-center gap-1.5"
+                title={
+                  expansionLevel === 0 ? 'Collapsed - Click to expand accounts' :
+                  expansionLevel === 1 ? 'Accounts shown - Click to expand strategies' :
+                  expansionLevel === 2 ? 'Strategies shown - Click to expand all legs' :
+                  'Fully expanded - Click to collapse all'
+                }
               >
-                {allExpanded ? 'Collapse All' : 'Expand All'}
+                {expansionLevel === 0 && <ChevronsRight className="w-3.5 h-3.5" />}
+                {expansionLevel === 1 && <ChevronRight className="w-3.5 h-3.5" />}
+                {expansionLevel === 2 && <ChevronDown className="w-3.5 h-3.5" />}
+                {expansionLevel === 3 && <ChevronsDown className="w-3.5 h-3.5" />}
+                <span className="font-medium">
+                  {expansionLevel === 0 ? 'Collapsed' :
+                   expansionLevel === 1 ? 'Accounts' :
+                   expansionLevel === 2 ? 'Strategies' :
+                   'All Legs'}
+                </span>
               </button>
               <button
                 onClick={() => refetch()}
@@ -666,14 +710,18 @@ export const SchwabPositionsView = () => {
               })}
                         </React.Fragment>
                       ))}
+                      
+                      </React.Fragment>
                       )}
                     </React.Fragment>
-                    );
-                  })}
+                  );
+                })}
+                  
+                  </React.Fragment>
                   )}
                 </React.Fragment>
-                );
-              })}
+              );
+            })}
             </tbody>
           </table>
         )}
