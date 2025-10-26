@@ -152,11 +152,50 @@ echo ""
 print_status "Starting services..."
 echo ""
 
+# Check and free up ports if needed
+print_status "Checking if ports are available..."
+
+# Check port 8000 (backend)
+if lsof -Pi :8000 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
+    print_warning "Port 8000 is in use. Stopping existing process..."
+    lsof -ti:8000 | xargs kill -9 2>/dev/null
+    sleep 1
+    print_status "✓ Port 8000 freed"
+else
+    print_status "✓ Port 8000 is available"
+fi
+
+# Check port 3000 (frontend)
+if lsof -Pi :3000 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
+    print_warning "Port 3000 is in use. Stopping existing process..."
+    lsof -ti:3000 | xargs kill -9 2>/dev/null
+    sleep 1
+    print_status "✓ Port 3000 freed"
+else
+    print_status "✓ Port 3000 is available"
+fi
+
+echo ""
+
 # Function to cleanup background processes on exit
 cleanup() {
     echo ""
     print_status "Shutting down services..."
-    jobs -p | xargs -r kill 2>/dev/null
+    
+    # Kill backend
+    if [ ! -z "$BACKEND_PID" ] && ps -p $BACKEND_PID > /dev/null 2>&1; then
+        kill $BACKEND_PID 2>/dev/null
+    fi
+    
+    # Kill frontend
+    if [ ! -z "$FRONTEND_PID" ] && ps -p $FRONTEND_PID > /dev/null 2>&1; then
+        kill $FRONTEND_PID 2>/dev/null
+    fi
+    
+    # Cleanup any remaining processes on these ports
+    lsof -ti:8000 | xargs kill -9 2>/dev/null || true
+    lsof -ti:3000 | xargs kill -9 2>/dev/null || true
+    
     exit
 }
 
