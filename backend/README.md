@@ -41,6 +41,17 @@ CORS_ORIGINS=http://localhost:3000
 
 ### 3. Setup Database
 
+**Option A: SQLite (Recommended for Development)**
+
+No setup needed! Just set in `.env`:
+```bash
+DATABASE_URL=sqlite:///./portfolio.db
+```
+
+The database file will be created automatically when you start the backend.
+
+**Option B: PostgreSQL (Production/Advanced)**
+
 ```bash
 # Start PostgreSQL (using Docker)
 docker run --name portfolio-db \
@@ -49,9 +60,8 @@ docker run --name portfolio-db \
   -p 5432:5432 \
   -d postgres:14
 
-# Or use existing PostgreSQL installation
-# Create database:
-# createdb portfolioplanner
+# Then set in .env:
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/portfolioplanner
 ```
 
 ### 4. Run Application

@@ -8,7 +8,7 @@ A collaborative platform for tracking, planning, and sharing stock and option tr
 
 - Python 3.11+
 - Node.js 18+
-- PostgreSQL 14+
+- Database: SQLite (built-in) or PostgreSQL 14+ (optional)
 
 ### Installation & Startup
 
@@ -125,6 +125,16 @@ npm start
 
 ### Database Setup
 
+**SQLite (Default - No Setup Needed)**
+
+The database file is created automatically. Just use in `.env`:
+```bash
+DATABASE_URL=sqlite:///./portfolio.db
+```
+
+**PostgreSQL (Optional)**
+
+Only needed if you want PostgreSQL features:
 ```bash
 # Using Docker
 docker run --name portfolio-db \
@@ -133,8 +143,8 @@ docker run --name portfolio-db \
   -p 5432:5432 \
   -d postgres:14
 
-# Or create database manually
-createdb portfolioplanner
+# Update .env:
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/portfolioplanner
 ```
 
 ### Mock Data Mode

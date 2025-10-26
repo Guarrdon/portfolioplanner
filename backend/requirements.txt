@@ -17,7 +17,7 @@ cryptography==42.0.0
 # Data Validation
 pydantic==2.5.3
 pydantic-settings==2.1.0
-email-validator==2.1.0
+email-validator==2.1.1
 
 # Schwab API Integration
 schwab-py==1.1.0

@@ -52,11 +52,11 @@ fi
 NODE_VERSION=$(node --version)
 print_status "✓ Node.js $NODE_VERSION"
 
-# Check PostgreSQL (optional warning)
-if ! command -v psql &> /dev/null; then
-    print_warning "PostgreSQL not found. Make sure you have a database running."
+# Check database (optional info)
+if command -v psql &> /dev/null; then
+    print_status "✓ PostgreSQL found (can use PostgreSQL)"
 else
-    print_status "✓ PostgreSQL found"
+    print_status "ℹ Using SQLite (no external database needed)"
 fi
 
 echo ""
@@ -89,13 +89,34 @@ fi
 # Check for .env file
 if [ ! -f ".env" ]; then
     print_warning ".env file not found in backend/"
-    print_warning "Copy .env.example to .env and configure it"
     
-    if [ -f ".env.example" ]; then
-        print_status "Creating .env from .env.example..."
-        cp .env.example .env
-        print_warning "Please edit backend/.env with your configuration"
-        print_warning "Then run this script again"
+    if [ -f ".env.template" ]; then
+        print_status "Creating .env from .env.template..."
+        cp .env.template .env
+        
+        # Generate SECRET_KEY
+        if command -v openssl &> /dev/null; then
+            SECRET_KEY=$(openssl rand -hex 32)
+            sed -i.bak "s/your-secret-key-here-generate-with-openssl-rand-hex-32/$SECRET_KEY/" .env
+            rm .env.bak 2>/dev/null || true
+            print_status "✓ Generated SECRET_KEY"
+        else
+            print_warning "openssl not found - please manually set SECRET_KEY in backend/.env"
+        fi
+        
+        # Generate ENCRYPTION_KEY (simple fallback)
+        ENCRYPTION_KEY=$(python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" 2>/dev/null || echo "your-fernet-key-here")
+        if [ "$ENCRYPTION_KEY" != "your-fernet-key-here" ]; then
+            sed -i.bak "s|your-fernet-key-here|$ENCRYPTION_KEY|" .env
+            rm .env.bak 2>/dev/null || true
+            print_status "✓ Generated ENCRYPTION_KEY"
+        else
+            print_warning "Please manually set ENCRYPTION_KEY in backend/.env"
+        fi
+        
+        print_status "✓ Created .env with SQLite database (no external database needed)"
+    else
+        print_error ".env.template not found"
         exit 1
     fi
 else

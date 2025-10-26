@@ -46,6 +46,8 @@ htmlcov/
 # Database
 *.db
 *.sqlite3
+portfolio.db
+portfolio.db-*
 
 # Schwab API
 schwab.token_file.json
