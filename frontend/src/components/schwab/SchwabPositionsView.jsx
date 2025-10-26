@@ -3,7 +3,7 @@
  * Dense, application-style interface for managing 100+ positions
  */
 import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tantml:function_calls';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchActualPositions, syncSchwabPositions } from '../../services/schwab';
 import { RefreshCw, ChevronRight, ChevronDown } from 'lucide-react';
 
@@ -64,16 +64,16 @@ export const SchwabPositionsView = () => {
     return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear().toString().slice(-2)}`;
   };
 
-  const getStrategyAbbrev = (strategyType) => {
-    const abbrevs = {
-      covered_call: 'CC',
-      put_spread: 'PS',
-      call_spread: 'CS',
-      big_option: 'OPT',
-      dividend: 'DIV',
-      short_stock: 'SHORT'
+  const getStrategyLabel = (strategyType) => {
+    const labels = {
+      covered_call: 'Covered Call',
+      put_spread: 'Put Spread',
+      call_spread: 'Call Spread',
+      big_option: 'Option',
+      dividend: 'Dividend',
+      short_stock: 'Short Stock'
     };
-    return abbrevs[strategyType] || strategyType.toUpperCase().slice(0, 4);
+    return labels[strategyType] || strategyType.replace(/_/g, ' ');
   };
 
   const positions = data?.positions || [];
@@ -170,7 +170,7 @@ export const SchwabPositionsView = () => {
               <tr>
                 <th className="text-left px-2 py-1.5 font-semibold w-6"></th>
                 <th className="text-left px-2 py-1.5 font-semibold w-16">Symbol</th>
-                <th className="text-left px-2 py-1.5 font-semibold w-12">Strat</th>
+                <th className="text-left px-2 py-1.5 font-semibold w-32">Strategy</th>
                 <th className="text-left px-2 py-1.5 font-semibold w-24">Account</th>
                 <th className="text-right px-2 py-1.5 font-semibold w-14">Qty</th>
                 <th className="text-right px-2 py-1.5 font-semibold w-20">Cost</th>
@@ -206,10 +206,8 @@ export const SchwabPositionsView = () => {
                         )}
                       </td>
                       <td className="px-2 py-1.5 font-semibold text-gray-900">{position.symbol}</td>
-                      <td className="px-2 py-1.5">
-                        <span className="px-1 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">
-                          {getStrategyAbbrev(position.strategy_type)}
-                        </span>
+                      <td className="px-2 py-1.5 text-gray-700">
+                        {getStrategyLabel(position.strategy_type)}
                       </td>
                       <td className="px-2 py-1.5 text-gray-600 font-mono text-xs">
                         {position.account_number || '-'}

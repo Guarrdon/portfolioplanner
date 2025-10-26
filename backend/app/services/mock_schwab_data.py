@@ -185,18 +185,15 @@ def generate_mock_dividend_stock(symbol: str = "T") -> List[Dict[str, Any]]:
 def generate_mock_positions(account_hash: str) -> Dict[str, Any]:
     """Generate comprehensive mock position data for an account"""
     
-    # Randomize which positions to include
+    # Build a consistent set of positions for testing
     positions = []
     
-    # Add some covered calls
-    if random.random() > 0.3:
-        positions.extend(generate_mock_covered_call("AAPL"))
-    if random.random() > 0.5:
-        positions.extend(generate_mock_covered_call("MSFT"))
+    # ALWAYS include covered calls (with both stock and option legs)
+    positions.extend(generate_mock_covered_call("AAPL"))
+    positions.extend(generate_mock_covered_call("MSFT"))
     
     # Add put spreads
-    if random.random() > 0.3:
-        positions.extend(generate_mock_put_spread("SPY"))
+    positions.extend(generate_mock_put_spread("SPY"))
     if random.random() > 0.6:
         positions.extend(generate_mock_put_spread("IWM"))
     
@@ -208,7 +205,7 @@ def generate_mock_positions(account_hash: str) -> Dict[str, Any]:
     if random.random() > 0.5:
         positions.extend(generate_mock_long_put("TSLA"))
     
-    # Add dividend stocks
+    # Add dividend stocks (standalone shares)
     if random.random() > 0.4:
         positions.extend(generate_mock_dividend_stock("T"))
     if random.random() > 0.6:
