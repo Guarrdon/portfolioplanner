@@ -78,6 +78,198 @@ export const SchwabPositionsView = () => {
 
   const positions = data?.positions || [];
 
+  // Calculate days until expiration
+  const daysUntilExpiration = (expirationDate) => {
+    if (!expirationDate) return null;
+    const exp = new Date(expirationDate);
+    const today = new Date();
+    const diffTime = exp - today;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
+
+  // Render strategy-specific details
+  const renderStrategyDetails = (position) => {
+    const strategyType = position.strategy_type;
+    
+    // Covered Call specific details
+    if (strategyType === 'covered_call') {
+      const callLeg = position.legs?.find(l => l.option_type === 'call');
+      if (!callLeg) return null;
+      
+      const daysLeft = daysUntilExpiration(callLeg.expiration);
+      const stockLeg = position.legs?.find(l => l.asset_type === 'stock');
+      const protection = stockLeg && callLeg ? 
+        ((parseFloat(callLeg.premium) / parseFloat(stockLeg.current_price || stockLeg.premium)) * 100).toFixed(2) : null;
+      
+      return (
+        <div className="mt-3 pt-3 border-t border-gray-200">
+          <div className="grid grid-cols-4 gap-4 text-xs">
+            <div>
+              <span className="text-gray-600">Days to Expiration</span>
+              <div className={`font-semibold mt-0.5 ${daysLeft < 7 ? 'text-red-600' : daysLeft < 30 ? 'text-orange-600' : 'text-gray-900'}`}>
+                {daysLeft !== null ? `${daysLeft} days` : '-'}
+              </div>
+            </div>
+            <div>
+              <span className="text-gray-600">Premium Collected</span>
+              <div className="font-semibold text-green-600 mt-0.5">
+                {formatCurrency(callLeg.premium * Math.abs(callLeg.quantity))}
+              </div>
+            </div>
+            <div>
+              <span className="text-gray-600">Downside Protection</span>
+              <div className="font-semibold text-gray-900 mt-0.5">
+                {protection ? `${protection}%` : '-'}
+              </div>
+            </div>
+            <div>
+              <span className="text-gray-600">Strike</span>
+              <div className="font-semibold text-gray-900 mt-0.5">
+                ${callLeg.strike}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    
+    // Vertical Spread (Put Spread or Call Spread) details
+    if (strategyType === 'put_spread' || strategyType === 'call_spread') {
+      const legs = position.legs || [];
+      const shortLeg = legs.find(l => l.quantity < 0);
+      const longLeg = legs.find(l => l.quantity > 0);
+      
+      if (!shortLeg || !longLeg) return null;
+      
+      const width = Math.abs(parseFloat(shortLeg.strike) - parseFloat(longLeg.strike));
+      const netCredit = (Math.abs(parseFloat(shortLeg.premium)) - Math.abs(parseFloat(longLeg.premium))) * Math.abs(shortLeg.quantity);
+      const maxProfit = netCredit;
+      const maxLoss = (width * 100 * Math.abs(shortLeg.quantity)) - maxProfit;
+      const daysLeft = daysUntilExpiration(shortLeg.expiration);
+      
+      return (
+        <div className="mt-3 pt-3 border-t border-gray-200">
+          <div className="grid grid-cols-5 gap-4 text-xs">
+            <div>
+              <span className="text-gray-600">Width</span>
+              <div className="font-semibold text-gray-900 mt-0.5">
+                ${width.toFixed(0)}
+              </div>
+            </div>
+            <div>
+              <span className="text-gray-600">Net Credit</span>
+              <div className="font-semibold text-green-600 mt-0.5">
+                {formatCurrency(netCredit)}
+              </div>
+            </div>
+            <div>
+              <span className="text-gray-600">Max Profit</span>
+              <div className="font-semibold text-green-600 mt-0.5">
+                {formatCurrency(maxProfit)}
+              </div>
+            </div>
+            <div>
+              <span className="text-gray-600">Max Loss</span>
+              <div className="font-semibold text-red-600 mt-0.5">
+                {formatCurrency(maxLoss)}
+              </div>
+            </div>
+            <div>
+              <span className="text-gray-600">Days Left</span>
+              <div className={`font-semibold mt-0.5 ${daysLeft < 7 ? 'text-red-600' : daysLeft < 30 ? 'text-orange-600' : 'text-gray-900'}`}>
+                {daysLeft !== null ? `${daysLeft}` : '-'}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    
+    // Dividend Stock details
+    if (strategyType === 'dividend') {
+      // TODO: Add dividend-specific data from API (ex-div date, yield, frequency)
+      return (
+        <div className="mt-3 pt-3 border-t border-gray-200">
+          <div className="grid grid-cols-4 gap-4 text-xs">
+            <div>
+              <span className="text-gray-600">Dividend Yield</span>
+              <div className="font-semibold text-gray-900 mt-0.5">
+                Coming Soon
+              </div>
+            </div>
+            <div>
+              <span className="text-gray-600">Next Ex-Div</span>
+              <div className="font-semibold text-gray-900 mt-0.5">
+                -
+              </div>
+            </div>
+            <div>
+              <span className="text-gray-600">Dividend Amount</span>
+              <div className="font-semibold text-gray-900 mt-0.5">
+                -
+              </div>
+            </div>
+            <div>
+              <span className="text-gray-600">Frequency</span>
+              <div className="font-semibold text-gray-900 mt-0.5">
+                -
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    
+    // Single Option (Big Option) details
+    if (strategyType === 'big_option') {
+      const optionLeg = position.legs?.[0];
+      if (!optionLeg || optionLeg.asset_type !== 'option') return null;
+      
+      const daysLeft = daysUntilExpiration(optionLeg.expiration);
+      // TODO: Add Greeks when available from API
+      
+      return (
+        <div className="mt-3 pt-3 border-t border-gray-200">
+          <div className="grid grid-cols-5 gap-4 text-xs">
+            <div>
+              <span className="text-gray-600">Days to Expiration</span>
+              <div className={`font-semibold mt-0.5 ${daysLeft < 7 ? 'text-red-600' : daysLeft < 30 ? 'text-orange-600' : 'text-gray-900'}`}>
+                {daysLeft !== null ? `${daysLeft}` : '-'}
+              </div>
+            </div>
+            <div>
+              <span className="text-gray-600">Delta (Δ)</span>
+              <div className="font-semibold text-gray-900 mt-0.5">
+                Coming Soon
+              </div>
+            </div>
+            <div>
+              <span className="text-gray-600">Theta (Θ)</span>
+              <div className="font-semibold text-gray-900 mt-0.5">
+                -
+              </div>
+            </div>
+            <div>
+              <span className="text-gray-600">Vega (V)</span>
+              <div className="font-semibold text-gray-900 mt-0.5">
+                -
+              </div>
+            </div>
+            <div>
+              <span className="text-gray-600">Gamma (Γ)</span>
+              <div className="font-semibold text-gray-900 mt-0.5">
+                -
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    
+    return null;
+  };
+
   // Group positions by account
   const groupedByAccount = positions.reduce((acc, position) => {
     const accountKey = position.account_number || 'Unknown';
@@ -315,9 +507,18 @@ export const SchwabPositionsView = () => {
                                             {leg.symbol} <span className="text-gray-600 font-normal ml-1">(Stock)</span>
                                           </span>
                                         ) : (
-                                          <span className="font-mono text-gray-900">
-                                            {formatOptionSymbol(leg)}
-                                          </span>
+                                          <div className="flex items-center gap-2">
+                                            <span className="font-mono font-bold text-gray-900">
+                                              {formatOptionSymbol(leg)}
+                                            </span>
+                                            <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${
+                                              leg.option_type === 'call' 
+                                                ? 'bg-green-600 text-white' 
+                                                : 'bg-red-600 text-white'
+                                            }`}>
+                                              {leg.option_type === 'call' ? 'C' : 'P'}
+                                            </span>
+                                          </div>
                                         )}
                                       </td>
                                       <td className={`px-2 py-1.5 text-right font-semibold ${
@@ -341,6 +542,9 @@ export const SchwabPositionsView = () => {
                                 })}
                               </tbody>
                             </table>
+                            
+                            {/* Strategy-Specific Details */}
+                            {renderStrategyDetails(position)}
                           </div>
                         </td>
                       </tr>
