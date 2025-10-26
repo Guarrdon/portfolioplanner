@@ -1,18 +1,17 @@
 """User model"""
 from sqlalchemy import Column, String, Boolean, DateTime, Text
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
 
-from app.core.database import Base
+from app.core.database import Base, GUID
 
 
 class User(Base):
     """User account model"""
     __tablename__ = "users"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(GUID, primary_key=True, default=uuid.uuid4)
     email = Column(String(255), unique=True, nullable=False, index=True)
     username = Column(String(100), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)
@@ -51,8 +50,8 @@ class UserSchwabCredentials(Base):
     """Schwab API credentials for a user"""
     __tablename__ = "user_schwab_credentials"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), nullable=False, unique=True, index=True)
+    id = Column(GUID, primary_key=True, default=uuid.uuid4)
+    user_id = Column(GUID, nullable=False, unique=True, index=True)
     
     # Encrypted tokens
     access_token = Column(Text, nullable=False)  # Encrypted
@@ -78,8 +77,8 @@ class UserSchwabAccount(Base):
     """Schwab brokerage accounts linked to a user"""
     __tablename__ = "user_schwab_accounts"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    id = Column(GUID, primary_key=True, default=uuid.uuid4)
+    user_id = Column(GUID, nullable=False, index=True)
     
     # Account details
     account_hash = Column(String(255), nullable=False)
@@ -105,9 +104,9 @@ class Friendship(Base):
     """User friendship/connection for sharing positions"""
     __tablename__ = "friendships"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    friend_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    id = Column(GUID, primary_key=True, default=uuid.uuid4)
+    user_id = Column(GUID, nullable=False, index=True)
+    friend_id = Column(GUID, nullable=False, index=True)
     
     # Status
     status = Column(String(20), default="pending")  # pending, accepted, rejected, blocked

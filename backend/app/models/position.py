@@ -1,25 +1,24 @@
 """Position models"""
 from sqlalchemy import Column, String, Boolean, DateTime, Numeric, Date, ForeignKey, Text, ARRAY
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
 
-from app.core.database import Base
+from app.core.database import Base, GUID
 
 
 class Position(Base):
     """Main position model supporting actual, idea, and shared positions"""
     __tablename__ = "positions"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(GUID, primary_key=True, default=uuid.uuid4)
     
     # Position type
     flavor = Column(String(20), nullable=False, index=True)  # actual, idea, shared
     
     # Ownership
-    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    original_position_id = Column(UUID(as_uuid=True), ForeignKey("positions.id"), nullable=True)
+    user_id = Column(GUID, nullable=False, index=True)
+    original_position_id = Column(GUID, ForeignKey("positions.id"), nullable=True)
     
     # Account info
     account_id = Column(String(255))  # Schwab account hash or user account ID
@@ -79,8 +78,8 @@ class PositionLeg(Base):
     """Individual leg of a position (stock or option)"""
     __tablename__ = "position_legs"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    position_id = Column(UUID(as_uuid=True), ForeignKey("positions.id", ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(GUID, primary_key=True, default=uuid.uuid4)
+    position_id = Column(GUID, ForeignKey("positions.id", ondelete="CASCADE"), nullable=False, index=True)
     
     # Leg details
     symbol = Column(String(50))  # OCC symbol for options
@@ -114,10 +113,10 @@ class PositionShare(Base):
     """Sharing relationship for positions"""
     __tablename__ = "position_shares"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    position_id = Column(UUID(as_uuid=True), ForeignKey("positions.id", ondelete="CASCADE"), nullable=False, index=True)
-    owner_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    recipient_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    id = Column(GUID, primary_key=True, default=uuid.uuid4)
+    position_id = Column(GUID, ForeignKey("positions.id", ondelete="CASCADE"), nullable=False, index=True)
+    owner_id = Column(GUID, nullable=False, index=True)
+    recipient_id = Column(GUID, nullable=False, index=True)
     
     # Access control
     access_level = Column(String(20), default="view")  # view, comment
