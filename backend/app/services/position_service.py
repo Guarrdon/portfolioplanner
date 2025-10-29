@@ -195,7 +195,7 @@ def sync_schwab_positions(
     # Group positions into strategies
     grouped_positions = group_positions_by_strategy(schwab_data["positions"])
     
-    # Update account sync timestamps
+    # Update account sync timestamps and balances
     for account in schwab_data["accounts"]:
         db_account = db.query(UserSchwabAccount).filter(
             UserSchwabAccount.user_id == user_id,
@@ -208,9 +208,21 @@ def sync_schwab_positions(
                 user_id=user_id,
                 account_hash=account["hash_value"],
                 account_number=account["account_number"],
-                account_type=account["account_type"]
+                account_type=account["account_type"],
+                cash_balance=account.get("cash_balance", 0.0),
+                liquidation_value=account.get("liquidation_value", 0.0),
+                buying_power=account.get("buying_power", 0.0),
+                buying_power_options=account.get("buying_power_options", 0.0)
             )
             db.add(db_account)
+        else:
+            # Update existing account with latest balances
+            db_account.account_number = account["account_number"]
+            db_account.account_type = account["account_type"]
+            db_account.cash_balance = account.get("cash_balance", 0.0)
+            db_account.liquidation_value = account.get("liquidation_value", 0.0)
+            db_account.buying_power = account.get("buying_power", 0.0)
+            db_account.buying_power_options = account.get("buying_power_options", 0.0)
         
         db_account.last_synced = datetime.utcnow()
     
@@ -241,11 +253,28 @@ def sync_schwab_positions(
         account_hash = first_leg["account_hash"]
         account_number = first_leg["account_number"]
         
-        # Calculate aggregate values
+        # Calculate aggregate values by rolling up from legs
+        # Cost basis: ALGEBRAIC sum (preserves signs - shorts are negative credits, longs are positive debits)
+        # This gives us NET cost: negative = credit received, positive = debit paid
         total_cost = sum(leg.get("cost_basis", 0) for leg in legs)
+        
+        # Current value: Sum of all leg market values (can be positive or negative)
         total_value = sum(leg.get("current_value", 0) for leg in legs)
-        total_pnl = sum(leg.get("unrealized_pnl", 0) for leg in legs)
+        
+        # P&L: market_value - cost_basis (simplified since we're using signed cost_basis)
+        total_pnl = total_value - total_cost
+        
+        # Quantity: Sum of absolute values (total contracts/shares)
         total_quantity = sum(abs(leg.get("quantity", 0)) for leg in legs)
+        
+        # Maintenance requirement: Sum from all legs
+        total_maintenance = sum(leg.get("maintenance_requirement", 0) or 0 for leg in legs)
+        
+        # Day P&L: Sum from all legs
+        total_day_pnl = sum(leg.get("current_day_pnl", 0) or 0 for leg in legs)
+        
+        # Day P&L %: Calculate from total day P&L and total cost
+        total_day_pnl_pct = (total_day_pnl / total_cost * 100) if total_cost != 0 else None
         
         # Determine earliest entry date from legs
         entry_date = None
@@ -264,6 +293,9 @@ def sync_schwab_positions(
             existing_pos.cost_basis = total_cost
             existing_pos.current_value = total_value
             existing_pos.unrealized_pnl = total_pnl
+            existing_pos.maintenance_requirement = total_maintenance
+            existing_pos.current_day_pnl = total_day_pnl
+            existing_pos.current_day_pnl_percentage = total_day_pnl_pct
             existing_pos.last_synced = datetime.utcnow()
             existing_pos.status = "active"
             
@@ -280,8 +312,8 @@ def sync_schwab_positions(
                     strike=leg_data.get("strike"),
                     expiration=leg_data.get("expiration"),
                     quantity=leg_data.get("quantity"),
-                    premium=leg_data.get("cost_basis", 0) / 100 if leg_data.get("quantity") else 0,
-                    current_price=leg_data.get("current_value", 0) / abs(leg_data.get("quantity", 1)) / 100 if leg_data.get("quantity") else 0
+                    premium=leg_data.get("average_price"),  # Per-share trade price
+                    current_price=leg_data.get("current_price")  # Per-share current price
                 )
                 db.add(leg)
             
@@ -303,6 +335,9 @@ def sync_schwab_positions(
                 cost_basis=total_cost,
                 current_value=total_value,
                 unrealized_pnl=total_pnl,
+                maintenance_requirement=total_maintenance,
+                current_day_pnl=total_day_pnl,
+                current_day_pnl_percentage=total_day_pnl_pct,
                 entry_date=entry_date,
                 last_synced=datetime.utcnow(),
                 read_only=True
@@ -321,8 +356,8 @@ def sync_schwab_positions(
                     strike=leg_data.get("strike"),
                     expiration=leg_data.get("expiration"),
                     quantity=leg_data.get("quantity"),
-                    premium=leg_data.get("cost_basis", 0) / 100 if leg_data.get("quantity") else 0,
-                    current_price=leg_data.get("current_value", 0) / abs(leg_data.get("quantity", 1)) / 100 if leg_data.get("quantity") else 0
+                    premium=leg_data.get("average_price"),  # Per-share trade price
+                    current_price=leg_data.get("current_price")  # Per-share current price
                 )
                 db.add(leg)
             
@@ -340,6 +375,82 @@ def sync_schwab_positions(
         db.refresh(pos)
     
     return synced_positions
+
+
+def convert_actual_to_trade_idea(
+    db: Session,
+    position_id: UUID,
+    user_id: UUID
+) -> Position:
+    """
+    Convert an actual (Schwab-synced) position to a trade idea for collaboration
+    
+    Args:
+        db: Database session
+        position_id: ID of the actual position to convert
+        user_id: User ID creating the trade idea
+        
+    Returns:
+        Newly created trade idea position
+    """
+    # Get the actual position
+    actual_position = db.query(Position).filter(
+        Position.id == position_id,
+        Position.user_id == user_id,
+        Position.flavor == "actual"
+    ).first()
+    
+    if not actual_position:
+        raise ValueError("Actual position not found")
+    
+    # Create a new trade idea based on the actual position
+    trade_idea = Position(
+        flavor="idea",
+        user_id=user_id,
+        symbol=actual_position.symbol,
+        underlying=actual_position.underlying,
+        strategy_type=actual_position.strategy_type,
+        status="active",
+        notes=f"Converted from actual position on {datetime.utcnow().strftime('%Y-%m-%d')}",
+        tags=actual_position.tags if actual_position.tags else [],
+        
+        # Copy current values as targets
+        target_quantity=actual_position.quantity,
+        target_entry_price=actual_position.cost_basis / actual_position.quantity if actual_position.quantity and actual_position.quantity != 0 else None,
+        max_profit=actual_position.max_profit,
+        max_loss=actual_position.max_loss,
+        
+        # Preserve actual position data for reference (in notes)
+        read_only=False
+    )
+    
+    db.add(trade_idea)
+    db.flush()  # Get the ID
+    
+    # Copy legs from actual position to trade idea
+    for actual_leg in actual_position.legs:
+        trade_idea_leg = PositionLeg(
+            position_id=trade_idea.id,
+            symbol=actual_leg.symbol,
+            asset_type=actual_leg.asset_type,
+            option_type=actual_leg.option_type,
+            strike=actual_leg.strike,
+            expiration=actual_leg.expiration,
+            quantity=actual_leg.quantity,
+            premium=actual_leg.premium,
+            current_price=actual_leg.current_price,
+            target_premium=actual_leg.premium,  # Use actual premium as target
+            delta=actual_leg.delta,
+            gamma=actual_leg.gamma,
+            theta=actual_leg.theta,
+            vega=actual_leg.vega
+        )
+        db.add(trade_idea_leg)
+    
+    db.commit()
+    db.refresh(trade_idea)
+    
+    return trade_idea
 
 
 def share_position(

@@ -1,5 +1,5 @@
 """User model"""
-from sqlalchemy import Column, String, Boolean, DateTime, Text, ForeignKey
+from sqlalchemy import Column, String, Boolean, DateTime, Text, ForeignKey, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import uuid
@@ -84,6 +84,12 @@ class UserSchwabAccount(Base):
     account_hash = Column(String(255), nullable=False)
     account_number = Column(String(50))  # Masked for display
     account_type = Column(String(50))  # MARGIN, CASH, IRA, etc.
+    
+    # Account balances (updated during sync)
+    cash_balance = Column(Float, default=0.0)
+    liquidation_value = Column(Float, default=0.0)
+    buying_power = Column(Float, default=0.0)  # Stock buying power (with margin)
+    buying_power_options = Column(Float, default=0.0)  # Options buying power (cash-based)
     
     # Sync configuration
     sync_enabled = Column(Boolean, default=True)

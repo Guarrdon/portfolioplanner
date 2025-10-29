@@ -5,20 +5,21 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchActualPositions, syncSchwabPositions } from '../../services/schwab';
-import { RefreshCw, ChevronRight, ChevronDown, Minimize2, Maximize2, ChevronsRight, ChevronsDown } from 'lucide-react';
+import { RefreshCw, ChevronRight, ChevronDown, Minimize2, Maximize2, ChevronsRight, ChevronsDown, Share2 } from 'lucide-react';
+import { CollaborationModal } from '../modals/CollaborationModal';
 
 export const SchwabPositionsView = () => {
   const queryClient = useQueryClient();
   const [expandedRows, setExpandedRows] = useState(new Set());
-  const [collapsedAccounts, setCollapsedAccounts] = useState(new Set());
   const [collapsedStrategies, setCollapsedStrategies] = useState(new Set());
-  // Expansion states: 0=collapsed, 1=accounts, 2=strategies, 3=fully expanded
-  const [expansionLevel, setExpansionLevel] = useState(2);
+  // Expansion states: 0=collapsed, 1=strategies, 2=fully expanded
+  const [expansionLevel, setExpansionLevel] = useState(1);
+  const [selectedAccount, setSelectedAccount] = useState('all'); // Account selector
   const [filters, setFilters] = useState({
     status: 'active',
-    account_id: '',
     symbol: ''
   });
+  const [collaborationModalPosition, setCollaborationModalPosition] = useState(null);
 
   // Fetch positions
   const { data, isLoading, error, refetch } = useQuery({
@@ -44,16 +45,6 @@ export const SchwabPositionsView = () => {
     setExpandedRows(newExpanded);
   };
 
-  const toggleAccount = (accountNumber) => {
-    const newCollapsed = new Set(collapsedAccounts);
-    if (newCollapsed.has(accountNumber)) {
-      newCollapsed.delete(accountNumber);
-    } else {
-      newCollapsed.add(accountNumber);
-    }
-    setCollapsedAccounts(newCollapsed);
-  };
-
   const toggleStrategy = (key) => {
     const newCollapsed = new Set(collapsedStrategies);
     if (newCollapsed.has(key)) {
@@ -65,47 +56,31 @@ export const SchwabPositionsView = () => {
   };
 
   const cycleExpansion = () => {
-    // Cycle through: Collapsed (0) → Accounts (1) → Strategies (2) → Fully Expanded (3) → back to 0
-    const nextLevel = (expansionLevel + 1) % 4;
+    // Cycle through: Collapsed (0) → Strategies (1) → Fully Expanded (2) → back to 0
+    const nextLevel = (expansionLevel + 1) % 3;
     setExpansionLevel(nextLevel);
     
-    const allAccounts = new Set(Object.keys(groupedData));
-    const allStrats = new Set();
-    Object.entries(groupedData).forEach(([account, strategies]) => {
-      Object.keys(strategies).forEach(strategy => {
-        allStrats.add(`${account}-${strategy}`);
-      });
-    });
+    const allStrats = new Set(Object.keys(groupedData));
     
     switch (nextLevel) {
-      case 0: // Collapsed - only account headers visible
-        setCollapsedAccounts(allAccounts);
+      case 0: // Collapsed - only strategy headers visible
         setCollapsedStrategies(allStrats);
         setExpandedRows(new Set());
         break;
-      case 1: // Accounts expanded - show strategies but keep them collapsed
-        setCollapsedAccounts(new Set());
-        setCollapsedStrategies(allStrats);
-        setExpandedRows(new Set());
-        break;
-      case 2: // Strategies expanded - show positions but keep legs collapsed
-        setCollapsedAccounts(new Set());
+      case 1: // Strategies expanded - show positions but keep legs collapsed
         setCollapsedStrategies(new Set());
         setExpandedRows(new Set());
         break;
-      case 3: // Fully expanded - show all legs
-        setCollapsedAccounts(new Set());
+      case 2: // Fully expanded - show all legs
         setCollapsedStrategies(new Set());
         // Expand all position rows to show legs
         const allPositionIds = new Set();
-        Object.values(groupedData).forEach(strategies => {
-          Object.values(strategies).forEach(symbols => {
-            Object.values(symbols).forEach(positions => {
-              positions.forEach(position => {
-                if (position.legs && position.legs.length > 0) {
-                  allPositionIds.add(position.id);
-                }
-              });
+        Object.values(groupedData).forEach(symbols => {
+          Object.values(symbols).forEach(positions => {
+            positions.forEach(position => {
+              if (position.legs && position.legs.length > 0) {
+                allPositionIds.add(position.id);
+              }
             });
           });
         });
@@ -115,7 +90,7 @@ export const SchwabPositionsView = () => {
   };
 
   const formatCurrency = (value) => {
-    if (value === null || value === undefined) return '-';
+    if (value === null || value === undefined || isNaN(value) || !isFinite(value)) return '-';
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
@@ -141,293 +116,212 @@ export const SchwabPositionsView = () => {
   const getStrategyLabel = (strategyType) => {
     const labels = {
       covered_call: 'Covered Call',
-      put_spread: 'Put Spread',
-      call_spread: 'Call Spread',
-      big_option: 'Option',
-      dividend: 'Dividend',
-      short_stock: 'Short Stock'
+      vertical_spread: 'Vertical Spread',
+      box_spread: 'Box Spread',
+      big_option: 'Big Options',
+      single_option: 'Single Option',
+      long_stock: 'Long Stock',
+      dividend: 'Dividends',
+      short_stock: 'Short Stock',
+      // Legacy support
+      put_spread: 'Vertical Spread',
+      call_spread: 'Vertical Spread'
     };
-    return labels[strategyType] || strategyType.replace(/_/g, ' ');
+    return labels[strategyType] || strategyType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   };
 
-  // Calculate summary metrics
+  // Calculate summary metrics with safety checks
   const calculateSummary = (positions) => {
+    if (!positions || positions.length === 0) {
+      return { count: 0, value: 0, costBasis: 0, pnl: 0, pnlPercent: '0.0' };
+    }
+    
     const totals = positions.reduce((acc, pos) => {
       acc.count += 1;
-      acc.value += pos.current_value || 0;
-      acc.costBasis += pos.cost_basis || 0;
-      acc.pnl += pos.unrealized_pnl || 0;
+      // Ensure we're working with numbers, not undefined or NaN
+      const value = parseFloat(pos.current_value) || 0;
+      const cost = parseFloat(pos.cost_basis) || 0;
+      const pnl = parseFloat(pos.unrealized_pnl) || 0;
+      
+      acc.value += value;
+      acc.costBasis += cost;
+      acc.pnl += pnl;
       return acc;
     }, { count: 0, value: 0, costBasis: 0, pnl: 0 });
 
-    totals.pnlPercent = totals.costBasis !== 0 
-      ? ((totals.pnl / Math.abs(totals.costBasis)) * 100).toFixed(1)
+    // Calculate P&L percentage with safety check
+    const absCostBasis = Math.abs(totals.costBasis);
+    totals.pnlPercent = absCostBasis !== 0 && !isNaN(absCostBasis) && isFinite(absCostBasis)
+      ? ((totals.pnl / absCostBasis) * 100).toFixed(1)
       : '0.0';
     
     return totals;
   };
 
-  // Render summary row component
-  const renderSummaryRow = (summary, label, level = 'strategy') => {
-    const pnlColor = summary.pnl >= 0 ? 'text-green-600' : 'text-red-600';
-    const bgClass = level === 'overall' 
-      ? 'bg-blue-50 border-y-2 border-blue-200' 
-      : level === 'account'
-      ? 'bg-gray-100 border-y border-gray-300'
-      : 'bg-gray-50 border-b border-gray-200';
+  // Helper to render summary cells inline within header rows
+  // Strategy rows are intentionally subtle (no bold, no color) to avoid visual clutter
+  const renderSummaryCells = (summary, level = 'strategy') => {
+    // For strategy level: use subtle styling (no color, no bold)
+    // For account level: use bolder styling with color
+    const isStrategy = level === 'strategy';
+    const pnlColor = isStrategy ? 'text-gray-600' : (summary.pnl >= 0 ? 'text-green-600' : 'text-red-600');
+    const fontWeight = isStrategy ? 'font-normal' : 'font-bold';
+    const textColor = isStrategy ? 'text-gray-600' : 'text-gray-700';
     
     return (
-      <tr className={bgClass}>
-        <td colSpan="4" className="px-4 py-1.5 text-xs font-semibold text-gray-700">
-          {label} Summary
+      <>
+        <td className={`px-2 py-1.5 text-right text-xs ${fontWeight} ${textColor}`}>
+          {formatCurrency(Math.abs(summary.costBasis))}
         </td>
-        <td className="px-2 py-1.5 text-right text-xs font-semibold text-gray-900">
-          {formatCurrency(summary.costBasis)}
-        </td>
-        <td className="px-2 py-1.5 text-right text-xs font-semibold text-gray-900">
+        <td className={`px-2 py-1.5 text-right text-xs ${fontWeight} ${textColor}`}>
           {formatCurrency(summary.value)}
         </td>
-        <td className={`px-2 py-1.5 text-right text-xs font-bold ${pnlColor}`}>
+        <td className={`px-2 py-1.5 text-right text-xs ${fontWeight} ${pnlColor}`}>
           {formatCurrency(summary.pnl)}
         </td>
-        <td className={`px-2 py-1.5 text-right text-xs font-bold ${pnlColor}`}>
+        <td className={`px-2 py-1.5 text-right text-xs ${fontWeight} ${pnlColor}`}>
           {summary.pnlPercent}%
         </td>
-        <td colSpan="3" className="px-2 py-1.5 text-right text-xs font-medium text-gray-600">
-          {summary.count} position{summary.count !== 1 ? 's' : ''}
-        </td>
-      </tr>
+        <td colSpan="7" className="px-2 py-1.5"></td>
+      </>
     );
   };
 
   const positions = data?.positions || [];
+  const accounts = data?.accounts || [];
+
+  // Set first account as selected if none selected yet (using effect to avoid setState during render)
+  React.useEffect(() => {
+    if (selectedAccount === 'all' && accounts.length > 0) {
+      setSelectedAccount(accounts[0].account_hash);
+    }
+  }, [accounts, selectedAccount]);
+
+  // Filter positions by selected account (match account_hash to position.account_id)
+  const filteredPositions = selectedAccount === 'all' 
+    ? positions 
+    : positions.filter(p => p.account_id === selectedAccount);
+  
+  // Find selected account info
+  const selectedAccountInfo = accounts.find(acc => acc.account_hash === selectedAccount);
+
 
   // Calculate days until expiration
   const daysUntilExpiration = (expirationDate) => {
     if (!expirationDate) return null;
-    const exp = new Date(expirationDate);
+    
+    // Parse expiration date (handle both ISO strings and Date objects)
+    const expDate = typeof expirationDate === 'string' 
+      ? new Date(expirationDate + 'T00:00:00')  // Add time to avoid timezone issues
+      : new Date(expirationDate);
+    
+    // Get today at midnight for accurate day counting
     const today = new Date();
-    const diffTime = exp - today;
+    today.setHours(0, 0, 0, 0);
+    
+    // Calculate difference in days
+    const diffTime = expDate - today;
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
     return diffDays;
   };
 
-  // Render strategy-specific details
-  const renderStrategyDetails = (position) => {
-    const strategyType = position.strategy_type;
-    
-    // Covered Call specific details
-    if (strategyType === 'covered_call') {
-      const callLeg = position.legs?.find(l => l.option_type === 'call');
-      if (!callLeg) return null;
-      
-      const daysLeft = daysUntilExpiration(callLeg.expiration);
-      const stockLeg = position.legs?.find(l => l.asset_type === 'stock');
-      const protection = stockLeg && callLeg ? 
-        ((parseFloat(callLeg.premium) / parseFloat(stockLeg.current_price || stockLeg.premium)) * 100).toFixed(2) : null;
-      
-      return (
-        <div className="mt-3 pt-3 border-t border-gray-200">
-          <div className="grid grid-cols-4 gap-4 text-xs">
-            <div>
-              <span className="text-gray-600">Days to Expiration</span>
-              <div className={`font-semibold mt-0.5 ${daysLeft < 7 ? 'text-red-600' : daysLeft < 30 ? 'text-orange-600' : 'text-gray-900'}`}>
-                {daysLeft !== null ? `${daysLeft} days` : '-'}
-              </div>
-            </div>
-            <div>
-              <span className="text-gray-600">Premium Collected</span>
-              <div className="font-semibold text-green-600 mt-0.5">
-                {formatCurrency(callLeg.premium * Math.abs(callLeg.quantity))}
-              </div>
-            </div>
-            <div>
-              <span className="text-gray-600">Downside Protection</span>
-              <div className="font-semibold text-gray-900 mt-0.5">
-                {protection ? `${protection}%` : '-'}
-              </div>
-            </div>
-            <div>
-              <span className="text-gray-600">Strike</span>
-              <div className="font-semibold text-gray-900 mt-0.5">
-                ${callLeg.strike}
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-    
-    // Vertical Spread (Put Spread or Call Spread) details
-    if (strategyType === 'put_spread' || strategyType === 'call_spread') {
-      const legs = position.legs || [];
-      const shortLeg = legs.find(l => l.quantity < 0);
-      const longLeg = legs.find(l => l.quantity > 0);
-      
-      if (!shortLeg || !longLeg) return null;
-      
-      const width = Math.abs(parseFloat(shortLeg.strike) - parseFloat(longLeg.strike));
-      const netCredit = (Math.abs(parseFloat(shortLeg.premium)) - Math.abs(parseFloat(longLeg.premium))) * Math.abs(shortLeg.quantity);
-      const maxProfit = netCredit;
-      const maxLoss = (width * 100 * Math.abs(shortLeg.quantity)) - maxProfit;
-      const daysLeft = daysUntilExpiration(shortLeg.expiration);
-      
-      return (
-        <div className="mt-3 pt-3 border-t border-gray-200">
-          <div className="grid grid-cols-5 gap-4 text-xs">
-            <div>
-              <span className="text-gray-600">Width</span>
-              <div className="font-semibold text-gray-900 mt-0.5">
-                ${width.toFixed(0)}
-              </div>
-            </div>
-            <div>
-              <span className="text-gray-600">Net Credit</span>
-              <div className="font-semibold text-green-600 mt-0.5">
-                {formatCurrency(netCredit)}
-              </div>
-            </div>
-            <div>
-              <span className="text-gray-600">Max Profit</span>
-              <div className="font-semibold text-green-600 mt-0.5">
-                {formatCurrency(maxProfit)}
-              </div>
-            </div>
-            <div>
-              <span className="text-gray-600">Max Loss</span>
-              <div className="font-semibold text-red-600 mt-0.5">
-                {formatCurrency(maxLoss)}
-              </div>
-            </div>
-            <div>
-              <span className="text-gray-600">Days Left</span>
-              <div className={`font-semibold mt-0.5 ${daysLeft < 7 ? 'text-red-600' : daysLeft < 30 ? 'text-orange-600' : 'text-gray-900'}`}>
-                {daysLeft !== null ? `${daysLeft}` : '-'}
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-    
-    // Dividend Stock details
-    if (strategyType === 'dividend') {
-      // TODO: Add dividend-specific data from API (ex-div date, yield, frequency)
-      return (
-        <div className="mt-3 pt-3 border-t border-gray-200">
-          <div className="grid grid-cols-4 gap-4 text-xs">
-            <div>
-              <span className="text-gray-600">Dividend Yield</span>
-              <div className="font-semibold text-gray-900 mt-0.5">
-                Coming Soon
-              </div>
-            </div>
-            <div>
-              <span className="text-gray-600">Next Ex-Div</span>
-              <div className="font-semibold text-gray-900 mt-0.5">
-                -
-              </div>
-            </div>
-            <div>
-              <span className="text-gray-600">Dividend Amount</span>
-              <div className="font-semibold text-gray-900 mt-0.5">
-                -
-              </div>
-            </div>
-            <div>
-              <span className="text-gray-600">Frequency</span>
-              <div className="font-semibold text-gray-900 mt-0.5">
-                -
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-    
-    // Single Option (Big Option) details
-    if (strategyType === 'big_option') {
-      const optionLeg = position.legs?.[0];
-      if (!optionLeg || optionLeg.asset_type !== 'option') return null;
-      
-      const daysLeft = daysUntilExpiration(optionLeg.expiration);
-      // TODO: Add Greeks when available from API
-      
-      return (
-        <div className="mt-3 pt-3 border-t border-gray-200">
-          <div className="grid grid-cols-5 gap-4 text-xs">
-            <div>
-              <span className="text-gray-600">Days to Expiration</span>
-              <div className={`font-semibold mt-0.5 ${daysLeft < 7 ? 'text-red-600' : daysLeft < 30 ? 'text-orange-600' : 'text-gray-900'}`}>
-                {daysLeft !== null ? `${daysLeft}` : '-'}
-              </div>
-            </div>
-            <div>
-              <span className="text-gray-600">Delta (Δ)</span>
-              <div className="font-semibold text-gray-900 mt-0.5">
-                Coming Soon
-              </div>
-            </div>
-            <div>
-              <span className="text-gray-600">Theta (Θ)</span>
-              <div className="font-semibold text-gray-900 mt-0.5">
-                -
-              </div>
-            </div>
-            <div>
-              <span className="text-gray-600">Vega (V)</span>
-              <div className="font-semibold text-gray-900 mt-0.5">
-                -
-              </div>
-            </div>
-            <div>
-              <span className="text-gray-600">Gamma (Γ)</span>
-              <div className="font-semibold text-gray-900 mt-0.5">
-                -
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-    
-    return null;
-  };
-
-  // Multi-level grouping: Account -> Strategy -> Symbol
-  const groupedData = positions.reduce((acc, position) => {
-    const accountKey = position.account_number || 'Unknown';
+  // Single-level grouping: Strategy -> Symbol (no accounts)
+  const groupedData = {};
+  
+  filteredPositions.forEach((position) => {
     const strategyKey = position.strategy_type || 'unknown';
     const symbolKey = position.symbol || 'Unknown';
     
-    if (!acc[accountKey]) {
-      acc[accountKey] = {};
+    if (!groupedData[strategyKey]) {
+      groupedData[strategyKey] = {};
     }
-    if (!acc[accountKey][strategyKey]) {
-      acc[accountKey][strategyKey] = {};
-    }
-    if (!acc[accountKey][strategyKey][symbolKey]) {
-      acc[accountKey][strategyKey][symbolKey] = [];
+    if (!groupedData[strategyKey][symbolKey]) {
+      groupedData[strategyKey][symbolKey] = [];
     }
     
-    acc[accountKey][strategyKey][symbolKey].push(position);
-    return acc;
-  }, {});
+    groupedData[strategyKey][symbolKey].push(position);
+  });
 
   const formatOptionSymbol = (leg) => {
-    if (leg.asset_type !== 'option' || !leg.expiration) return leg.symbol;
+    // For non-options or missing data, return as-is
+    if (leg.asset_type !== 'option') return leg.symbol || '';
+    if (!leg.expiration || !leg.strike) return leg.symbol || '';
     
-    // Parse expiration date
-    const expDate = new Date(leg.expiration);
+    // Parse OCC symbol format to extract underlying ticker
+    // OCC format: TICKER(variable, padded to 6)YYMMDD(6)P/C(1)STRIKE(8)
+    // Examples: "NVDA  251219P00170000", "AAL   260116C00017000"
+    
+    let underlying = '';
+    if (leg.symbol) {
+      // Remove all spaces and try to extract ticker
+      const noSpaces = leg.symbol.replace(/\s+/g, '');
+      // Match: Letters, then 6 digits, then P or C, then 8 digits
+      const occMatch = noSpaces.match(/^([A-Z]+)(\d{6})([PC])(\d{8})$/);
+      
+      if (occMatch) {
+        underlying = occMatch[1];
+      } else {
+        // Fallback: try to extract just the letters at the start
+        const tickerMatch = leg.symbol.match(/^([A-Z]+)/);
+        underlying = tickerMatch ? tickerMatch[1] : 'UNK';
+      }
+    } else {
+      underlying = 'UNK';
+    }
+    
+    // Format expiration date from leg.expiration (ISO format from backend)
+    // Add time component to avoid timezone issues
+    const expDate = typeof leg.expiration === 'string'
+      ? new Date(leg.expiration + 'T00:00:00')
+      : new Date(leg.expiration);
+    
+    // Validate date
+    if (isNaN(expDate.getTime())) {
+      return leg.symbol || 'Invalid Date';
+    }
+    
     const day = expDate.getDate();
     const month = expDate.toLocaleString('en-US', { month: 'short' }).toUpperCase();
     const year = expDate.getFullYear().toString().slice(-2);
     
-    // Format: "SYMBOL DDMMMYY STRIKE" (without C/P since we show badge separately)
-    const underlying = leg.symbol.split(' ')[0]; // Extract underlying from OCC symbol
-    const strike = leg.strike ? Math.round(parseFloat(leg.strike)) : '';
+    // Format strike (round to whole number)
+    const strike = Math.round(parseFloat(leg.strike));
     
+    // Return formatted: "NVDA 19DEC25 170"
     return `${underlying} ${day}${month}${year} ${strike}`;
+  };
+
+  // Format position symbol - just show the underlying ticker
+  const formatPositionSymbol = (position) => {
+    // Always return the underlying symbol (ticker) for the position row
+    // The detailed option formatting is only for the expanded legs
+    return position.underlying || position.symbol || 'Unknown';
+  };
+
+  // Calculate days to expiration for position
+  // For positions with multiple expirations (like calendars), show the shortest
+  const getPositionDaysToExpiration = (position) => {
+    if (!position.legs || position.legs.length === 0) return null;
+    
+    const optionLegs = position.legs.filter(l => l.asset_type === 'option' && l.expiration);
+    if (optionLegs.length === 0) return null;
+    
+    // Find the shortest expiration (nearest date)
+    const daysToExpArray = optionLegs.map(leg => daysUntilExpiration(leg.expiration)).filter(d => d !== null);
+    if (daysToExpArray.length === 0) return null;
+    
+    return Math.min(...daysToExpArray);
+  };
+
+  const handleCollaborate = (position, e) => {
+    e.stopPropagation(); // Prevent row expansion
+    setCollaborationModalPosition(position);
+  };
+
+  const handleCollaborationSuccess = (tradeIdea) => {
+    // Show success notification or navigate to the trade idea
+    console.log('Trade idea created:', tradeIdea);
   };
 
   return (
@@ -439,6 +333,19 @@ export const SchwabPositionsView = () => {
           
           <div className="flex items-center gap-2">
             {/* Compact Filters */}
+            {/* Account Selector */}
+            <select
+              value={selectedAccount}
+              onChange={(e) => setSelectedAccount(e.target.value)}
+              className="px-2 py-1 text-xs border border-gray-300 rounded font-semibold focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+            >
+              {accounts.map((account) => (
+                <option key={account.account_hash} value={account.account_hash}>
+                  Account: {account.account_number}
+                </option>
+              ))}
+            </select>
+            
             <input
               type="text"
               value={filters.symbol}
@@ -462,20 +369,17 @@ export const SchwabPositionsView = () => {
                 onClick={cycleExpansion}
                 className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors flex items-center gap-1.5"
                 title={
-                  expansionLevel === 0 ? 'Collapsed - Click to expand accounts' :
-                  expansionLevel === 1 ? 'Accounts shown - Click to expand strategies' :
-                  expansionLevel === 2 ? 'Strategies shown - Click to expand all legs' :
+                  expansionLevel === 0 ? 'Collapsed - Click to expand strategies' :
+                  expansionLevel === 1 ? 'Strategies shown - Click to expand all legs' :
                   'Fully expanded - Click to collapse all'
                 }
               >
                 {expansionLevel === 0 && <ChevronsRight className="w-3.5 h-3.5" />}
-                {expansionLevel === 1 && <ChevronRight className="w-3.5 h-3.5" />}
-                {expansionLevel === 2 && <ChevronDown className="w-3.5 h-3.5" />}
-                {expansionLevel === 3 && <ChevronsDown className="w-3.5 h-3.5" />}
+                {expansionLevel === 1 && <ChevronDown className="w-3.5 h-3.5" />}
+                {expansionLevel === 2 && <ChevronsDown className="w-3.5 h-3.5" />}
                 <span className="font-medium">
                   {expansionLevel === 0 ? 'Collapsed' :
-                   expansionLevel === 1 ? 'Accounts' :
-                   expansionLevel === 2 ? 'Strategies' :
+                   expansionLevel === 1 ? 'Strategies' :
                    'All Legs'}
                 </span>
               </button>
@@ -514,6 +418,141 @@ export const SchwabPositionsView = () => {
             Error: {error.message}
           </div>
         )}
+        
+        {/* Account Summary Card - At Top (Always show, even for empty accounts) */}
+        {selectedAccountInfo && (() => {
+          const accountSummary = calculateSummary(filteredPositions);
+          const strategyCount = Object.keys(groupedData).length;
+          const totalMaintenance = filteredPositions.reduce((sum, pos) => 
+            sum + (parseFloat(pos.maintenance_requirement) || 0), 0);
+          const totalDayPnL = filteredPositions.reduce((sum, pos) => 
+            sum + (parseFloat(pos.current_day_pnl) || 0), 0);
+          const pnlColor = accountSummary.pnl >= 0 ? 'text-green-600' : 'text-red-600';
+          const dayPnlColor = totalDayPnL >= 0 ? 'text-blue-600' : 'text-orange-600';
+          
+          // Get balance fields from selected account
+          const netLiquid = selectedAccountInfo?.liquidation_value || 0;
+          const stockBP = selectedAccountInfo?.buying_power || 0;
+          const optionsBP = selectedAccountInfo?.buying_power_options || 0;
+          const cashBalance = selectedAccountInfo?.cash_balance || 0;
+          
+          // Check if stock and options BP are the same (Portfolio Margin vs Reg-T)
+          const bpSame = Math.abs(stockBP - optionsBP) < 0.01; // Within 1 cent
+          
+          return (
+            <div className="px-4 py-3 border-t border-b border-gray-200 bg-white">
+              <div className="border-2 border-gray-300 rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-200">
+                  <span className="text-lg">💼</span>
+                  <span className="font-bold text-gray-900 text-base">Account Summary</span>
+                  <span className="text-gray-500 text-sm ml-2">
+                    {accountSummary.count} position{accountSummary.count !== 1 ? 's' : ''} • {strategyCount} strateg{strategyCount !== 1 ? 'ies' : 'y'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-10 gap-4">
+                  {/* Cost Basis */}
+                  <div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Cost Basis</div>
+                    <div className="text-base font-bold text-gray-900">
+                      {formatCurrency(Math.abs(accountSummary.costBasis))}
+                    </div>
+                  </div>
+                  
+                  {/* Current Value */}
+                  <div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Current Value</div>
+                    <div className="text-base font-bold text-gray-900">
+                      {formatCurrency(accountSummary.value)}
+                    </div>
+                  </div>
+                  
+                  {/* Unrealized P&L */}
+                  <div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Unrealized P&L</div>
+                    <div className={`text-base font-bold ${pnlColor}`}>
+                      {formatCurrency(accountSummary.pnl)}
+                    </div>
+                  </div>
+                  
+                  {/* P&L % */}
+                  <div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">P&L %</div>
+                    <div className={`text-base font-bold ${pnlColor}`}>
+                      {accountSummary.pnlPercent}%
+                    </div>
+                  </div>
+                  
+                  {/* Today's P&L */}
+                  <div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Today's P&L</div>
+                    <div className={`text-base font-bold ${dayPnlColor}`}>
+                      {formatCurrency(totalDayPnL)}
+                    </div>
+                  </div>
+                  
+                  {/* BP Effect */}
+                  <div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">BP Effect</div>
+                    <div className="text-base font-semibold text-gray-700">
+                      {formatCurrency(totalMaintenance)}
+                    </div>
+                  </div>
+                  
+                  {/* Net Exposure */}
+                  <div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Net Exposure</div>
+                    <div className="text-base font-semibold text-gray-700">
+                      {formatCurrency(accountSummary.value + Math.abs(accountSummary.costBasis))}
+                    </div>
+                  </div>
+                  
+                  {/* Net Liquid */}
+                  <div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Net Liquid</div>
+                    <div className="text-base font-semibold text-gray-700">
+                      {formatCurrency(netLiquid)}
+                    </div>
+                  </div>
+                  
+                  {/* Buying Power - show combined or separate based on account type */}
+                  {bpSame ? (
+                    // Portfolio Margin or accounts where BP is the same - show one field
+                    <div>
+                      <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Buying Power</div>
+                      <div className="text-base font-semibold text-gray-700">
+                        {formatCurrency(stockBP)}
+                      </div>
+                    </div>
+                  ) : (
+                    // Reg-T account with different BP values - show both
+                    <>
+                      <div>
+                        <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Stock BP</div>
+                        <div className="text-base font-semibold text-gray-700">
+                          {formatCurrency(stockBP)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Options BP</div>
+                        <div className="text-base font-semibold text-gray-700">
+                          {formatCurrency(optionsBP)}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                  
+                  {/* Cash Sweep Balance */}
+                  <div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Cash Sweep</div>
+                    <div className="text-base font-semibold text-gray-700">
+                      {formatCurrency(cashBalance)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Data Grid */}
@@ -549,56 +588,37 @@ export const SchwabPositionsView = () => {
                 <th className="text-right px-2 py-1.5 font-semibold w-20">Value</th>
                 <th className="text-right px-2 py-1.5 font-semibold w-20">P&L</th>
                 <th className="text-right px-2 py-1.5 font-semibold w-14">P&L %</th>
+                <th className="text-right px-2 py-1.5 font-semibold w-18 text-blue-600">Day P&L</th>
+                <th className="text-right px-2 py-1.5 font-semibold w-12 text-gray-500" title="Delta (Coming Soon)">Δ</th>
+                <th className="text-right px-2 py-1.5 font-semibold w-12 text-gray-500" title="Theta (Coming Soon)">Θ</th>
+                <th className="text-right px-2 py-1.5 font-semibold w-16 text-gray-600" title="Buying Power Effect">BP Effect</th>
                 <th className="text-center px-2 py-1.5 font-semibold w-16">Status</th>
-                <th className="text-right px-2 py-1.5 font-semibold w-16">Entry</th>
+                <th className="text-right px-2 py-1.5 font-semibold w-16" title="Days to Expiration">DTE</th>
                 <th className="text-center px-2 py-1.5 font-semibold w-10">Legs</th>
+                <th className="text-center px-2 py-1.5 font-semibold w-20">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white">
-              {Object.entries(groupedData).map(([accountNumber, strategies]) => {
-                const isAccountCollapsed = collapsedAccounts.has(accountNumber);
-                const accountPositionCount = Object.values(strategies).reduce((sum, symbols) => 
-                  sum + Object.values(symbols).reduce((s, positions) => s + positions.length, 0), 0);
-                
-                return (
-                <React.Fragment key={accountNumber}>
-                  {/* Account Section Header */}
-                  <tr 
-                    className="bg-gray-200 border-y border-gray-300 cursor-pointer hover:bg-gray-250"
-                    onClick={() => toggleAccount(accountNumber)}
-                  >
-                    <td colSpan="11" className="px-2 py-1.5 font-semibold text-gray-900">
-                      <div className="flex items-center gap-2">
-                        {isAccountCollapsed ? (
-                          <ChevronRight className="w-4 h-4 text-gray-600" />
-                        ) : (
-                          <ChevronDown className="w-4 h-4 text-gray-600" />
-                        )}
-                        <span>Account: {accountNumber}</span>
-                        <span className="ml-1 text-gray-600 font-normal">
-                          ({accountPositionCount} position{accountPositionCount !== 1 ? 's' : ''})
-                        </span>
-                      </div>
-                    </td>
-                  </tr>
-                  
-                  {!isAccountCollapsed && (
-                  <React.Fragment>
-                  
-                  {/* Strategy Groups */}
-                  {Object.entries(strategies).map(([strategyType, symbols]) => {
-                    const strategyKey = `${accountNumber}-${strategyType}`;
+              {/* Strategy Groups - No account-level grouping */}
+              {Object.entries(groupedData).map(([strategyType, symbols]) => {
+                const strategyKey = strategyType;
                     const isStrategyCollapsed = collapsedStrategies.has(strategyKey);
-                    const strategyPositionCount = Object.values(symbols).reduce((sum, positions) => sum + positions.length, 0);
+                    
+                    // Calculate strategy summary
+                    const strategyPositions = [];
+                    Object.values(symbols).forEach(symbolPositions => {
+                      strategyPositions.push(...symbolPositions);
+                    });
+                    const strategySummary = calculateSummary(strategyPositions);
                     
                     return (
                     <React.Fragment key={strategyKey}>
-                      {/* Strategy Section Header */}
+                      {/* Strategy Section Header with inline summary */}
                       <tr 
-                        className="bg-gray-100 border-b border-gray-200 cursor-pointer hover:bg-gray-150"
+                        className="bg-gray-50 border-b border-gray-100 cursor-pointer hover:bg-gray-100"
                         onClick={() => toggleStrategy(strategyKey)}
                       >
-                        <td colSpan="11" className="px-4 py-1 font-medium text-gray-800 text-xs">
+                        <td colSpan="4" className="px-4 py-1 font-medium text-gray-700 text-xs">
                           <div className="flex items-center gap-2">
                             {isStrategyCollapsed ? (
                               <ChevronRight className="w-3 h-3 text-gray-600" />
@@ -607,10 +627,12 @@ export const SchwabPositionsView = () => {
                             )}
                             <span>{getStrategyLabel(strategyType)}</span>
                             <span className="text-gray-600 font-normal">
-                              ({strategyPositionCount})
+                              ({strategySummary.count})
                             </span>
                           </div>
                         </td>
+                        {renderSummaryCells(strategySummary, 'strategy')}
+                        <td className="px-2 py-1.5"></td>
                       </tr>
                       
                       {!isStrategyCollapsed && (
@@ -618,7 +640,7 @@ export const SchwabPositionsView = () => {
                       
                       {/* Symbol Groups */}
                       {Object.entries(symbols).map(([symbol, symbolPositions]) => (
-                        <React.Fragment key={`${accountNumber}-${strategyType}-${symbol}`}>
+                        <React.Fragment key={`${strategyType}-${symbol}`}>
                           {/* Positions for this symbol */}
                           {symbolPositions.map((position) => {
                 const isExpanded = expandedRows.has(position.id);
@@ -642,7 +664,7 @@ export const SchwabPositionsView = () => {
                           <span className="w-3 inline-block"></span>
                         )}
                       </td>
-                      <td className="px-2 py-1.5 font-semibold text-gray-900">{position.symbol}</td>
+                      <td className="px-2 py-1.5 font-semibold text-gray-900">{formatPositionSymbol(position)}</td>
                       <td className="px-2 py-1.5 text-gray-700">
                         {getStrategyLabel(position.strategy_type)}
                       </td>
@@ -650,7 +672,7 @@ export const SchwabPositionsView = () => {
                         {formatQuantity(position.quantity)}
                       </td>
                       <td className="px-2 py-1.5 text-right text-gray-700">
-                        {formatCurrency(position.cost_basis)}
+                        {formatCurrency(Math.abs(position.cost_basis))}
                       </td>
                       <td className="px-2 py-1.5 text-right font-semibold text-gray-900">
                         {formatCurrency(position.current_value)}
@@ -667,6 +689,25 @@ export const SchwabPositionsView = () => {
                       }`}>
                         {pnlPercent !== null ? `${pnlPercent}%` : '-'}
                       </td>
+                      {/* Day P&L */}
+                      <td className={`px-2 py-1.5 text-right text-xs font-semibold ${
+                        position.current_day_pnl > 0 ? 'text-blue-600' : 
+                        position.current_day_pnl < 0 ? 'text-orange-600' : 'text-gray-600'
+                      }`}>
+                        {position.current_day_pnl ? formatCurrency(position.current_day_pnl) : '-'}
+                      </td>
+                      {/* Delta (placeholder) */}
+                      <td className="px-2 py-1.5 text-right text-gray-400 text-xs">
+                        -
+                      </td>
+                      {/* Theta (placeholder) */}
+                      <td className="px-2 py-1.5 text-right text-gray-400 text-xs">
+                        -
+                      </td>
+                      {/* BP Effect */}
+                      <td className="px-2 py-1.5 text-right text-gray-700 text-xs">
+                        {position.maintenance_requirement ? formatCurrency(position.maintenance_requirement) : '-'}
+                      </td>
                       <td className="px-2 py-1.5 text-center">
                         <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ${
                           position.status === 'active' 
@@ -677,32 +718,56 @@ export const SchwabPositionsView = () => {
                         </span>
                       </td>
                       <td className="px-2 py-1.5 text-right text-gray-600">
-                        {formatDate(position.entry_date)}
+                        {(() => {
+                          const daysLeft = getPositionDaysToExpiration(position);
+                          if (daysLeft === null) return '-';
+                          return (
+                            <span className={`font-medium ${
+                              daysLeft < 7 ? 'text-red-600' : 
+                              daysLeft < 30 ? 'text-orange-600' : 
+                              'text-gray-700'
+                            }`}>
+                              {daysLeft}d
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="px-2 py-1.5 text-center text-gray-600">
                         {position.legs?.length || 0}
+                      </td>
+                      <td className="px-2 py-1.5 text-center">
+                        <button
+                          onClick={(e) => handleCollaborate(position, e)}
+                          className="inline-flex items-center justify-center p-1.5 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
+                          title="Start collaboration on this position"
+                        >
+                          <Share2 className="w-4 h-4" />
+                        </button>
                       </td>
                     </tr>
 
                     {/* Expanded Legs Rows */}
                     {isExpanded && position.legs && position.legs.length > 0 && (
                       <tr className="bg-gray-50">
-                        <td colSpan="11" className="px-0 py-0">
+                        <td colSpan="16" className="px-0 py-0">
                           <div className="px-8 py-2">
                             <table className="w-full text-xs">
                               <thead>
                                 <tr className="text-gray-600 border-b border-gray-200">
                                   <th className="text-left px-2 py-1 font-medium w-48">Option/Stock</th>
                                   <th className="text-right px-2 py-1 font-medium w-16">Qty</th>
-                                  <th className="text-right px-2 py-1 font-medium w-20">Premium</th>
+                                  <th className="text-right px-2 py-1 font-medium w-20">Trade Price</th>
                                   <th className="text-right px-2 py-1 font-medium w-20">Current</th>
                                   <th className="text-right px-2 py-1 font-medium w-20">P&L</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {position.legs.map((leg, index) => {
+                                  // Calculate P&L: (current - trade) * quantity * multiplier
+                                  // For options: multiplier = 100, for stocks: multiplier = 1
+                                  const multiplier = leg.asset_type === 'option' ? 100 : 1;
                                   const legPnL = leg.current_price && leg.premium 
-                                    ? (parseFloat(leg.current_price) - parseFloat(leg.premium)) * parseFloat(leg.quantity)
+                                    ? (parseFloat(leg.current_price) - parseFloat(leg.premium)) * parseFloat(leg.quantity) * multiplier
                                     : null;
                                   
                                   return (
@@ -748,9 +813,6 @@ export const SchwabPositionsView = () => {
                                 })}
                               </tbody>
                             </table>
-                            
-                            {/* Strategy-Specific Details */}
-                            {renderStrategyDetails(position)}
                           </div>
                         </td>
                       </tr>
@@ -761,45 +823,11 @@ export const SchwabPositionsView = () => {
                         </React.Fragment>
                       ))}
                       
-                      {/* Strategy Summary */}
-                      {!isStrategyCollapsed && (() => {
-                        const strategyPositions = [];
-                        Object.values(symbols).forEach(symbolPositions => {
-                          strategyPositions.push(...symbolPositions);
-                        });
-                        const strategySummary = calculateSummary(strategyPositions);
-                        return renderSummaryRow(strategySummary, getStrategyLabel(strategyType), 'strategy');
-                      })()}
-                      
                       </React.Fragment>
                       )}
                     </React.Fragment>
                   );
                 })}
-                  
-                  {/* Account Summary */}
-                  {!isAccountCollapsed && (() => {
-                    const accountPositions = [];
-                    Object.values(strategies).forEach(symbols => {
-                      Object.values(symbols).forEach(symbolPositions => {
-                        accountPositions.push(...symbolPositions);
-                      });
-                    });
-                    const accountSummary = calculateSummary(accountPositions);
-                    return renderSummaryRow(accountSummary, `Account ${accountNumber}`, 'account');
-                  })()}
-                  
-                  </React.Fragment>
-                  )}
-                </React.Fragment>
-              );
-            })}
-            
-            {/* Overall Summary */}
-            {positions.length > 0 && (() => {
-              const overallSummary = calculateSummary(positions);
-              return renderSummaryRow(overallSummary, 'Overall Portfolio', 'overall');
-            })()}
             
             </tbody>
           </table>
@@ -837,6 +865,15 @@ export const SchwabPositionsView = () => {
           </span>
         )}
       </div>
+
+      {/* Collaboration Modal */}
+      {collaborationModalPosition && (
+        <CollaborationModal
+          position={collaborationModalPosition}
+          onClose={() => setCollaborationModalPosition(null)}
+          onSuccess={handleCollaborationSuccess}
+        />
+      )}
     </div>
   );
 };

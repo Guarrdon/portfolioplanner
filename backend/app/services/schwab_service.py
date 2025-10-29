@@ -88,6 +88,9 @@ def fetch_account_data(user_id: str, db: Session, account_ids: Optional[List[str
         raise Exception(f"Failed to fetch account numbers: {accounts_response.status_code}")
     
     accounts = accounts_response.json()
+    print(f"DEBUG: Found {len(accounts)} accounts from Schwab API")
+    for acc in accounts:
+        print(f"  - Account: {acc.get('accountNumber', 'N/A')}")
     
     # Filter to only enabled accounts if account_ids provided
     if account_ids:
@@ -99,9 +102,25 @@ def fetch_account_data(user_id: str, db: Session, account_ids: Optional[List[str
             UserSchwabAccount.sync_enabled == True
         ).all()
         
+        print(f"DEBUG: Found {len(enabled_accounts)} enabled accounts in database")
+        
         if enabled_accounts:
             enabled_hashes = {acc.account_hash for acc in enabled_accounts}
-            accounts = [acc for acc in accounts if acc["hashValue"] in enabled_hashes]
+            print(f"DEBUG: Enabled hashes from DB: {enabled_hashes}")
+            schwab_hashes = {acc["hashValue"] for acc in accounts}
+            print(f"DEBUG: Hashes from Schwab API: {schwab_hashes}")
+            filtered_accounts = [acc for acc in accounts if acc["hashValue"] in enabled_hashes]
+            print(f"DEBUG: Matched accounts: {len(filtered_accounts)}")
+            
+            # If no matches found, the DB has stale hashes (e.g., from mock data)
+            # Fall back to fetching ALL accounts
+            if not filtered_accounts:
+                print("DEBUG: No matches found - database has stale account hashes. Fetching ALL accounts.")
+            else:
+                accounts = filtered_accounts
+        # If no enabled accounts in DB, fetch from ALL accounts
+    
+    print(f"DEBUG: Will fetch positions from {len(accounts)} accounts")
     
     # Fetch position data for each account
     all_positions = []
@@ -112,34 +131,63 @@ def fetch_account_data(user_id: str, db: Session, account_ids: Optional[List[str
         
         try:
             # Fetch account details with positions
-            details_response = client.get_account(account_hash, fields="positions")
+            # Use the proper enum value from schwab-py library
+            import schwab
+            details_response = client.get_account(
+                account_hash, 
+                fields=schwab.client.Client.Account.Fields.POSITIONS
+            )
             
             if details_response.status_code != 200:
-                print(f"Warning: Failed to fetch details for account {account_hash}")
+                print(f"ERROR: Failed to fetch details for account {account_hash}")
+                print(f"  Status code: {details_response.status_code}")
+                print(f"  Response: {details_response.text}")
                 continue
             
             account_data = details_response.json()
             securities_account = account_data.get("securitiesAccount", {})
             
-            # Extract account info
+            # Extract account info including balances
+            current_balances = securities_account.get("currentBalances", {})
+            
             account_info = {
                 "hash_value": account_hash,
                 "account_number": securities_account.get("accountNumber"),
                 "account_type": securities_account.get("type"),
-                "nlv": securities_account.get("currentBalances", {}).get("liquidationValue", 0.0)
+                "cash_balance": current_balances.get("cashBalance", 0.0),
+                "liquidation_value": current_balances.get("liquidationValue", 0.0),
+                "buying_power": current_balances.get("buyingPower", 0.0),  # Stock buying power (with margin)
+                "buying_power_options": current_balances.get("availableFunds", 0.0)  # Options buying power (cash)
             }
             account_info_list.append(account_info)
             
             # Process positions
             positions = securities_account.get("positions", [])
+            print(f"DEBUG: Account {account_info['account_number']} has {len(positions)} positions")
+            
+            # Log a sample position to see all available fields
+            if positions and len(positions) > 0:
+                print(f"DEBUG: Sample position keys: {list(positions[0].keys())}")
+                if 'instrument' in positions[0]:
+                    print(f"DEBUG: Sample instrument keys: {list(positions[0]['instrument'].keys())}")
+            
             for position in positions:
                 transformed = transform_schwab_position(position, account_info)
                 if transformed:
                     all_positions.append(transformed)
+                    # Log first few transformed positions to verify data
+                    if len(all_positions) <= 2:
+                        print(f"DEBUG: Transformed position - Symbol: {transformed.get('symbol')}, Type: {transformed.get('asset_type')}, Value: ${transformed.get('current_value', 0):.2f}, Legs: {len(transformed.get('legs', []))}")
+                else:
+                    print(f"DEBUG: Skipped position {position.get('instrument', {}).get('symbol', 'UNKNOWN')}")
         
         except Exception as e:
             print(f"Error fetching data for account {account_hash}: {e}")
+            import traceback
+            traceback.print_exc()
             continue
+    
+    print(f"DEBUG: Total positions fetched: {len(all_positions)}")
     
     return {
         "accounts": account_info_list,
@@ -178,13 +226,32 @@ def transform_option_position(schwab_position: Dict[str, Any], account_info: Dic
     put_call = instrument.get("putCall", "").lower()
     expiration_str = instrument.get("optionExpirationDate")
     
-    # Parse expiration date
+    # Parse expiration date - try from API first, then decode from OCC symbol
     expiration = None
     if expiration_str:
         try:
             expiration = datetime.fromisoformat(expiration_str).date()
         except:
             pass
+    
+    # If API didn't provide expiration, extract from OCC symbol
+    # OCC format: TICKER(variable)YYMMDD(6)P/C(1)STRIKE(8)
+    # Example: "AAL   260116C00017000" -> date is 260116 (Jan 16, 2026)
+    if not expiration and symbol:
+        try:
+            # Remove all spaces and extract date portion (6 digits after ticker, before P/C)
+            clean_symbol = symbol.replace(' ', '')
+            # Match: letters, then 6 digits (YYMMDD), then P or C
+            match = re.match(r'^[A-Z]+(\d{6})[PC]', clean_symbol)
+            if match:
+                date_str = match.group(1)  # YYMMDD
+                # Parse as YY-MM-DD
+                year = 2000 + int(date_str[0:2])
+                month = int(date_str[2:4])
+                day = int(date_str[4:6])
+                expiration = datetime(year, month, day).date()
+        except Exception as e:
+            pass  # Failed to decode expiration from symbol
     
     # Extract strike from symbol if not provided
     strike = None
@@ -198,9 +265,28 @@ def transform_option_position(schwab_position: Dict[str, Any], account_info: Dic
     market_value = Decimal(str(schwab_position.get("marketValue", 0.0)))
     average_price = Decimal(str(schwab_position.get("averagePrice", 0.0)))
     
-    # Cost basis calculation
-    cost_basis = abs(quantity) * average_price * Decimal(100)
-    unrealized_pnl = market_value - cost_basis if quantity < 0 else market_value + cost_basis
+    # Cost basis calculation (SIGNED for proper multi-leg strategy calculations)
+    # - For LONG (quantity > 0): POSITIVE (money paid out - debit)
+    # - For SHORT (quantity < 0): NEGATIVE (money received - credit)
+    if quantity < 0:
+        # Short: negative cost_basis (credit received)
+        cost_basis = -(abs(quantity) * average_price * Decimal(100))
+    else:
+        # Long: positive cost_basis (debit paid)
+        cost_basis = abs(quantity) * average_price * Decimal(100)
+    
+    # P&L calculation:
+    # - For SHORT (quantity < 0): P&L = credit_received + market_value (market_value is negative)
+    # - For LONG (quantity > 0): P&L = market_value - cost_paid
+    unrealized_pnl = market_value - cost_basis
+    
+    # Additional financial metrics
+    maintenance_requirement = schwab_position.get("maintenanceRequirement")
+    current_day_pnl = schwab_position.get("currentDayProfitLoss")
+    current_day_pnl_pct = schwab_position.get("currentDayProfitLossPercentage")
+    
+    # Calculate current price per share from market value
+    current_price_per_share = abs(market_value / quantity / Decimal(100)) if quantity != 0 else Decimal(0)
     
     return {
         "symbol": symbol,
@@ -210,9 +296,14 @@ def transform_option_position(schwab_position: Dict[str, Any], account_info: Dic
         "strike": float(strike) if strike else None,
         "expiration": expiration,
         "quantity": float(quantity),
+        "average_price": float(average_price),  # Per-share trade price from Schwab
+        "current_price": float(current_price_per_share),  # Per-share current price
         "cost_basis": float(cost_basis),
         "current_value": float(market_value),
         "unrealized_pnl": float(unrealized_pnl),
+        "maintenance_requirement": float(maintenance_requirement) if maintenance_requirement else None,
+        "current_day_pnl": float(current_day_pnl) if current_day_pnl else None,
+        "current_day_pnl_percentage": float(current_day_pnl_pct) if current_day_pnl_pct else None,
         "account_hash": account_info["hash_value"],
         "account_number": mask_account_number(account_info["account_number"]),
         "account_type": account_info["account_type"]
@@ -228,8 +319,17 @@ def transform_equity_position(schwab_position: Dict[str, Any], account_info: Dic
     market_value = Decimal(str(schwab_position.get("marketValue", 0.0)))
     average_price = Decimal(str(schwab_position.get("averagePrice", 0.0)))
     
+    # Cost basis for stocks (always positive for long stocks)
     cost_basis = quantity * average_price
     unrealized_pnl = market_value - cost_basis
+    
+    # Calculate current price per share
+    current_price = market_value / quantity if quantity != 0 else Decimal(0)
+    
+    # Additional financial metrics
+    maintenance_requirement = schwab_position.get("maintenanceRequirement")
+    current_day_pnl = schwab_position.get("currentDayProfitLoss")
+    current_day_pnl_pct = schwab_position.get("currentDayProfitLossPercentage")
     
     return {
         "symbol": symbol,
@@ -239,9 +339,14 @@ def transform_equity_position(schwab_position: Dict[str, Any], account_info: Dic
         "strike": None,
         "expiration": None,
         "quantity": float(quantity),
+        "average_price": float(average_price),  # Per-share trade price
+        "current_price": float(current_price),  # Per-share current price
         "cost_basis": float(cost_basis),
         "current_value": float(market_value),
         "unrealized_pnl": float(unrealized_pnl),
+        "maintenance_requirement": float(maintenance_requirement) if maintenance_requirement else None,
+        "current_day_pnl": float(current_day_pnl) if current_day_pnl else None,
+        "current_day_pnl_percentage": float(current_day_pnl_pct) if current_day_pnl_pct else None,
         "account_hash": account_info["hash_value"],
         "account_number": mask_account_number(account_info["account_number"]),
         "account_type": account_info["account_type"]
@@ -299,16 +404,42 @@ def group_positions_by_strategy(positions: List[Dict[str, Any]]) -> List[Dict[st
                             })
                             remaining_stocks.remove(stock)
                             remaining_options.remove(opt)
-                            exp_options.remove(opt)
+                            if opt in exp_options:
+                                exp_options.remove(opt)
                             break
             
-            # Try to detect put spread
-            puts = [o for o in exp_options if o["option_type"] == "put"]
+            # Try to detect box spread (4-leg: long call + short call + long put + short put, same exp)
+            if len(exp_options) == 4:
+                exp_calls = [o for o in exp_options if o["option_type"] == "call"]
+                exp_puts = [o for o in exp_options if o["option_type"] == "put"]
+                
+                if len(exp_calls) == 2 and len(exp_puts) == 2:
+                    call_long = next((c for c in exp_calls if c["quantity"] > 0), None)
+                    call_short = next((c for c in exp_calls if c["quantity"] < 0), None)
+                    put_long = next((p for p in exp_puts if p["quantity"] > 0), None)
+                    put_short = next((p for p in exp_puts if p["quantity"] < 0), None)
+                    
+                    if call_long and call_short and put_long and put_short:
+                        # Verify it's a box: call_long_strike = put_short_strike, call_short_strike = put_long_strike
+                        if (abs(call_long["strike"] - put_short["strike"]) < 0.1 and
+                            abs(call_short["strike"] - put_long["strike"]) < 0.1):
+                            detected_strategies.append({
+                                "strategy_type": "box_spread",
+                                "legs": [call_long, call_short, put_long, put_short],
+                                "underlying": underlying
+                            })
+                            for leg in [call_long, call_short, put_long, put_short]:
+                                if leg in remaining_options:
+                                    remaining_options.remove(leg)
+                            continue
+            
+            # Try to detect vertical spreads (put or call spreads)
+            puts = [o for o in exp_options if o["option_type"] == "put" and o in remaining_options]
             if len(puts) == 2:
                 sorted_puts = sorted(puts, key=lambda x: x["strike"], reverse=True)
                 if sorted_puts[0]["quantity"] < 0 and sorted_puts[1]["quantity"] > 0:
                     detected_strategies.append({
-                        "strategy_type": "put_spread",
+                        "strategy_type": "vertical_spread",
                         "legs": sorted_puts,
                         "underlying": underlying
                     })
@@ -316,13 +447,12 @@ def group_positions_by_strategy(positions: List[Dict[str, Any]]) -> List[Dict[st
                         if p in remaining_options:
                             remaining_options.remove(p)
             
-            # Try to detect call spread
-            calls = [o for o in exp_options if o["option_type"] == "call"]
+            calls = [o for o in exp_options if o["option_type"] == "call" and o in remaining_options]
             if len(calls) == 2:
                 sorted_calls = sorted(calls, key=lambda x: x["strike"])
-                if sorted_calls[0]["quantity"] < 0 and sorted_calls[1]["quantity"] > 0:
+                if sorted_calls[0]["quantity"] > 0 and sorted_calls[1]["quantity"] < 0:
                     detected_strategies.append({
-                        "strategy_type": "call_spread",
+                        "strategy_type": "vertical_spread",
                         "legs": sorted_calls,
                         "underlying": underlying
                     })
@@ -335,15 +465,35 @@ def group_positions_by_strategy(positions: List[Dict[str, Any]]) -> List[Dict[st
         
         # Add remaining positions as individual positions
         for stock in remaining_stocks:
-            result_positions.append({
-                "strategy_type": "dividend" if stock["quantity"] > 0 else "short_stock",
-                "legs": [stock],
-                "underlying": underlying
-            })
+            # Classify stocks
+            if stock["quantity"] > 0:
+                # Check if it's a dividend stock (could add more logic here, like yield > threshold)
+                result_positions.append({
+                    "strategy_type": "long_stock",
+                    "legs": [stock],
+                    "underlying": underlying
+                })
+            else:
+                result_positions.append({
+                    "strategy_type": "short_stock",
+                    "legs": [stock],
+                    "underlying": underlying
+                })
         
+        # Classify remaining single options
         for opt in remaining_options:
+            # Differentiate between "big_option" and "single_option" based on size
+            # Big Option: |quantity| >= 10 or cost_basis >= $5000
+            abs_qty = abs(opt["quantity"])
+            cost = abs(opt.get("cost_basis", 0))
+            
+            if abs_qty >= 10 or cost >= 5000:
+                strategy_type = "big_option"
+            else:
+                strategy_type = "single_option"
+            
             result_positions.append({
-                "strategy_type": "big_option",
+                "strategy_type": strategy_type,
                 "legs": [opt],
                 "underlying": underlying
             })

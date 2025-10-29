@@ -61,9 +61,24 @@ def get_actual_positions(
     if symbol:
         positions = [p for p in positions if p.symbol.upper() == symbol.upper()]
     
+    # Fetch accounts for this user
+    from app.models.user import UserSchwabAccount
+    accounts = db.query(UserSchwabAccount).filter(
+        UserSchwabAccount.user_id == test_user_id
+    ).all()
+    
     return PositionListResponse(
         total=len(positions),
-        positions=positions
+        positions=positions,
+        accounts=[{
+            "account_number": acc.account_number,
+            "account_type": acc.account_type,
+            "account_hash": acc.account_hash,
+            "cash_balance": acc.cash_balance,
+            "liquidation_value": acc.liquidation_value,
+            "buying_power": acc.buying_power,
+            "buying_power_options": acc.buying_power_options
+        } for acc in accounts]
     )
 
 
@@ -112,8 +127,9 @@ def get_trade_ideas(
     strategy_type: Optional[str] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    db: Session = Depends(get_db)
+    # TODO: Re-enable auth when frontend login is implemented
+    # current_user: User = Depends(get_current_active_user)
 ):
     """
     Get all trade ideas for current user
@@ -125,9 +141,12 @@ def get_trade_ideas(
     - skip: Pagination offset
     - limit: Pagination limit
     """
+    # TODO: Use real user_id when auth is enabled
+    test_user_id = "00000000-0000-0000-0000-000000000001"
+    
     positions = position_service.get_positions(
         db,
-        user_id=current_user.id,
+        user_id=test_user_id,
         flavor="idea",
         status=status,
         skip=skip,
@@ -150,19 +169,23 @@ def get_trade_ideas(
 @router.post("/ideas", response_model=PositionResponse, status_code=status.HTTP_201_CREATED)
 def create_trade_idea(
     position: PositionCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    db: Session = Depends(get_db)
+    # TODO: Re-enable auth when frontend login is implemented
+    # current_user: User = Depends(get_current_active_user)
 ):
     """
     Create a new trade idea
     
     Body: PositionCreate schema with position details and legs
     """
+    # TODO: Use real user_id when auth is enabled
+    test_user_id = "00000000-0000-0000-0000-000000000001"
+    
     try:
         created_position = position_service.create_trade_idea(
             db,
             position_data=position,
-            user_id=current_user.id
+            user_id=test_user_id
         )
         return created_position
     
@@ -176,11 +199,15 @@ def create_trade_idea(
 @router.get("/ideas/{position_id}", response_model=PositionResponse)
 def get_trade_idea(
     position_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    db: Session = Depends(get_db)
+    # TODO: Re-enable auth when frontend login is implemented
+    # current_user: User = Depends(get_current_active_user)
 ):
     """Get a specific trade idea by ID"""
-    position = position_service.get_position_by_id(db, position_id, current_user.id)
+    # TODO: Use real user_id when auth is enabled
+    test_user_id = "00000000-0000-0000-0000-000000000001"
+    
+    position = position_service.get_position_by_id(db, position_id, test_user_id)
     
     if not position or position.flavor != "idea":
         raise HTTPException(
@@ -195,14 +222,18 @@ def get_trade_idea(
 def update_trade_idea(
     position_id: UUID,
     position_update: PositionUpdate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    db: Session = Depends(get_db)
+    # TODO: Re-enable auth when frontend login is implemented
+    # current_user: User = Depends(get_current_active_user)
 ):
     """Update a trade idea"""
+    # TODO: Use real user_id when auth is enabled
+    test_user_id = "00000000-0000-0000-0000-000000000001"
+    
     updated_position = position_service.update_position(
         db,
         position_id=position_id,
-        user_id=current_user.id,
+        user_id=test_user_id,
         update_data=position_update
     )
     
@@ -218,11 +249,15 @@ def update_trade_idea(
 @router.delete("/ideas/{position_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_trade_idea(
     position_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    db: Session = Depends(get_db)
+    # TODO: Re-enable auth when frontend login is implemented
+    # current_user: User = Depends(get_current_active_user)
 ):
     """Delete a trade idea"""
-    success = position_service.delete_position(db, position_id, current_user.id)
+    # TODO: Use real user_id when auth is enabled
+    test_user_id = "00000000-0000-0000-0000-000000000001"
+    
+    success = position_service.delete_position(db, position_id, test_user_id)
     
     if not success:
         raise HTTPException(
@@ -237,8 +272,9 @@ def delete_trade_idea(
 def share_trade_idea(
     position_id: UUID,
     share_request: PositionShareCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    db: Session = Depends(get_db)
+    # TODO: Re-enable auth when frontend login is implemented
+    # current_user: User = Depends(get_current_active_user)
 ):
     """
     Share a trade idea with friends
@@ -247,11 +283,14 @@ def share_trade_idea(
     - friend_ids: List of friend user IDs to share with
     - access_level: Access level (view, comment)
     """
+    # TODO: Use real user_id when auth is enabled
+    test_user_id = "00000000-0000-0000-0000-000000000001"
+    
     try:
         shares = position_service.share_position(
             db,
             position_id=position_id,
-            user_id=current_user.id,
+            user_id=test_user_id,
             friend_ids=share_request.friend_ids
         )
         
@@ -277,8 +316,9 @@ def share_trade_idea(
 def get_shared_positions(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    db: Session = Depends(get_db)
+    # TODO: Re-enable auth when frontend login is implemented
+    # current_user: User = Depends(get_current_active_user)
 ):
     """
     Get all positions shared with current user
@@ -287,11 +327,14 @@ def get_shared_positions(
     - skip: Pagination offset
     - limit: Pagination limit
     """
+    # TODO: Use real user_id when auth is enabled
+    test_user_id = "00000000-0000-0000-0000-000000000001"
+    
     # Get positions where user is a recipient of a share
     from app.models.position import PositionShare
     
     shares = db.query(PositionShare).filter(
-        PositionShare.recipient_id == current_user.id,
+        PositionShare.recipient_id == test_user_id,
         PositionShare.is_active == True
     ).all()
     
@@ -306,14 +349,55 @@ def get_shared_positions(
     )
 
 
+@router.post("/actual/{position_id}/convert-to-idea", response_model=PositionResponse, status_code=status.HTTP_201_CREATED)
+def convert_actual_to_trade_idea(
+    position_id: UUID,
+    db: Session = Depends(get_db)
+    # TODO: Re-enable auth when frontend login is implemented
+    # current_user: User = Depends(get_current_active_user)
+):
+    """
+    Convert an actual (Schwab) position to a trade idea for collaboration
+    
+    This creates a new trade idea based on the actual position's details,
+    allowing users to share and collaborate on trading strategies based on real positions.
+    """
+    try:
+        # TODO: Use real user_id when auth is enabled
+        test_user_id = "00000000-0000-0000-0000-000000000001"
+        
+        trade_idea = position_service.convert_actual_to_trade_idea(
+            db,
+            position_id=position_id,
+            user_id=test_user_id
+        )
+        
+        return trade_idea
+    
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to convert position: {str(e)}"
+        )
+
+
 @router.get("/{position_id}", response_model=PositionResponse)
 def get_position(
     position_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    db: Session = Depends(get_db)
+    # TODO: Re-enable auth when frontend login is implemented
+    # current_user: User = Depends(get_current_active_user)
 ):
     """Get any position by ID (actual, idea, or shared)"""
-    position = position_service.get_position_by_id(db, position_id, current_user.id)
+    # TODO: Use real user_id when auth is enabled
+    test_user_id = "00000000-0000-0000-0000-000000000001"
+    
+    position = position_service.get_position_by_id(db, position_id, test_user_id)
     
     if not position:
         raise HTTPException(

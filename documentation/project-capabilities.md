@@ -16,6 +16,23 @@ The system manages three distinct types of positions:
 
 ## Core Features Implemented
 
+### Trade Idea Collaboration (NEW)
+- **Dual Entry Points**:
+  - Convert actual Schwab positions to trade ideas for collaboration
+  - Create new trade ideas directly in Collaboration Dashboard
+- **Collaboration Dashboard**: Central hub with:
+  - "My Trade Ideas" tab - view and manage your trade ideas
+  - "Shared With Me" tab - view positions shared by friends
+  - Search and filter capabilities
+  - Collaboration statistics and activity metrics
+- **Collaboration Modal**: Two-step wizard for:
+  - Converting positions to trade ideas
+  - Selecting friends to share with
+  - Adding context notes
+- **Position Sharing**: Share trade ideas with friends for discussion
+- **Comments System**: Add comments to positions for collaboration
+- **Access Control**: Friend-based sharing with view/comment permissions
+
 ### Portfolio Management
 - **Multiple Strategy Types**: Support for various investment strategies:
   - Covered Calls
@@ -81,25 +98,81 @@ The system manages three distinct types of positions:
 
 ### Backend Infrastructure
 - ✅ **Architecture Design**: Complete technical architecture defined
-- 🔨 **Python Backend**: FastAPI RESTful API in development
-- 🔨 **Authentication**: JWT-based user authentication and authorization
-- 🔨 **Database**: PostgreSQL schema for positions, users, comments
-- 🔨 **Schwab Integration**: OAuth flow and position sync (mock data initially)
+- ✅ **Python Backend**: FastAPI RESTful API with SQLite (dev) and PostgreSQL (prod) support
+- 🔨 **Authentication**: JWT-based user authentication and authorization (structure complete, UI pending)
+- ✅ **Database**: Multi-database support with custom types for UUID and arrays
+- ✅ **Schwab Integration**: OAuth flow implemented with real API and mock data support
 
 ### Position Management
-- 🔨 **Actual Positions**: Schwab API sync with account selection
+- ✅ **Actual Positions**: Schwab API sync with account selection fully implemented
+  - Real-time position data from Schwab API
+  - Strategy auto-detection (covered calls, vertical spreads, box spreads, big options)
+  - Multi-account support with account filtering
+  - Position grouping by account → strategy → symbol
+  - Comprehensive metrics: P&L, cost basis, current value, Greeks (placeholders)
 - ✅ **Trade Ideas**: Already functional in frontend, backend API in progress
 - 🔨 **Shared Positions**: Backend sharing infrastructure in development
 
+### Schwab Positions UI
+- ✅ **Dense Data Grid Interface**: Application-style table for viewing 100-200+ positions
+  - **Single-account view** with dropdown selector for account filtering
+  - Multi-level collapsible grouping (Strategy → Symbol → Legs)
+  - Expandable position rows showing individual option/stock legs
+  - Intelligent multi-state expansion controls (Collapsed → Strategies → Fully Expanded)
+  - OCC option symbol decoding to human-readable format (e.g., "NVDA 19DEC25 170 P")
+  - Color-coded P&L indicators (green/red) and day P&L (blue/orange)
+  - Visual indicators for puts vs. calls (blue badges for calls, purple for puts)
+  - **Account summary card** at top with comprehensive metrics:
+    - Position metrics: Cost Basis, Current Value, Unrealized P&L, P&L%, Today's P&L
+    - Risk metrics: BP Effect, Net Exposure
+    - **Account balances**: Net Liquid, Cash Sweep
+    - **Smart Buying Power display**: Auto-detects account type
+      - Reg-T accounts: Shows separate "Stock BP" and "Options BP"
+      - Portfolio Margin: Shows single "Buying Power" (when values equal)
+    - Always visible, even for accounts with no positions
+  - Hash-based position filtering (matches `account_hash` to `account_id` for security)
+  - Real-time sync with refresh button
+  - Empty state handling with full account info display
+  - Subtle strategy-level summaries embedded in headers
+  
+### Strategy Detection & Classification
+- ✅ **Automated Strategy Recognition**: Backend logic to identify common option strategies
+  - **Covered Calls**: Long stock + short call
+  - **Vertical Spreads**: Bull/bear call and put spreads
+  - **Box Spreads**: 4-leg arbitrage strategies
+  - **Big Options**: Large single-leg positions (qty ≥ 10 or cost ≥ $5000)
+  - **Single Options**: Smaller single-leg positions
+  - **Long/Short Stock**: Individual equity holdings
+  - Signed cost basis calculations for proper multi-leg P&L
+  
+### Data Transformations
+- ✅ **Option Symbol Parsing**: OCC format decoding with timezone-safe expiration handling
+- ✅ **Signed Cost Basis**: Proper credit/debit handling for multi-leg strategies
+- ✅ **Position Leg Rollups**: Accurate aggregation of leg metrics to position level
+- ✅ **Days to Expiration**: Timezone-aware calculation with shortest DTE for multi-leg strategies
+- ✅ **Trade Price vs. Current Price**: Separation of entry price and market price for accurate P&L
+
 ## Future Development (Planned)
 
-### Phase 2: Real Schwab Integration
-- **OAuth 2.0 Flow**: Complete Schwab authentication in app
-- **Real-time Sync**: Replace mock data with actual Schwab API calls
-- **Token Management**: Automatic token refresh and error handling
-- **Multiple Accounts**: Support for users with multiple Schwab accounts
+### Phase 2: Enhanced Schwab Integration
+- ✅ **Account Balance Details**: Complete implementation with smart display
+  - Net Liquid (liquidation value)
+  - Cash Sweep (cash balance)
+  - Intelligent Buying Power display (auto-detects Reg-T vs Portfolio Margin)
+- ✅ **Single Account View**: Dropdown selector for focused account analysis
+- ✅ **Empty Account Handling**: Full summary display even without positions
+- **OAuth 2.0 Flow**: Complete Schwab authentication in app UI
+- **Real-time Sync Automation**: Automatic background sync on schedule
+- **Token Management**: Enhanced token refresh and error handling
+- **Greeks Integration**: Display real-time Delta, Theta, Vega from Schwab API
+- **Day Trading Buying Power**: Add display for `dayTradingBuyingPower` field
 
 ### Phase 3: Enhanced Collaboration
+- ✅ **Trade Idea Collaboration**: Convert actual positions to trade ideas for collaboration
+- ✅ **Collaboration Dashboard**: Central hub for managing collaborative trade ideas
+- ✅ **Dual Entry Points**: Collaborate from Schwab positions or dashboard
+- ✅ **Position Sharing**: Share trade ideas with friends
+- ✅ **Comments System**: Discuss positions with collaborators
 - **Real-time Notifications**: Alert users of position updates and shares
 - **Activity Feeds**: Track friend activity and position changes
 - **Enhanced Permissions**: Granular sharing controls

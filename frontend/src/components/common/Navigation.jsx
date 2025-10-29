@@ -11,7 +11,8 @@ import {
   Calendar,
   ChevronRight,
   Building2,
-  Home
+  Home,
+  Users
 } from 'lucide-react';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { addDays } from 'date-fns';
@@ -80,6 +81,13 @@ const Navigation = () => {
           icon: Building2,
           description: 'Actual positions from Schwab',
           color: 'indigo'
+        },
+        {
+          name: 'Collaboration Hub',
+          path: '/collaboration',
+          icon: Users,
+          description: 'Share and collaborate on trade ideas',
+          color: 'green'
         }
       ]
     },

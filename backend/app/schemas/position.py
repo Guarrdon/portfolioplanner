@@ -18,6 +18,11 @@ class PositionLegBase(BaseModel):
     premium: Optional[Decimal] = None
     current_price: Optional[Decimal] = None
     target_premium: Optional[Decimal] = None
+    # Greeks (for options)
+    delta: Optional[Decimal] = None
+    gamma: Optional[Decimal] = None
+    theta: Optional[Decimal] = None
+    vega: Optional[Decimal] = None
 
 
 class PositionLegCreate(PositionLegBase):
@@ -83,6 +88,9 @@ class PositionResponse(PositionBase):
     cost_basis: Optional[Decimal] = None
     current_value: Optional[Decimal] = None
     unrealized_pnl: Optional[Decimal] = None
+    maintenance_requirement: Optional[Decimal] = None
+    current_day_pnl: Optional[Decimal] = None
+    current_day_pnl_percentage: Optional[Decimal] = None
     entry_date: Optional[date] = None
     exit_date: Optional[date] = None
     
@@ -106,10 +114,25 @@ class PositionResponse(PositionBase):
         from_attributes = True
 
 
+class AccountInfo(BaseModel):
+    """Schema for account information"""
+    account_number: str
+    account_type: Optional[str] = None
+    account_hash: Optional[str] = None
+    cash_balance: Optional[float] = 0.0
+    liquidation_value: Optional[float] = 0.0
+    buying_power: Optional[float] = 0.0  # Stock buying power
+    buying_power_options: Optional[float] = 0.0  # Options buying power
+    
+    class Config:
+        from_attributes = True
+
+
 class PositionListResponse(BaseModel):
     """Schema for list of positions"""
     total: int
     positions: List[PositionResponse]
+    accounts: Optional[List[AccountInfo]] = []
 
 
 class PositionShareCreate(BaseModel):

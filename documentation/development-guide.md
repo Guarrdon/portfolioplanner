@@ -1,615 +1,368 @@
-# Development Guide
+# Portfolio Planner - Development Guide
 
-## Getting Started
-
-### Prerequisites
-
-- **Python 3.11+**: Backend runtime
-- **Node.js 18+**: Frontend development
-- **PostgreSQL 14+**: Database
-- **Git**: Version control
-
-### Initial Setup
-
-#### 1. Clone and Navigate
-
-```bash
-git clone <repository-url>
-cd portfolioplanner
-```
-
-#### 2. Backend Setup
-
-```bash
-# Navigate to backend
-cd backend
-
-# Create virtual environment
-python -m venv venv
-
-# Activate virtual environment
-# On macOS/Linux:
-source venv/bin/activate
-# On Windows:
-# venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Copy environment template
-cp .env.example .env
-
-# Edit .env with your configuration
-# Set database URL, secret key, etc.
-```
-
-#### 3. Database Setup
-
-```bash
-# Start PostgreSQL (if using Docker)
-docker run --name portfolio-db -e POSTGRES_PASSWORD=postgres -p 5432:5432 -d postgres:14
-
-# Run migrations
-alembic upgrade head
-
-# Optional: Load seed data
-python scripts/seed_data.py
-```
-
-#### 4. Frontend Setup
-
-```bash
-# Navigate to frontend
-cd frontend
-
-# Install dependencies
-npm install
-
-# Copy environment template (if exists)
-cp .env.example .env.local
-
-# Edit .env.local with your configuration
-```
+## Quick Start
 
 ### Running the Application
-
-#### Development Mode
-
 ```bash
-# Terminal 1 - Backend
-cd backend
-source venv/bin/activate
-uvicorn app.main:app --reload --port 8000
-
-# Terminal 2 - Frontend
-cd frontend
-npm start
+cd /Users/mlyons/Development/Guarrdon/portfolioplanner
+./start.sh
 ```
 
-Access the application:
+**Services**:
 - Frontend: http://localhost:3000
-- Backend API: http://localhost:8000
-- API Documentation: http://localhost:8000/docs
+- Backend: http://localhost:8000
+- API Docs: http://localhost:8000/docs
 
-## Project Structure
+### Key Technologies
+- **Frontend**: React 18, Tailwind CSS, React Router, React Query
+- **Backend**: FastAPI (Python 3.11), SQLAlchemy, Pydantic
+- **Database**: SQLite (dev), PostgreSQL-compatible (prod)
+- **External API**: Schwab API via `schwab-py` library
 
+## Current Architecture
+
+### Frontend Structure
 ```
-portfolioplanner/
-├── backend/
-│   ├── app/
-│   │   ├── api/              # API endpoints
-│   │   │   ├── v1/
-│   │   │   │   ├── auth.py
-│   │   │   │   ├── positions.py
-│   │   │   │   ├── users.py
-│   │   │   │   └── schwab.py
-│   │   ├── core/             # Core configuration
-│   │   │   ├── config.py
-│   │   │   ├── security.py
-│   │   │   └── database.py
-│   │   ├── models/           # SQLAlchemy models
-│   │   │   ├── user.py
-│   │   │   ├── position.py
-│   │   │   └── comment.py
-│   │   ├── schemas/          # Pydantic schemas
-│   │   │   ├── position.py
-│   │   │   ├── user.py
-│   │   │   └── auth.py
-│   │   ├── services/         # Business logic
-│   │   │   ├── schwab.py
-│   │   │   ├── position.py
-│   │   │   └── auth.py
-│   │   ├── utils/            # Utilities
-│   │   │   ├── encryption.py
-│   │   │   ├── validators.py
-│   │   │   └── helpers.py
-│   │   └── main.py           # FastAPI application
-│   ├── alembic/              # Database migrations
-│   ├── tests/                # Backend tests
-│   ├── requirements.txt
-│   └── .env
-├── frontend/
-│   ├── src/
-│   │   ├── components/       # React components (existing)
-│   │   ├── contexts/         # React contexts (existing)
-│   │   ├── hooks/            # Custom hooks
-│   │   ├── services/         # API client services
-│   │   │   ├── api.js        # Axios configuration
-│   │   │   ├── positions.js
-│   │   │   ├── auth.js
-│   │   │   └── schwab.js
-│   │   ├── utils/            # Utilities (existing)
-│   │   └── App1.jsx
-│   ├── public/
-│   └── package.json
-├── documentation/            # Project documentation
-└── ref/                      # Reference implementations (archived)
+frontend/src/
+├── components/
+│   ├── schwab/
+│   │   └── SchwabPositionsView.jsx    # Main Schwab positions UI
+│   ├── portfolio/                     # Portfolio management
+│   ├── strategies/                    # Strategy views
+│   └── common/                        # Shared components
+├── contexts/                          # React context providers
+├── hooks/                             # Custom hooks
+└── utils/                             # Helper functions
 ```
 
-## Backend Development
-
-### Creating a New API Endpoint
-
-1. **Define Pydantic Schema** (`app/schemas/`)
-
-```python
-# app/schemas/position.py
-from pydantic import BaseModel
-from typing import Optional
-from datetime import date
-
-class PositionCreate(BaseModel):
-    symbol: str
-    strategy_type: str
-    quantity: Optional[float]
-    notes: Optional[str]
+### Backend Structure
+```
+backend/app/
+├── api/v1/
+│   └── positions.py                   # Position endpoints
+├── models/
+│   ├── user.py                        # User & account models
+│   └── position.py                    # Position models
+├── services/
+│   ├── schwab_service.py              # Schwab API integration
+│   └── position_service.py            # Position business logic
+└── schemas/
+    └── position.py                    # API schemas (Pydantic)
 ```
 
-2. **Create Service Function** (`app/services/`)
+## Schwab Integration
 
-```python
-# app/services/position.py
-from sqlalchemy.orm import Session
-from app.models.position import Position
-from app.schemas.position import PositionCreate
-
-def create_position(db: Session, position: PositionCreate, user_id: str):
-    db_position = Position(
-        **position.dict(),
-        user_id=user_id,
-        flavor='idea'
-    )
-    db.add(db_position)
-    db.commit()
-    db.refresh(db_position)
-    return db_position
+### Configuration
+**File**: `backend/schwab_config.toml`
+```toml
+consumer_key = "YOUR_KEY"
+app_secret = "YOUR_SECRET"
+token_path = "schwab_tokens.json"
 ```
 
-3. **Create API Endpoint** (`app/api/v1/`)
-
-```python
-# app/api/v1/positions.py
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from app.core.database import get_db
-from app.core.security import get_current_user
-from app.schemas.position import PositionCreate, PositionResponse
-from app.services import position as position_service
-
-router = APIRouter(prefix="/positions", tags=["positions"])
-
-@router.post("/ideas", response_model=PositionResponse)
-def create_trade_idea(
-    position: PositionCreate,
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
-):
-    return position_service.create_position(db, position, current_user.id)
-```
-
-4. **Register Router** (`app/main.py`)
-
-```python
-from app.api.v1 import positions
-
-app.include_router(positions.router, prefix="/api/v1")
-```
-
-### Database Migrations
-
+**Environment**: `backend/.env`
 ```bash
-# Create new migration
-alembic revision --autogenerate -m "Add new table"
-
-# Review the generated migration file
-# Edit if needed: alembic/versions/xxx_add_new_table.py
-
-# Apply migration
-alembic upgrade head
-
-# Rollback if needed
-alembic downgrade -1
+USE_MOCK_SCHWAB_DATA=false  # Set to 'true' for mock data
 ```
 
-### Running Tests
-
+### Token Management
+Generate tokens (one-time setup):
 ```bash
 cd backend
-
-# Run all tests
-pytest
-
-# Run specific test file
-pytest tests/test_positions.py
-
-# Run with coverage
-pytest --cov=app tests/
-
-# Run with output
-pytest -v -s
+python get_schwab_token.py
 ```
 
-## Frontend Development
+### Sync Process Flow
+1. User clicks "Sync" button in UI
+2. Frontend calls `POST /api/v1/positions/sync`
+3. Backend calls `schwab_service.fetch_account_data()`
+4. Schwab API returns account details + positions
+5. Backend transforms data and stores in database
+6. Frontend refreshes to display updated positions
 
-### Creating a New Component
+### Key Data Structures
 
-```jsx
-// src/components/schwab/PositionList.jsx
-import React from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { fetchActualPositions } from '../../services/schwab';
-
-export const PositionList = () => {
-  const { data: positions, isLoading, error } = useQuery({
-    queryKey: ['positions', 'actual'],
-    queryFn: fetchActualPositions
-  });
-
-  if (isLoading) return <div>Loading...</div>;
-  if (error) return <div>Error: {error.message}</div>;
-
-  return (
-    <div className="space-y-4">
-      {positions.map(position => (
-        <PositionCard key={position.id} position={position} />
-      ))}
-    </div>
-  );
-};
-```
-
-### API Service Functions
-
-```javascript
-// src/services/schwab.js
-import api from './api';
-
-export const fetchActualPositions = async () => {
-  const response = await api.get('/positions/actual');
-  return response.data;
-};
-
-export const syncSchwabPositions = async (accountIds = []) => {
-  const response = await api.post('/positions/sync', { account_ids: accountIds });
-  return response.data;
-};
-
-export const getAccountList = async () => {
-  const response = await api.get('/schwab/accounts');
-  return response.data;
-};
-```
-
-### Using React Query
-
-```jsx
-// Fetching data
-const { data, isLoading, error } = useQuery({
-  queryKey: ['key'],
-  queryFn: fetchFunction
-});
-
-// Mutations
-const mutation = useMutation({
-  mutationFn: createFunction,
-  onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: ['key'] });
-  }
-});
-
-// Usage
-mutation.mutate(data);
-```
-
-## Code Style Guidelines
-
-### Backend (Python)
-
-- Follow PEP 8 style guide
-- Use type hints for all functions
-- Maximum line length: 100 characters
-- Use docstrings for all public functions
-
+**Account Balances** (from Schwab API):
 ```python
-def transform_position(raw_data: dict, user_id: str) -> Position:
-    """
-    Transform raw Schwab data to Position model.
-    
-    Args:
-        raw_data: Raw position data from Schwab API
-        user_id: ID of the user who owns the position
-        
-    Returns:
-        Position object ready for database insertion
-        
-    Raises:
-        ValidationError: If raw_data is invalid
-    """
-    pass
+current_balances = {
+    "cashBalance": 1780.95,           # Cash sweep balance
+    "liquidationValue": 6248.95,      # Net liquid value
+    "buyingPower": 5936.77,           # Stock BP (with margin)
+    "availableFunds": 1781.03,        # Options BP (cash-based)
+    "dayTradingBuyingPower": 11119.0, # Day trading BP
+    "equity": 5782.95,
+    # ... many more fields available
+}
 ```
 
-- Use black for code formatting: `black app/`
-- Use isort for imports: `isort app/`
-- Use flake8 for linting: `flake8 app/`
+**Position Data Flow**:
+```
+Schwab Position (raw)
+  → transform_schwab_position()
+    → group_positions_by_strategy()
+      → Database: Position + PositionLeg
+        → API Response
+          → Frontend Display
+```
 
-### Frontend (JavaScript/React)
+## Key Features Implemented
 
-- Use functional components with hooks
-- Use arrow functions for callbacks
-- Maximum line length: 100 characters
-- Use JSDoc comments for complex functions
+### 1. Account Summary Card
+**Location**: `SchwabPositionsView.jsx` (top of screen)
 
+**Displays**:
+- Position metrics (Cost, Value, P&L, P&L%)
+- Risk metrics (BP Effect, Net Exposure)
+- Account balances (Net Liquid, BP, Cash Sweep)
+
+**Smart BP Display Logic**:
 ```javascript
-/**
- * Sync positions from Schwab API
- * @param {string[]} accountIds - Optional array of account IDs to sync
- * @returns {Promise<Position[]>} Array of synced positions
- */
-export const syncPositions = async (accountIds = []) => {
-  // implementation
-};
+const bpSame = Math.abs(stockBP - optionsBP) < 0.01;
+if (bpSame) {
+  // Show single "Buying Power" field
+} else {
+  // Show "Stock BP" and "Options BP" separately
+}
 ```
 
-- Use Prettier for formatting (configured in package.json)
-- Use ESLint for linting (configured in package.json)
+### 2. Single-Account View
+**Implementation**:
+- Dropdown selector in toolbar: `selectedAccount` state
+- Filters positions: `filteredPositions = positions.filter(p => p.account_id === selectedAccount)`
+- Uses `account_hash` for filtering (security)
+- Shows account summary even for empty accounts
 
-### Component Structure
+### 3. Hash-Based Security
+**Why**: Account numbers are masked in position data (`****7628`)
 
-```jsx
-// Imports
-import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+**Solution**:
+- Accounts API returns: `account_number` (full) + `account_hash` (unique ID)
+- Positions store: `account_number` (masked) + `account_id` (matches hash)
+- Frontend filters by: `account_hash` → `account_id`
 
-// Component
-export const MyComponent = ({ prop1, prop2 }) => {
-  // Hooks
-  const [state, setState] = useState(null);
-  const { data } = useQuery(...);
-  
-  // Event handlers
-  const handleClick = () => {
-    // logic
-  };
-  
-  // Effects
-  useEffect(() => {
-    // side effects
-  }, [dependencies]);
-  
-  // Render helpers (if needed)
-  const renderItem = (item) => {
-    return <div>{item.name}</div>;
-  };
-  
-  // Return JSX
-  return (
-    <div className="container">
-      {/* content */}
-    </div>
-  );
-};
+### 4. Strategy Auto-Detection
+**Backend**: `schwab_service.group_positions_by_strategy()`
+
+**Strategies Detected**:
+- Covered Calls (long stock + short call)
+- Vertical Spreads (bull/bear spreads)
+- Box Spreads (4-leg arbitrage)
+- Big Options (qty ≥ 10 or cost ≥ $5000)
+- Long/Short Stock
+
+### 5. Option Symbol Decoding
+**Format**: OCC standard → Human-readable
+
+**Example**:
+```
+NVDA  251219P00170000  →  NVDA 19DEC25 170 (with purple "P" badge)
 ```
 
-## Environment Configuration
+**Implementation**: `formatOptionSymbol()` in SchwabPositionsView.jsx
 
-### Backend (.env)
+## Database Schema
 
+### Key Tables
+
+**user_schwab_accounts**:
+```sql
+- id (UUID)
+- user_id (UUID, FK)
+- account_hash (STRING) - Unique identifier
+- account_number (STRING) - Masked for display
+- account_type (STRING) - MARGIN, CASH, IRA, etc.
+- cash_balance (FLOAT)
+- liquidation_value (FLOAT)
+- buying_power (FLOAT) - Stock BP
+- buying_power_options (FLOAT) - Options BP
+- sync_enabled (BOOLEAN)
+- last_synced (DATETIME)
+```
+
+**positions**:
+```sql
+- id (UUID)
+- user_id (UUID, FK)
+- account_id (STRING) - Matches account_hash
+- account_number (STRING) - Masked
+- symbol (STRING)
+- underlying (STRING)
+- strategy_type (STRING)
+- flavor (STRING) - 'actual', 'idea', 'shared'
+- quantity (DECIMAL)
+- cost_basis (DECIMAL)
+- current_value (DECIMAL)
+- unrealized_pnl (DECIMAL)
+- maintenance_requirement (DECIMAL)
+- current_day_pnl (DECIMAL)
+- read_only (BOOLEAN)
+- ... many more fields
+```
+
+**position_legs**:
+```sql
+- id (UUID)
+- position_id (UUID, FK)
+- symbol (STRING)
+- asset_type (STRING) - 'option', 'stock'
+- option_type (STRING) - 'call', 'put'
+- strike (DECIMAL)
+- expiration (DATE)
+- quantity (DECIMAL)
+- premium (DECIMAL) - Trade price
+- current_price (DECIMAL)
+- delta, gamma, theta, vega (DECIMAL) - Greeks
+```
+
+## Common Development Tasks
+
+### Adding a New Balance Field
+
+1. **Backend Model** (`backend/app/models/user.py`):
+```python
+class UserSchwabAccount(Base):
+    new_field = Column(Float, default=0.0)
+```
+
+2. **Extract from API** (`backend/app/services/schwab_service.py`):
+```python
+account_info = {
+    "new_field": current_balances.get("newFieldName", 0.0)
+}
+```
+
+3. **Store in DB** (`backend/app/services/position_service.py`):
+```python
+db_account.new_field = account.get("new_field", 0.0)
+```
+
+4. **Expose via API** (`backend/app/api/v1/positions.py`):
+```python
+accounts=[{
+    "new_field": acc.new_field
+}]
+```
+
+5. **Schema** (`backend/app/schemas/position.py`):
+```python
+class AccountInfo(BaseModel):
+    new_field: Optional[float] = 0.0
+```
+
+6. **Database Migration**:
+```python
+cursor.execute("""
+    ALTER TABLE user_schwab_accounts 
+    ADD COLUMN new_field REAL DEFAULT 0.0
+""")
+```
+
+7. **Display in Frontend** (`SchwabPositionsView.jsx`):
+```javascript
+const newField = selectedAccountInfo?.new_field || 0;
+```
+
+### Adding a New Position Metric
+
+1. Extract from Schwab position object
+2. Add to `transform_schwab_position()` or `transform_equity_position()`
+3. Include in position dictionary
+4. Display in UI
+
+### Debugging Schwab API Issues
+
+**View raw API response**:
+```python
+# In schwab_service.py, add:
+print(f"DEBUG: Raw account data: {account_data}")
+print(f"DEBUG: Current balances: {current_balances}")
+```
+
+**Check backend logs**:
 ```bash
-# Database
-DATABASE_URL=postgresql://user:password@localhost:5432/portfolio
-
-# Security
-SECRET_KEY=your-secret-key-here-generate-with-openssl-rand-hex-32
-JWT_ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-REFRESH_TOKEN_EXPIRE_DAYS=7
-
-# Encryption
-ENCRYPTION_KEY=your-encryption-key-here-generate-with-cryptography-fernet
-
-# Schwab API (for mock mode)
-USE_MOCK_SCHWAB_DATA=true
-
-# When real Schwab API is ready:
-# USE_MOCK_SCHWAB_DATA=false
-# SCHWAB_CALLBACK_URL=http://localhost:8000/api/v1/schwab/callback
-
-# CORS
-CORS_ORIGINS=http://localhost:3000,http://localhost:3001
-
-# Logging
-LOG_LEVEL=INFO
+tail -f backend.log
 ```
 
-### Frontend (.env.local)
-
+**Test API directly**:
 ```bash
-REACT_APP_API_URL=http://localhost:8000/api/v1
-REACT_APP_ENV=development
+curl http://localhost:8000/api/v1/positions/actual?status=active
 ```
 
-## Debugging
+## Testing
 
-### Backend Debugging
+### Manual Testing Checklist
+- [ ] Sync positions successfully
+- [ ] Switch between accounts in dropdown
+- [ ] Verify balance fields display correctly
+- [ ] Check empty account shows summary
+- [ ] Reg-T account shows two BP fields
+- [ ] Portfolio Margin shows one BP field
+- [ ] Expand/collapse positions
+- [ ] Verify option symbols decode correctly
+- [ ] Check P&L calculations
+- [ ] Verify strategy auto-detection
 
-1. **Using print statements**
-```python
-print(f"Debug: {variable}")
-```
+### Mock Data Mode
+Set `USE_MOCK_SCHWAB_DATA=true` in `.env` for development without API access.
 
-2. **Using logging**
-```python
-import logging
-logger = logging.getLogger(__name__)
-logger.debug(f"Processing position: {position.id}")
-```
+## Known Limitations & Future Work
 
-3. **Using debugger**
-```python
-import pdb; pdb.set_trace()
-# Or with breakpoint() in Python 3.7+
-breakpoint()
-```
+### Not Yet Implemented
+- [ ] Greeks display (Delta, Theta, Vega)
+- [ ] Day Trading Buying Power display
+- [ ] OAuth flow in UI (currently uses token file)
+- [ ] Automatic token refresh
+- [ ] Real-time position updates
+- [ ] Position history/tracking
+- [ ] Multi-account comparison view
+- [ ] Export to CSV/PDF
 
-4. **VS Code debugging** - Add configuration to `.vscode/launch.json`
-
-### Frontend Debugging
-
-1. **Console logging**
-```javascript
-console.log('Debug:', data);
-console.table(positions); // For arrays of objects
-```
-
-2. **React DevTools** - Install browser extension
-
-3. **React Query DevTools** - Already configured, press Ctrl+Shift+D
-
-4. **Network tab** - Check API calls in browser DevTools
-
-## Common Tasks
-
-### Adding a New Position Strategy Type
-
-1. Update backend validation
-2. Add database migration if needed
-3. Update position service
-4. Create frontend form component
-5. Add to strategy selector
-6. Update documentation
-
-### Adding Schwab Data Field
-
-1. Update position model
-2. Create migration
-3. Update transformation logic in schwab service
-4. Update frontend display components
-5. Update mock data generator
-
-### Creating Database Seed Data
-
-```python
-# scripts/seed_data.py
-from app.core.database import SessionLocal
-from app.models.user import User
-
-def seed_users():
-    db = SessionLocal()
-    
-    user = User(
-        email="test@example.com",
-        username="testuser",
-        hashed_password="hashed_password_here"
-    )
-    db.add(user)
-    db.commit()
-    
-seed_users()
-```
+### Technical Debt
+- Frontend could use more unit tests
+- Strategy detection could be more sophisticated
+- Consider adding position validation rules
+- Improve error handling for API failures
 
 ## Troubleshooting
 
-### Backend won't start
+### Port Already in Use
+The `start.sh` script automatically kills processes on ports 8000 and 3000.
 
-1. Check Python version: `python --version` (should be 3.11+)
-2. Check virtual environment is activated
-3. Check database is running: `psql -U postgres -l`
-4. Check environment variables are set
-5. Check for port conflicts: `lsof -i :8000`
-
-### Frontend won't start
-
-1. Check Node version: `node --version` (should be 18+)
-2. Delete node_modules and reinstall: `rm -rf node_modules && npm install`
-3. Clear npm cache: `npm cache clean --force`
-4. Check for port conflicts: `lsof -i :3000`
-
-### Database connection errors
-
-1. Verify PostgreSQL is running
-2. Check DATABASE_URL in .env
-3. Test connection: `psql $DATABASE_URL`
-4. Check firewall rules
-
-### CORS errors
-
-1. Check CORS_ORIGINS in backend .env
-2. Verify frontend URL matches
-3. Check browser console for specific error
-4. Try clearing browser cache
-
-## Git Workflow
-
-### Branch Naming
-
-- Feature: `feature/position-sync`
-- Bug fix: `bugfix/fix-auth-error`
-- Hotfix: `hotfix/critical-fix`
-- Documentation: `docs/update-readme`
-
-### Commit Messages
-
-```
-type(scope): subject
-
-body
-
-footer
+### Database Locked
+```bash
+# If SQLite database is locked:
+rm backend/portfolio.db-journal  # If exists
+# Then restart
 ```
 
-Types: feat, fix, docs, style, refactor, test, chore
-
-Examples:
-```
-feat(positions): add Schwab position sync
-
-- Implement sync endpoint
-- Add mock data generator
-- Update frontend to trigger sync
-
-Closes #123
+### Token Expired
+```bash
+cd backend
+python get_schwab_token.py
+# Follow prompts to generate new token
 ```
 
-### Pull Request Process
+### Positions Not Syncing
+1. Check backend logs: `tail -f backend.log`
+2. Verify Schwab API credentials in `schwab_config.toml`
+3. Ensure token file exists: `ls backend/schwab_tokens.json`
+4. Check account sync is enabled in database
 
-1. Create feature branch from `main`
-2. Make changes and commit
-3. Push branch to remote
-4. Create PR with description
-5. Address review comments
-6. Squash and merge when approved
+## Documentation Files
 
-## Resources
+- **project-capabilities.md**: High-level feature overview
+- **schwab-integration.md**: Detailed Schwab API integration docs
+- **project-structure.md**: Directory structure and file organization
+- **development-guide.md**: This file - practical development guide
 
-- [FastAPI Documentation](https://fastapi.tiangolo.com/)
-- [React Documentation](https://react.dev/)
-- [React Query Documentation](https://tanstack.com/query/latest)
-- [SQLAlchemy Documentation](https://docs.sqlalchemy.org/)
-- [Tailwind CSS Documentation](https://tailwindcss.com/docs)
-- [Schwab API Documentation](https://developer.schwab.com/)
+## Getting Help
+
+- **Schwab API Docs**: https://developer.schwab.com/
+- **FastAPI Docs**: https://fastapi.tiangolo.com/
+- **React Query Docs**: https://tanstack.com/query/latest
+- **SQLAlchemy Docs**: https://www.sqlalchemy.org/
 
 ---
 
-**Last Updated**: 2025-10-25
-**Maintained By**: Development Team
-
+**Last Updated**: 2025-10-29  
+**Maintainer**: Development Team

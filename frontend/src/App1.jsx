@@ -32,6 +32,9 @@ import SettingsView from './components/settings/SettingsView';
 // Schwab Views
 import SchwabPositionsView from './components/schwab/SchwabPositionsView';
 
+// Collaboration Views
+import CollaborationDashboard from './components/collaboration/CollaborationDashboard';
+
 // Contexts
 import { PortfolioProvider } from './contexts/PortfolioContext';
 import { CalendarProvider } from './contexts/CalendarContext';
@@ -81,6 +84,9 @@ function App() {
                                   
                                   {/* Schwab routes */}
                                   <Route path="/schwab/positions" element={<SchwabPositionsView />} />
+
+                                  {/* Collaboration routes */}
+                                  <Route path="/collaboration" element={<CollaborationDashboard />} />
 
                                   {/* Strategy routes */}
                                   <Route path="/strategies/covered-calls" element={<CoveredCallsView />} />

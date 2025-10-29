@@ -36,6 +36,11 @@ class Position(Base):
     current_value = Column(Numeric(18, 2))
     unrealized_pnl = Column(Numeric(18, 2))
     
+    # Additional financial metrics
+    maintenance_requirement = Column(Numeric(18, 2))  # Buying power effect
+    current_day_pnl = Column(Numeric(18, 2))  # Today's P&L
+    current_day_pnl_percentage = Column(Numeric(8, 4))  # Today's P&L %
+    
     # Planning fields (for trade ideas)
     planned_entry_date = Column(Date)
     target_quantity = Column(Numeric(18, 4))
@@ -94,6 +99,12 @@ class PositionLeg(Base):
     quantity = Column(Numeric(18, 4), nullable=False)
     premium = Column(Numeric(18, 2))
     current_price = Column(Numeric(18, 2))
+    
+    # Greeks (for options, populated via separate API calls)
+    delta = Column(Numeric(10, 4))
+    gamma = Column(Numeric(10, 4))
+    theta = Column(Numeric(10, 4))
+    vega = Column(Numeric(10, 4))
     
     # For trade ideas
     target_premium = Column(Numeric(18, 2))
