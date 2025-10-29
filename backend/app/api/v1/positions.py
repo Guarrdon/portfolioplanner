@@ -7,6 +7,7 @@ from uuid import UUID
 from app.core.database import get_db
 from app.core.security import get_current_active_user
 from app.models.user import User
+from app.models import position as models
 from app.schemas.position import (
     PositionCreate,
     PositionUpdate,
@@ -159,6 +160,14 @@ def get_trade_ideas(
     
     if strategy_type:
         positions = [p for p in positions if p.strategy_type == strategy_type]
+    
+    # Add shared_with list to each position
+    for position in positions:
+        shares = db.query(models.PositionShare).filter(
+            models.PositionShare.position_id == position.id,
+            models.PositionShare.is_active == True
+        ).all()
+        position.shared_with = [share.recipient_id for share in shares]
     
     return PositionListResponse(
         total=len(positions),

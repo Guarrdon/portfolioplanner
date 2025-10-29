@@ -109,6 +109,7 @@ class PositionResponse(PositionBase):
     
     # Related data
     legs: List[PositionLegResponse] = Field(default_factory=list)
+    shared_with: Optional[List[UUID]] = Field(default_factory=list, description="List of friend IDs this position is shared with")
     
     class Config:
         from_attributes = True

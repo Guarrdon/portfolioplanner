@@ -109,6 +109,7 @@ export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
     mutationFn: (friendIds) => shareTradeIdea(position.id, friendIds),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['positions', 'ideas'] });
+      queryClient.invalidateQueries({ queryKey: ['positions', 'shared'] });
       setShowShareModal(false);
       setSelectedFriends(new Set());
     }
@@ -246,12 +247,42 @@ export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
           </div>
 
           {/* Right: Actions */}
-          <div className="flex items-center gap-1 ml-3">
+          <div className="flex items-center gap-2 ml-3">
+            {/* Discussion comment count */}
             {comments.length > 0 && (
               <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
                 {comments.length}
               </span>
             )}
+            
+            {/* Shared indicator with friend avatars */}
+            {position.shared_with && position.shared_with.length > 0 && (
+              <div className="flex items-center gap-1 px-2 py-0.5 bg-green-50 border border-green-200 rounded-full">
+                <Share2 className="w-3 h-3 text-green-600" />
+                <div className="flex -space-x-1">
+                  {position.shared_with.slice(0, 3).map((friendId, idx) => {
+                    const friend = friends.find(f => f.id === friendId);
+                    return (
+                      <div
+                        key={idx}
+                        className="w-5 h-5 rounded-full bg-green-200 border-2 border-white flex items-center justify-center"
+                        title={friend?.displayName || 'Friend'}
+                      >
+                        <span className="text-xs font-medium text-green-700">
+                          {friend?.displayName?.[0] || '?'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {position.shared_with.length > 3 && (
+                  <span className="text-xs font-medium text-green-700">
+                    +{position.shared_with.length - 3}
+                  </span>
+                )}
+              </div>
+            )}
+            
             <button
               onClick={() => setShowShareModal(true)}
               className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
@@ -298,8 +329,8 @@ export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
       {isExpanded && (
         <div className="border-t border-gray-200">
           <div className="flex">
-            {/* Left Side: Details */}
-            <div className="flex-1 p-4 space-y-4">
+            {/* Left Side: Details - 50% */}
+            <div className="w-1/2 p-4 space-y-4 border-r border-gray-200">
               {/* Additional Metrics */}
               <div className="grid grid-cols-3 gap-3 text-sm">
                 {position.target_entry_price && (
@@ -325,23 +356,39 @@ export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
                 <div>
                   <h4 className="text-sm font-semibold text-gray-900 mb-2">Position Legs</h4>
                   <div className="space-y-1.5">
-                    {position.legs.map((leg, idx) => (
-                      <div key={idx} className="flex items-center justify-between text-xs bg-gray-50 rounded px-2 py-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className={`px-1.5 py-0.5 rounded font-medium ${
-                            leg.option_type === 'CALL' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                          }`}>
-                            {leg.option_type}
-                          </span>
-                          <span className="font-medium">${leg.strike}</span>
-                          <span className="text-gray-600">{formatDate(leg.expiration)}</span>
+                    {position.legs.map((leg, idx) => {
+                      const isStock = leg.asset_type === 'EQUITY' || !leg.option_type;
+                      
+                      return (
+                        <div key={idx} className="flex items-center justify-between text-xs bg-gray-50 rounded px-2 py-1.5">
+                          <div className="flex items-center gap-2">
+                            {isStock ? (
+                              <>
+                                <span className="px-1.5 py-0.5 rounded font-medium bg-blue-100 text-blue-700">
+                                  STOCK
+                                </span>
+                                <span className="font-medium">{leg.symbol}</span>
+                              </>
+                            ) : (
+                              <>
+                                <span className={`px-1.5 py-0.5 rounded font-medium ${
+                                  leg.option_type === 'CALL' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                }`}>
+                                  {leg.option_type}
+                                </span>
+                                <span className="font-medium">${leg.strike}</span>
+                                <span className="text-gray-600">{formatDate(leg.expiration)}</span>
+                              </>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 text-gray-600">
+                            <span>Qty: {leg.quantity}</span>
+                            {leg.premium && <span>Premium: {formatCurrency(leg.premium)}</span>}
+                            {isStock && leg.current_price && <span>Price: {formatCurrency(leg.current_price)}</span>}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-3 text-gray-600">
-                          <span>Qty: {leg.quantity}</span>
-                          {leg.premium && <span>Premium: {formatCurrency(leg.premium)}</span>}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -372,8 +419,8 @@ export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
               )}
             </div>
 
-            {/* Right Side: Discussion Panel */}
-            <div className="w-80 border-l border-gray-200 flex flex-col bg-gray-50">
+            {/* Right Side: Discussion Panel - 50% */}
+            <div className="w-1/2 flex flex-col bg-gray-50">
               {/* Discussion Header */}
               <div className="p-3 border-b border-gray-200 bg-white">
                 <h4 className="text-sm font-semibold text-gray-900">Discussion</h4>
