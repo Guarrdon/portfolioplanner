@@ -59,15 +59,16 @@ export const CollaborationModal = ({ position, onClose, onSuccess }) => {
   };
 
   // Calculate the display value based on strategy type
-  // For spreads, use cost - value (which represents the value captured)
+  // For spreads, show the captured value using absolute values
   // For other strategies, use the current_value as-is
   const getDisplayValue = (position) => {
     const spreadStrategies = ['vertical_spread', 'box_spread'];
     
     if (spreadStrategies.includes(position.strategy_type)) {
-      // For spreads: cost - value = captured value
-      // This matches the user's expectation that cost - value represents profit
-      return (position.cost_basis || 0) - (position.current_value || 0);
+      // For spreads: |cost_basis| - |current_value| = captured value
+      // Example: Received $506 credit (cost=-506), now costs $253 to close (value=-253)
+      // Display: 506 - 253 = 253 (profit captured)
+      return Math.abs(position.cost_basis || 0) - Math.abs(position.current_value || 0);
     }
     
     // For other strategies, return current_value as-is
