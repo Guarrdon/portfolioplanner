@@ -17,6 +17,11 @@ from app.schemas.position import (
     SyncRequest,
     SyncResponse
 )
+from app.schemas.comment import (
+    CommentCreate,
+    CommentResponse,
+    CommentListResponse
+)
 from app.services import position_service
 
 router = APIRouter(prefix="/positions", tags=["positions"])
@@ -224,6 +229,13 @@ def get_trade_idea(
             detail="Trade idea not found"
         )
     
+    # Add shared_with list
+    shares = db.query(models.PositionShare).filter(
+        models.PositionShare.position_id == position.id,
+        models.PositionShare.is_active == True
+    ).all()
+    position.shared_with = [share.recipient_id for share in shares]
+    
     return position
 
 
@@ -296,11 +308,25 @@ def share_trade_idea(
     test_user_id = "00000000-0000-0000-0000-000000000001"
     
     try:
+        # Convert friend_ids to UUIDs if they're strings
+        friend_uuids = []
+        for friend_id in share_request.friend_ids:
+            try:
+                if isinstance(friend_id, str):
+                    friend_uuids.append(UUID(friend_id))
+                else:
+                    friend_uuids.append(friend_id)
+            except ValueError as ve:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid friend ID format: {friend_id}"
+                )
+        
         shares = position_service.share_position(
             db,
             position_id=position_id,
             user_id=test_user_id,
-            friend_ids=share_request.friend_ids
+            friend_ids=friend_uuids
         )
         
         return {
@@ -315,6 +341,9 @@ def share_trade_idea(
             detail=str(e)
         )
     except Exception as e:
+        import traceback
+        print(f"Share error: {str(e)}")
+        print(traceback.format_exc())
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to share position: {str(e)}"
@@ -415,4 +444,85 @@ def get_position(
         )
     
     return position
+
+
+@router.get("/{position_id}/comments", response_model=CommentListResponse)
+def get_position_comments(
+    position_id: UUID,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    db: Session = Depends(get_db)
+    # TODO: Re-enable auth when frontend login is implemented
+    # current_user: User = Depends(get_current_active_user)
+):
+    """Get all comments for a position"""
+    from app.models.comment import Comment
+    
+    # Verify position exists
+    test_user_id = "00000000-0000-0000-0000-000000000001"
+    position = position_service.get_position_by_id(db, position_id, test_user_id)
+    
+    if not position:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Position not found"
+        )
+    
+    # Get comments with user info
+    comments = db.query(Comment).filter(
+        Comment.position_id == position_id
+    ).order_by(Comment.created_at.asc()).offset(skip).limit(limit).all()
+    
+    # Attach user info to each comment
+    for comment in comments:
+        if comment.user:
+            comment.user.display_name = comment.user.full_name or comment.user.username
+    
+    total = db.query(Comment).filter(Comment.position_id == position_id).count()
+    
+    return CommentListResponse(
+        total=total,
+        comments=comments
+    )
+
+
+@router.post("/{position_id}/comments", response_model=CommentResponse, status_code=status.HTTP_201_CREATED)
+def create_position_comment(
+    position_id: UUID,
+    comment_data: CommentCreate,
+    db: Session = Depends(get_db)
+    # TODO: Re-enable auth when frontend login is implemented
+    # current_user: User = Depends(get_current_active_user)
+):
+    """Add a comment to a position"""
+    from app.models.comment import Comment
+    
+    # TODO: Use real user_id when auth is enabled
+    test_user_id = "00000000-0000-0000-0000-000000000001"
+    
+    # Verify position exists
+    position = position_service.get_position_by_id(db, position_id, test_user_id)
+    
+    if not position:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Position not found"
+        )
+    
+    # Create comment
+    comment = Comment(
+        position_id=position_id,
+        user_id=test_user_id,
+        text=comment_data.text
+    )
+    
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+    
+    # Attach user info
+    if comment.user:
+        comment.user.display_name = comment.user.full_name or comment.user.username
+    
+    return comment
 
