@@ -457,10 +457,10 @@ def get_position_comments(
 ):
     """Get all comments for a position"""
     from app.models.comment import Comment
+    from app.models.position import Position
     
-    # Verify position exists
-    test_user_id = "00000000-0000-0000-0000-000000000001"
-    position = position_service.get_position_by_id(db, position_id, test_user_id)
+    # Verify position exists (without ownership check - comments visible to all with access)
+    position = db.query(Position).filter(Position.id == position_id).first()
     
     if not position:
         raise HTTPException(
@@ -468,8 +468,11 @@ def get_position_comments(
             detail="Position not found"
         )
     
-    # Get comments with user info
-    comments = db.query(Comment).filter(
+    # Get comments with user info (eager load user relationship)
+    from sqlalchemy.orm import joinedload
+    comments = db.query(Comment).options(
+        joinedload(Comment.user)
+    ).filter(
         Comment.position_id == position_id
     ).order_by(Comment.created_at.asc()).offset(skip).limit(limit).all()
     
@@ -496,12 +499,13 @@ def create_position_comment(
 ):
     """Add a comment to a position"""
     from app.models.comment import Comment
+    from app.models.position import Position
     
     # TODO: Use real user_id when auth is enabled
     test_user_id = "00000000-0000-0000-0000-000000000001"
     
-    # Verify position exists
-    position = position_service.get_position_by_id(db, position_id, test_user_id)
+    # Verify position exists (without ownership check)
+    position = db.query(Position).filter(Position.id == position_id).first()
     
     if not position:
         raise HTTPException(
@@ -519,6 +523,12 @@ def create_position_comment(
     db.add(comment)
     db.commit()
     db.refresh(comment)
+    
+    # Eager load user relationship
+    from sqlalchemy.orm import joinedload
+    comment = db.query(Comment).options(
+        joinedload(Comment.user)
+    ).filter(Comment.id == comment.id).first()
     
     # Attach user info
     if comment.user:
