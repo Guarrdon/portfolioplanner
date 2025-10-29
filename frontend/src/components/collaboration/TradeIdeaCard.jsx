@@ -50,6 +50,13 @@ export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
   const [showShareModal, setShowShareModal] = useState(false);
   const [selectedFriends, setSelectedFriends] = useState(new Set());
   
+  // Initialize selected friends when opening share modal
+  useEffect(() => {
+    if (showShareModal && position.shared_with) {
+      setSelectedFriends(new Set(position.shared_with));
+    }
+  }, [showShareModal, position.shared_with]);
+  
   // Tag management
   const [tagInput, setTagInput] = useState('');
   
@@ -77,7 +84,7 @@ export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
     enabled: isExpanded
   });
 
-  const comments = commentsData || [];
+  const comments = commentsData?.comments || [];
 
   // Update mutation
   const updateMutation = useMutation({
@@ -135,8 +142,14 @@ export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
   };
 
   const handleShare = () => {
-    if (selectedFriends.size === 0) return;
-    shareMutation.mutate(Array.from(selectedFriends));
+    if (selectedFriends.size === 0) {
+      alert('Please select at least one friend to share with');
+      return;
+    }
+    // Convert Set to Array of friend IDs
+    const friendIds = Array.from(selectedFriends);
+    console.log('Sharing with friend IDs:', friendIds);
+    shareMutation.mutate(friendIds);
   };
 
   const handleDelete = () => {
@@ -518,37 +531,47 @@ export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
                 <p className="text-center text-gray-500 py-4">No friends available</p>
               ) : (
                 <div className="space-y-2">
-                  {friends.map((friend) => (
-                    <div key={friend.id} className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center">
-                          <span className="text-gray-500 font-medium">{friend.displayName?.[0] || 'F'}</span>
+                  {friends.map((friend) => {
+                    const alreadyShared = position.shared_with && position.shared_with.includes(friend.id);
+                    return (
+                      <div key={friend.id} className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center">
+                            <span className="text-gray-500 font-medium">{friend.displayName?.[0] || 'F'}</span>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">
+                              {friend.displayName}
+                              {alreadyShared && (
+                                <span className="ml-2 text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                                  Shared
+                                </span>
+                              )}
+                            </p>
+                            <p className="text-xs text-gray-500">{friend.username}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">{friend.displayName}</p>
-                          <p className="text-xs text-gray-500">{friend.username}</p>
-                        </div>
+                        <button
+                          onClick={() => {
+                            const newSelection = new Set(selectedFriends);
+                            if (newSelection.has(friend.id)) {
+                              newSelection.delete(friend.id);
+                            } else {
+                              newSelection.add(friend.id);
+                            }
+                            setSelectedFriends(newSelection);
+                          }}
+                          className={`p-2 rounded-full transition-colors ${
+                            selectedFriends.has(friend.id)
+                              ? 'bg-blue-100 text-blue-600'
+                              : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                          }`}
+                        >
+                          <CheckCircle2 className="w-5 h-5" />
+                        </button>
                       </div>
-                      <button
-                        onClick={() => {
-                          const newSelection = new Set(selectedFriends);
-                          if (newSelection.has(friend.id)) {
-                            newSelection.delete(friend.id);
-                          } else {
-                            newSelection.add(friend.id);
-                          }
-                          setSelectedFriends(newSelection);
-                        }}
-                        className={`p-2 rounded-full transition-colors ${
-                          selectedFriends.has(friend.id)
-                            ? 'bg-blue-100 text-blue-600'
-                            : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
-                        }`}
-                      >
-                        <CheckCircle2 className="w-5 h-5" />
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
