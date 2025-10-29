@@ -528,8 +528,38 @@ positions_cache = {
 ### Strategy Validation
 Each strategy type has specific leg requirements (see validation rules in code).
 
+## Value Calculation for Different Strategies
+
+### Spread Strategies (Vertical Spread, Box Spread)
+
+For spread strategies, the display value calculation differs from simple positions:
+
+**Backend Storage:**
+- `cost_basis`: Net credit received (negative) or debit paid (positive)
+- `current_value`: Current market value (typically negative for credit spreads as it represents liability)
+- `unrealized_pnl`: `current_value - cost_basis`
+
+**Frontend Display (in Create Trade Idea modal):**
+- "Current Value" displays: `cost_basis - current_value`
+- This represents the "captured value" or profit available if closing immediately
+- For a credit spread where you received $1,595 and it now costs $1,345 to close:
+  - Backend: `cost_basis = -1595`, `current_value = -1345`, `unrealized_pnl = 250`
+  - Display: "Current Value" = `-1595 - (-1345) = 250` ✓
+
+**Rationale:**
+- Spread market values are typically negative (liabilities)
+- Showing `cost - value` provides an intuitive representation of position worth
+- This matches trader expectations: "What value have I captured from this spread?"
+
+### Other Strategies
+
+For non-spread strategies (stocks, single options, covered calls):
+- "Current Value" displays `current_value` directly
+- This represents the current market value of the position
+- Standard accounting convention applies
+
 ---
 
-**Last Updated**: 2025-10-25
+**Last Updated**: 2025-10-29
 **Related Documents**: architecture-overview.md, api-specification.md
 

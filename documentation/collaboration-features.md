@@ -48,6 +48,11 @@ The system provides two distinct ways to initiate collaboration:
 - Expiration dates and strikes (for options)
 - Current P&L metrics (as reference)
 
+**Important Note on Value Display:**
+- For spread strategies (vertical spreads, box spreads), the "Current Value" shown in the conversion modal displays `cost_basis - current_value`, which represents the captured value or profit if the position were closed immediately
+- For other strategies, "Current Value" shows the market value as-is
+- This distinction exists because spread values are typically negative (liabilities), and showing cost - value provides a more intuitive representation of the position's worth
+
 **What Stays As-Is:**
 - Original actual position remains in Schwab Positions view
 - New trade idea is completely separate and editable

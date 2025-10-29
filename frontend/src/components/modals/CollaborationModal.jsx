@@ -58,6 +58,22 @@ export const CollaborationModal = ({ position, onClose, onSuccess }) => {
     return labels[strategyType] || strategyType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   };
 
+  // Calculate the display value based on strategy type
+  // For spreads, use cost - value (which represents the value captured)
+  // For other strategies, use the current_value as-is
+  const getDisplayValue = (position) => {
+    const spreadStrategies = ['vertical_spread', 'box_spread'];
+    
+    if (spreadStrategies.includes(position.strategy_type)) {
+      // For spreads: cost - value = captured value
+      // This matches the user's expectation that cost - value represents profit
+      return (position.cost_basis || 0) - (position.current_value || 0);
+    }
+    
+    // For other strategies, return current_value as-is
+    return position.current_value || 0;
+  };
+
   return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 overflow-hidden flex flex-col">
@@ -99,7 +115,9 @@ export const CollaborationModal = ({ position, onClose, onSuccess }) => {
               </div>
               <div>
                 <span className="text-gray-600">Current Value:</span>{' '}
-                <span className="font-semibold text-gray-900">{formatCurrency(position.current_value)}</span>
+                <span className="font-semibold text-gray-900">
+                  {formatCurrency(getDisplayValue(position))}
+                </span>
               </div>
               <div>
                 <span className="text-gray-600">P&L:</span>{' '}
