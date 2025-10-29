@@ -460,16 +460,16 @@ def share_position(
     friend_ids: List[UUID]
 ) -> List[PositionShare]:
     """
-    Share a trade idea with friends
+    Share a trade idea with friends (REPLACES existing shares)
     
     Args:
         db: Database session
         position_id: Position to share
         user_id: Owner of the position
-        friend_ids: List of friend user IDs to share with
+        friend_ids: List of friend user IDs to share with (empty list removes all)
         
     Returns:
-        List of created shares
+        List of active shares
     """
     # Verify position exists and is a trade idea owned by user
     position = db.query(Position).filter(
@@ -481,8 +481,19 @@ def share_position(
     if not position:
         raise ValueError("Position not found or cannot be shared")
     
+    # Get all existing shares for this position
+    existing_shares = db.query(PositionShare).filter(
+        PositionShare.position_id == position_id
+    ).all()
+    
+    # Deactivate shares not in the new friend_ids list
+    for share in existing_shares:
+        if share.recipient_id not in friend_ids:
+            share.is_active = False
+    
     shares = []
     
+    # Add or reactivate shares for friends in the list
     for friend_id in friend_ids:
         # Check if already shared
         existing_share = db.query(PositionShare).filter(

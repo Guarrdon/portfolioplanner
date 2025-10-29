@@ -468,13 +468,13 @@ def get_position_comments(
             detail="Position not found"
         )
     
-    # Get comments with user info (eager load user relationship)
+    # Get comments with user info (eager load user relationship) - LATEST FIRST
     from sqlalchemy.orm import joinedload
     comments = db.query(Comment).options(
         joinedload(Comment.user)
     ).filter(
         Comment.position_id == position_id
-    ).order_by(Comment.created_at.asc()).offset(skip).limit(limit).all()
+    ).order_by(Comment.created_at.desc()).offset(skip).limit(limit).all()
     
     # Attach user info to each comment
     for comment in comments:

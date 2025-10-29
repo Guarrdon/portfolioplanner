@@ -9,7 +9,7 @@
  * - Share with friends
  * - Reactions on messages
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { 
   ChevronDown,
@@ -62,6 +62,7 @@ export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
   
   // Discussion
   const [messageInput, setMessageInput] = useState('');
+  const discussionRef = useRef(null);
   
   // Auto-expand if this is the highlighted position
   useEffect(() => {
@@ -108,6 +109,12 @@ export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['comments', position.id] });
       setMessageInput('');
+      // Scroll to top of discussion panel to see new comment
+      setTimeout(() => {
+        if (discussionRef.current) {
+          discussionRef.current.scrollTop = 0;
+        }
+      }, 100);
     }
   });
 
@@ -142,13 +149,10 @@ export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
   };
 
   const handleShare = () => {
-    if (selectedFriends.size === 0) {
-      alert('Please select at least one friend to share with');
-      return;
-    }
     // Convert Set to Array of friend IDs
+    // Empty array means unshare from all (remove all shares)
     const friendIds = Array.from(selectedFriends);
-    console.log('Sharing with friend IDs:', friendIds);
+    console.log('Updating shares - friend IDs:', friendIds);
     shareMutation.mutate(friendIds);
   };
 
@@ -172,6 +176,28 @@ export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
     if (!dateString) return '-';
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  const formatDateTime = (dateString) => {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diff = now - date;
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+    
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    if (days < 7) return `${days}d ago`;
+    
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit'
+    });
   };
 
   const getStatusIcon = (status) => {
@@ -268,31 +294,13 @@ export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
               </span>
             )}
             
-            {/* Shared indicator with friend avatars */}
+            {/* Shared indicator with count */}
             {position.shared_with && position.shared_with.length > 0 && (
               <div className="flex items-center gap-1 px-2 py-0.5 bg-green-50 border border-green-200 rounded-full">
                 <Share2 className="w-3 h-3 text-green-600" />
-                <div className="flex -space-x-1">
-                  {position.shared_with.slice(0, 3).map((friendId, idx) => {
-                    const friend = friends.find(f => f.id === friendId);
-                    return (
-                      <div
-                        key={idx}
-                        className="w-5 h-5 rounded-full bg-green-200 border-2 border-white flex items-center justify-center"
-                        title={friend?.displayName || 'Friend'}
-                      >
-                        <span className="text-xs font-medium text-green-700">
-                          {friend?.displayName?.[0] || '?'}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-                {position.shared_with.length > 3 && (
-                  <span className="text-xs font-medium text-green-700">
-                    +{position.shared_with.length - 3}
-                  </span>
-                )}
+                <span className="text-xs font-medium text-green-700">
+                  {position.shared_with.length}
+                </span>
               </div>
             )}
             
@@ -441,7 +449,7 @@ export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
               </div>
 
               {/* Messages Thread */}
-              <div className="flex-1 overflow-y-auto p-3 space-y-3 max-h-96">
+              <div ref={discussionRef} className="flex-1 overflow-y-auto p-3 space-y-3 max-h-96">
                 {comments.length === 0 ? (
                   <div className="text-center py-8">
                     <p className="text-sm text-gray-500">No messages yet</p>
@@ -462,7 +470,7 @@ export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
                           </span>
                         </div>
                         <span className="text-xs text-gray-500">
-                          {formatDate(comment.created_at)}
+                          {formatDateTime(comment.created_at)}
                         </span>
                       </div>
                       <p className="text-sm text-gray-700 ml-8">{comment.text}</p>
@@ -585,10 +593,12 @@ export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
               </button>
               <button
                 onClick={handleShare}
-                disabled={selectedFriends.size === 0 || shareMutation.isPending}
+                disabled={shareMutation.isPending}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
-                {shareMutation.isPending ? 'Sharing...' : `Share with ${selectedFriends.size}`}
+                {shareMutation.isPending ? 'Updating...' : 
+                 selectedFriends.size === 0 ? 'Remove All Shares' :
+                 `Update (${selectedFriends.size} selected)`}
               </button>
             </div>
           </div>
