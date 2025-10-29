@@ -540,11 +540,11 @@ For spread strategies, the display value calculation differs from simple positio
 - `unrealized_pnl`: `current_value - cost_basis`
 
 **Frontend Display (in Create Trade Idea modal):**
-- "Current Value" displays: `cost_basis - current_value`
+- "Current Value" displays: `|cost_basis| - |current_value|`
 - This represents the "captured value" or profit available if closing immediately
 - For a credit spread where you received $1,595 and it now costs $1,345 to close:
   - Backend: `cost_basis = -1595`, `current_value = -1345`, `unrealized_pnl = 250`
-  - Display: "Current Value" = `-1595 - (-1345) = 250` ✓
+  - Display: "Current Value" = `|-1595| - |-1345| = 1595 - 1345 = 250` ✓
 
 **Rationale:**
 - Spread market values are typically negative (liabilities)

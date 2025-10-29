@@ -49,9 +49,9 @@ The system provides two distinct ways to initiate collaboration:
 - Current P&L metrics (as reference)
 
 **Important Note on Value Display:**
-- For spread strategies (vertical spreads, box spreads), the "Current Value" shown in the conversion modal displays `cost_basis - current_value`, which represents the captured value or profit if the position were closed immediately
+- For spread strategies (vertical spreads, box spreads), the "Current Value" shown in the conversion modal displays `|cost_basis| - |current_value|`, which represents the captured value or profit if the position were closed immediately
 - For other strategies, "Current Value" shows the market value as-is
-- This distinction exists because spread values are typically negative (liabilities), and showing cost - value provides a more intuitive representation of the position's worth
+- This distinction exists because spread values are typically negative (liabilities), and using absolute values provides an intuitive representation of the profit captured in the spread
 
 **What Stays As-Is:**
 - Original actual position remains in Schwab Positions view
