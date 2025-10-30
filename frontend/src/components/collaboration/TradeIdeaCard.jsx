@@ -392,10 +392,12 @@ export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
                               </>
                             ) : (
                               <>
-                                <span className={`px-1.5 py-0.5 rounded font-medium ${
-                                  leg.option_type === 'CALL' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${
+                                  leg.option_type === 'call' 
+                                    ? 'bg-blue-600 text-white' 
+                                    : 'bg-purple-600 text-white'
                                 }`}>
-                                  {leg.option_type}
+                                  {leg.option_type === 'call' ? 'C' : 'P'}
                                 </span>
                                 <span className="font-medium">${leg.strike}</span>
                                 <span className="text-gray-600">{formatDate(leg.expiration)}</span>
