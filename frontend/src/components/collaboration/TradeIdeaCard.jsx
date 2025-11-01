@@ -31,8 +31,10 @@ import {
   X
 } from 'lucide-react';
 import { 
-  updateTradeIdea, 
+  updateTradeIdea,
+  updateTradeIdeaTags,
   deleteTradeIdea,
+  unshareFromMe,
   getPositionComments,
   addPositionComment,
   shareTradeIdea
@@ -43,8 +45,13 @@ import { useUser } from '../../contexts/UserContext';
 export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
   const queryClient = useQueryClient();
   const { getActiveFriends } = useFriends();
-  const { currentUser } = useUser();
+  const { currentUser, users } = useUser();
   const friends = getActiveFriends();
+
+  // Get creator info for shared positions
+  const creator = !isOwner && position.user_id 
+    ? users.find(u => u.id === position.user_id)
+    : null;
 
   const [isExpanded, setIsExpanded] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
@@ -95,11 +102,28 @@ export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
     }
   });
 
-  // Delete mutation
+  // Tag mutation (for both owners and recipients)
+  const tagMutation = useMutation({
+    mutationFn: (tags) => updateTradeIdeaTags(position.id, tags),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['positions', 'ideas'] });
+      queryClient.invalidateQueries({ queryKey: ['positions', 'shared'] });
+    }
+  });
+
+  // Delete mutation (for owners only)
   const deleteMutation = useMutation({
     mutationFn: () => deleteTradeIdea(position.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['positions', 'ideas'] });
+    }
+  });
+
+  // Unshare mutation (for recipients)
+  const unshareMutation = useMutation({
+    mutationFn: () => unshareFromMe(position.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['positions', 'shared'] });
     }
   });
 
@@ -133,14 +157,14 @@ export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
     if (!tagInput.trim()) return;
     const currentTags = position.tags || [];
     if (!currentTags.includes(tagInput.trim())) {
-      updateMutation.mutate({ tags: [...currentTags, tagInput.trim()] });
+      tagMutation.mutate([...currentTags, tagInput.trim()]);
     }
     setTagInput('');
   };
 
   const handleRemoveTag = (tagToRemove) => {
     const currentTags = position.tags || [];
-    updateMutation.mutate({ tags: currentTags.filter(t => t !== tagToRemove) });
+    tagMutation.mutate(currentTags.filter(t => t !== tagToRemove));
   };
 
   const handleSendMessage = () => {
@@ -157,8 +181,14 @@ export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
   };
 
   const handleDelete = () => {
-    if (window.confirm('Are you sure you want to delete this trade idea?')) {
-      deleteMutation.mutate();
+    if (isOwner) {
+      if (window.confirm('Are you sure you want to delete this trade idea? This will remove it for everyone.')) {
+        deleteMutation.mutate();
+      }
+    } else {
+      if (window.confirm('Remove this trade idea from your view?')) {
+        unshareMutation.mutate();
+      }
     }
   };
 
@@ -254,6 +284,12 @@ export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
                 <StatusIcon className="w-3 h-3" />
                 {position.status || 'active'}
               </span>
+              {/* Show creator for shared positions */}
+              {creator && (
+                <span className="text-xs text-gray-500 italic">
+                  by {creator.displayName || creator.username}
+                </span>
+              )}
             </div>
 
             <span className="text-xs text-gray-500">
@@ -304,22 +340,22 @@ export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
               </div>
             )}
             
-            <button
-              onClick={() => setShowShareModal(true)}
-              className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-              title="Share with friends"
-            >
-              <Share2 className="w-4 h-4" />
-            </button>
             {isOwner && (
               <button
-                onClick={handleDelete}
-                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                title="Delete"
+                onClick={() => setShowShareModal(true)}
+                className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                title="Share with friends"
               >
-                <Trash2 className="w-4 h-4" />
+                <Share2 className="w-4 h-4" />
               </button>
             )}
+            <button
+              onClick={handleDelete}
+              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+              title={isOwner ? "Delete" : "Remove from my view"}
+            >
+              {isOwner ? <Trash2 className="w-4 h-4" /> : <X className="w-4 h-4" />}
+            </button>
           </div>
         </div>
 
@@ -332,14 +368,13 @@ export const TradeIdeaCard = ({ position, isOwner, highlightId }) => {
                 className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full text-xs group"
               >
                 {tag}
-                {isOwner && (
-                  <button
-                    onClick={() => handleRemoveTag(tag)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
+                <button
+                  onClick={() => handleRemoveTag(tag)}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Remove tag"
+                >
+                  <X className="w-3 h-3" />
+                </button>
               </span>
             ))}
           </div>

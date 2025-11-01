@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Check Current User</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #fff; }
+        .info { background: #2a2a2a; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .user1 { border-left: 4px solid #3b82f6; }
+        .user2 { border-left: 4px solid #10b981; }
+        button { padding: 10px 20px; margin: 5px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .btn-user1 { background: #3b82f6; color: white; }
+        .btn-user2 { background: #10b981; color: white; }
+        .btn-danger { background: #ef4444; color: white; }
+    </style>
+</head>
+<body>
+    <h1>🔍 User Check & Fix</h1>
+    <div id="status"></div>
+    
+    <h2>Quick Fixes:</h2>
+    <button class="btn-user1" onclick="setUser1()">Set as User 1 (Matt) - Port 3000</button>
+    <button class="btn-user2" onclick="setUser2()">Set as User 2 (Jason) - Port 3001</button>
+    <button class="btn-danger" onclick="clearAndReload()">Clear All & Reload</button>
+
+    <script>
+        const USER1_ID = '00000000-0000-0000-0000-000000000001';
+        const USER2_ID = '00000000-0000-0000-0000-000000000002';
+
+        function checkStatus() {
+            const currentUserId = localStorage.getItem('current_user_id');
+            const port = window.location.port || '80';
+            const users = JSON.parse(localStorage.getItem('portfolio_users') || '[]');
+            
+            let html = '<div class="info">';
+            html += `<strong>Port:</strong> ${port}<br>`;
+            html += `<strong>Current User ID:</strong> ${currentUserId || 'NONE'}<br>`;
+            html += `<strong>Users in storage:</strong> ${users.length}<br>`;
+            html += '</div>';
+
+            if (port === '3000' || port === '') {
+                if (currentUserId === USER1_ID) {
+                    html += '<div class="info user1">✅ <strong>CORRECT:</strong> Instance 1 is set to User 1 (Matt)</div>';
+                } else {
+                    html += '<div class="info user1">❌ <strong>WRONG:</strong> Instance 1 should be User 1 (Matt)<br>Click "Set as User 1" button above</div>';
+                }
+            } else if (port === '3001') {
+                if (currentUserId === USER2_ID) {
+                    html += '<div class="info user2">✅ <strong>CORRECT:</strong> Instance 2 is set to User 2 (Jason)</div>';
+                } else {
+                    html += '<div class="info user2">❌ <strong>WRONG:</strong> Instance 2 should be User 2 (Jason)<br>Click "Set as User 2" button above</div>';
+                }
+            }
+
+            const friendships = localStorage.getItem(`user_${currentUserId}_relationships`);
+            const friends = friendships ? JSON.parse(friendships) : [];
+            html += `<div class="info"><strong>Friends:</strong> ${friends.length}<br>`;
+            friends.forEach(f => {
+                html += `- Friend ID: ${f.userId}<br>`;
+            });
+            html += '</div>';
+
+            document.getElementById('status').innerHTML = html;
+        }
+
+        function setUser1() {
+            console.log('Setting to User 1 (Matt)');
+            localStorage.setItem('current_user_id', USER1_ID);
+            
+            // Add User 2 as friend
+            localStorage.setItem(`user_${USER1_ID}_relationships`, JSON.stringify([{
+                userId: USER2_ID,
+                createdAt: new Date().toISOString(),
+                status: 'active',
+                type: 'individual'
+            }]));
+            
+            alert('✅ Set to User 1 (Matt). Page will reload.');
+            location.reload();
+        }
+
+        function setUser2() {
+            console.log('Setting to User 2 (Jason)');
+            localStorage.setItem('current_user_id', USER2_ID);
+            
+            // Add User 1 as friend
+            localStorage.setItem(`user_${USER2_ID}_relationships`, JSON.stringify([{
+                userId: USER1_ID,
+                createdAt: new Date().toISOString(),
+                status: 'active',
+                type: 'individual'
+            }]));
+            
+            alert('✅ Set to User 2 (Jason). Page will reload.');
+            location.reload();
+        }
+
+        function clearAndReload() {
+            if (confirm('Clear all localStorage?')) {
+                localStorage.clear();
+                location.reload();
+            }
+        }
+
+        // Auto-check on load
+        checkStatus();
+        
+        // Auto-detect and fix if wrong
+        setTimeout(() => {
+            const currentUserId = localStorage.getItem('current_user_id');
+            const port = window.location.port || '80';
+            
+            if (port === '3001' && currentUserId !== USER2_ID) {
+                if (confirm('❌ Wrong user detected!\n\nInstance 2 should be User 2 (Jason).\n\nFix automatically?')) {
+                    setUser2();
+                }
+            }
+        }, 500);
+    </script>
+</body>
+</html>
+

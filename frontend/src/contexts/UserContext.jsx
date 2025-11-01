@@ -4,11 +4,13 @@ import { userStorage } from '../utils/storage/storage';
 const UserContext = createContext();
 
 // Initial users - only used if no users exist in storage
+// Using UUIDs for backend compatibility
 const INITIAL_USERS = [
   {
-    id: '1',
+    id: '00000000-0000-0000-0000-000000000001',
     username: 'matt',
     displayName: 'Matt Lyons',
+    full_name: 'Matt Lyons',
     email: 'matt@optionsquared.com',
     profilePicture: null,
     preferences: {
@@ -21,9 +23,10 @@ const INITIAL_USERS = [
     role: 'admin'
   },
   {
-    id: '2',
+    id: '00000000-0000-0000-0000-000000000002',
     username: 'jason',
     displayName: 'Jason Hall',
+    full_name: 'Jason Hall',
     email: 'sneaksoft@gmail.com',
     profilePicture: null,
     preferences: {
@@ -69,8 +72,22 @@ export function UserProvider({ children }) {
       const storedUsersJson = localStorage.getItem(userStorage.STORAGE_KEYS.USERS);
       let initialUsers = storedUsersJson ? JSON.parse(storedUsersJson) : [];
 
-      // If no users exist, add initial users
-      if (initialUsers.length === 0) {
+      // MIGRATION: Fix old user IDs (1, 2) to proper UUIDs
+      const needsMigration = initialUsers.some(u => u.id === '1' || u.id === '2');
+      
+      if (needsMigration) {
+        console.log('🔧 Migrating old user IDs to UUIDs...');
+        
+        // Clear old data
+        localStorage.clear();
+        
+        // Use fresh initial users with UUIDs
+        initialUsers = INITIAL_USERS;
+        localStorage.setItem(userStorage.STORAGE_KEYS.USERS, JSON.stringify(initialUsers));
+        
+        console.log('✅ Migration complete - users now have UUIDs');
+      } else if (initialUsers.length === 0) {
+        // If no users exist, add initial users
         initialUsers = INITIAL_USERS;
         localStorage.setItem(userStorage.STORAGE_KEYS.USERS, JSON.stringify(initialUsers));
       }
@@ -135,13 +152,27 @@ export function UserProvider({ children }) {
       setUsers(initialUsers);
 
       // Check for existing user session
-      const savedUserId = localStorage.getItem(userStorage.STORAGE_KEYS.CURRENT_USER);
+      let savedUserId = localStorage.getItem(userStorage.STORAGE_KEYS.CURRENT_USER);
+      
+      // MIGRATION: Fix old user ID format
+      if (savedUserId === '1') {
+        savedUserId = '00000000-0000-0000-0000-000000000001';
+        localStorage.setItem(userStorage.STORAGE_KEYS.CURRENT_USER, savedUserId);
+        console.log('🔧 Migrated current user ID to UUID');
+      } else if (savedUserId === '2') {
+        savedUserId = '00000000-0000-0000-0000-000000000002';
+        localStorage.setItem(userStorage.STORAGE_KEYS.CURRENT_USER, savedUserId);
+        console.log('🔧 Migrated current user ID to UUID');
+      }
+      
       if (savedUserId) {
         const user = initialUsers.find(u => u.id === savedUserId);
         if (user) {
           handleUserLogin(user);
         } else {
-          localStorage.removeItem(userStorage.STORAGE_KEYS.CURRENT_USER);
+          // If user not found after migration, default to first user
+          console.log('⚠️ User not found, defaulting to first user');
+          handleUserLogin(initialUsers[0]);
         }
       }
     } catch (err) {

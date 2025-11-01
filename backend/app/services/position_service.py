@@ -152,6 +152,52 @@ def update_position(
     return position
 
 
+def update_position_tags(
+    db: Session,
+    position_id: UUID,
+    user_id: UUID,
+    tags: List[str]
+) -> Optional[Position]:
+    """
+    Update tags on a position
+    
+    Allows both owners AND recipients (via shares) to update tags
+    """
+    position = db.query(Position).filter(
+        Position.id == position_id,
+        Position.flavor == "idea"
+    ).first()
+    
+    if not position:
+        return None
+    
+    # Check if user is owner OR recipient
+    is_owner = position.user_id == user_id
+    is_recipient = False
+    
+    if not is_owner:
+        # Check if position is shared with user
+        share = db.query(PositionShare).filter(
+            PositionShare.position_id == position_id,
+            PositionShare.recipient_id == user_id,
+            PositionShare.is_active == True
+        ).first()
+        is_recipient = share is not None
+    
+    # Only allow if owner or recipient
+    if not (is_owner or is_recipient):
+        return None
+    
+    # Update tags
+    position.tags = tags
+    position.updated_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(position)
+    
+    return position
+
+
 def delete_position(db: Session, position_id: UUID, user_id: UUID) -> bool:
     """
     Delete a position

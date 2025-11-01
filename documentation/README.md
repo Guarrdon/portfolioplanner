@@ -15,7 +15,14 @@ Welcome to the Portfolio Planner documentation. This directory contains comprehe
 
 - **[position-management.md](./position-management.md)** - Detailed position system design, database schema, and business rules
 - **[schwab-integration.md](./schwab-integration.md)** - Schwab API integration guide, OAuth flow, and data transformation
+- **[collaboration-architecture.md](./collaboration-architecture.md)** - Real-time collaboration system with WebSockets
 - **[development-guide.md](./development-guide.md)** - Setup instructions, coding standards, and development workflows
+
+### 🌐 Distributed Architecture
+
+- **[../DISTRIBUTED_COLLABORATION_ARCHITECTURE.md](../DISTRIBUTED_COLLABORATION_ARCHITECTURE.md)** - Multi-tenant distributed architecture design
+- **[../DISTRIBUTED_TESTING_GUIDE.md](../DISTRIBUTED_TESTING_GUIDE.md)** - Testing guide for distributed instances
+- **[../collaboration-service/README.md](../collaboration-service/README.md)** - Collaboration Service documentation
 
 ### 🎯 Quick Start Guides
 

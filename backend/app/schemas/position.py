@@ -138,8 +138,8 @@ class PositionListResponse(BaseModel):
 
 class PositionShareCreate(BaseModel):
     """Schema for sharing a position"""
-    friend_ids: List[UUID] = Field(..., min_length=1)
-    access_level: str = Field(default="view")
+    friend_ids: List[UUID] = Field(default_factory=list, description="List of friend IDs to share with (empty to unshare all)")
+    access_level: str = Field(default="comment")
 
 
 class SyncRequest(BaseModel):

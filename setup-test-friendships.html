@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Portfolio Planner - Setup Test Friendships</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #2563eb;
+            margin-top: 0;
+        }
+        h2 {
+            color: #374151;
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 10px;
+        }
+        button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background: #1d4ed8;
+        }
+        button.secondary {
+            background: #10b981;
+        }
+        button.secondary:hover {
+            background: #059669;
+        }
+        button.danger {
+            background: #ef4444;
+        }
+        button.danger:hover {
+            background: #dc2626;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .status.success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        .status.error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        .status.info {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+        pre {
+            background: #1f2937;
+            color: #f9fafb;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+        }
+        .step {
+            background: #f9fafb;
+            border-left: 4px solid #2563eb;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        .note {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            padding: 15px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>🔧 Portfolio Planner - Setup Test Friendships</h1>
+        <p>This page helps you set up friendships between test users for collaboration testing.</p>
+        
+        <div class="note">
+            <strong>⚠️ Important:</strong> Run this page in BOTH browser instances (port 3000 AND port 3001) with the correct user selected.
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Step 1: Check Current Setup</h2>
+        <button onclick="checkSetup()">Check Current Setup</button>
+        <div id="setupStatus"></div>
+    </div>
+
+    <div class="card">
+        <h2>Step 2: Setup Friendships</h2>
+        
+        <div class="step">
+            <strong>For Instance 1 (Port 3000):</strong><br>
+            This should be User 1 who will befriend User 2
+        </div>
+        <button onclick="setupUser1()">Setup User 1 → Add User 2 as Friend</button>
+        
+        <div class="step" style="margin-top: 20px;">
+            <strong>For Instance 2 (Port 3001):</strong><br>
+            This should be User 2 who will befriend User 1
+        </div>
+        <button onclick="setupUser2()">Setup User 2 → Add User 1 as Friend</button>
+        
+        <div id="setupResult"></div>
+    </div>
+
+    <div class="card">
+        <h2>Step 3: Verify Friendships</h2>
+        <button class="secondary" onclick="verifyFriendships()">Verify Friendships</button>
+        <div id="verifyResult"></div>
+    </div>
+
+    <div class="card">
+        <h2>Step 4: Test Data</h2>
+        <button onclick="createTestPosition()">Create Test Trade Idea (User 1 Only)</button>
+        <div id="testResult"></div>
+    </div>
+
+    <div class="card">
+        <h2>Troubleshooting</h2>
+        <button class="danger" onclick="clearAll()">Clear All Data (Reset)</button>
+        <button onclick="viewAllData()">View All LocalStorage Data</button>
+        <div id="troubleshootResult"></div>
+    </div>
+
+    <script>
+        const USER1_ID = '00000000-0000-0000-0000-000000000001';
+        const USER2_ID = '00000000-0000-0000-0000-000000000002';
+
+        function log(elementId, message, type = 'info') {
+            const el = document.getElementById(elementId);
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.textContent = message;
+            el.appendChild(div);
+        }
+
+        function checkSetup() {
+            const el = document.getElementById('setupStatus');
+            el.innerHTML = '';
+
+            // Check users
+            const usersData = localStorage.getItem('portfolio_users');
+            const users = usersData ? JSON.parse(usersData) : [];
+            
+            log('setupStatus', `Found ${users.length} users in localStorage`, 'info');
+            
+            users.forEach(user => {
+                log('setupStatus', `  - ${user.username} (${user.id})`, 'info');
+            });
+
+            // Check current user
+            const currentUser = localStorage.getItem('current_user_id');
+            log('setupStatus', `Current user: ${currentUser || 'NONE'}`, currentUser ? 'success' : 'error');
+
+            // Check relationships
+            const user1Rels = localStorage.getItem(`user_${USER1_ID}_relationships`);
+            const user2Rels = localStorage.getItem(`user_${USER2_ID}_relationships`);
+            
+            log('setupStatus', `User 1 friendships: ${user1Rels ? JSON.parse(user1Rels).length : 0}`, 'info');
+            log('setupStatus', `User 2 friendships: ${user2Rels ? JSON.parse(user2Rels).length : 0}`, 'info');
+        }
+
+        function setupUser1() {
+            const el = document.getElementById('setupResult');
+            el.innerHTML = '';
+
+            try {
+                // Ensure users exist
+                let users = localStorage.getItem('portfolio_users');
+                users = users ? JSON.parse(users) : [];
+                
+                if (!users.find(u => u.id === USER1_ID)) {
+                    users.push({
+                        id: USER1_ID,
+                        username: 'testuser1',
+                        email: 'test1@example.com',
+                        displayName: 'Test User 1',
+                        full_name: 'Test User 1'
+                    });
+                }
+                if (!users.find(u => u.id === USER2_ID)) {
+                    users.push({
+                        id: USER2_ID,
+                        username: 'testuser2',
+                        email: 'test2@example.com',
+                        displayName: 'Test User 2',
+                        full_name: 'Test User 2'
+                    });
+                }
+                localStorage.setItem('portfolio_users', JSON.stringify(users));
+
+                // Set current user to User 1
+                localStorage.setItem('current_user_id', USER1_ID);
+
+                // Add User 2 as friend of User 1
+                const friendship = {
+                    userId: USER2_ID,
+                    createdAt: new Date().toISOString(),
+                    status: 'active',
+                    type: 'individual'
+                };
+                
+                localStorage.setItem(
+                    `user_${USER1_ID}_relationships`,
+                    JSON.stringify([friendship])
+                );
+
+                log('setupResult', '✅ User 1 setup complete!', 'success');
+                log('setupResult', '✅ User 2 added as friend', 'success');
+                log('setupResult', '✅ Current user set to User 1', 'success');
+                log('setupResult', '🔄 Page will reload in 2 seconds...', 'info');
+                
+                setTimeout(() => location.reload(), 2000);
+            } catch (error) {
+                log('setupResult', `❌ Error: ${error.message}`, 'error');
+            }
+        }
+
+        function setupUser2() {
+            const el = document.getElementById('setupResult');
+            el.innerHTML = '';
+
+            try {
+                // Ensure users exist
+                let users = localStorage.getItem('portfolio_users');
+                users = users ? JSON.parse(users) : [];
+                
+                if (!users.find(u => u.id === USER1_ID)) {
+                    users.push({
+                        id: USER1_ID,
+                        username: 'testuser1',
+                        email: 'test1@example.com',
+                        displayName: 'Test User 1',
+                        full_name: 'Test User 1'
+                    });
+                }
+                if (!users.find(u => u.id === USER2_ID)) {
+                    users.push({
+                        id: USER2_ID,
+                        username: 'testuser2',
+                        email: 'test2@example.com',
+                        displayName: 'Test User 2',
+                        full_name: 'Test User 2'
+                    });
+                }
+                localStorage.setItem('portfolio_users', JSON.stringify(users));
+
+                // Set current user to User 2
+                localStorage.setItem('current_user_id', USER2_ID);
+
+                // Add User 1 as friend of User 2
+                const friendship = {
+                    userId: USER1_ID,
+                    createdAt: new Date().toISOString(),
+                    status: 'active',
+                    type: 'individual'
+                };
+                
+                localStorage.setItem(
+                    `user_${USER2_ID}_relationships`,
+                    JSON.stringify([friendship])
+                );
+
+                log('setupResult', '✅ User 2 setup complete!', 'success');
+                log('setupResult', '✅ User 1 added as friend', 'success');
+                log('setupResult', '✅ Current user set to User 2', 'success');
+                log('setupResult', '🔄 Page will reload in 2 seconds...', 'info');
+                
+                setTimeout(() => location.reload(), 2000);
+            } catch (error) {
+                log('setupResult', `❌ Error: ${error.message}`, 'error');
+            }
+        }
+
+        function verifyFriendships() {
+            const el = document.getElementById('verifyResult');
+            el.innerHTML = '';
+
+            const user1Rels = localStorage.getItem(`user_${USER1_ID}_relationships`);
+            const user2Rels = localStorage.getItem(`user_${USER2_ID}_relationships`);
+
+            const user1Friends = user1Rels ? JSON.parse(user1Rels) : [];
+            const user2Friends = user2Rels ? JSON.parse(user2Rels) : [];
+
+            log('verifyResult', '=== User 1 Friendships ===', 'info');
+            if (user1Friends.length === 0) {
+                log('verifyResult', '❌ No friends found', 'error');
+            } else {
+                user1Friends.forEach(f => {
+                    const isFriendWithUser2 = f.userId === USER2_ID;
+                    log('verifyResult', `${isFriendWithUser2 ? '✅' : '❌'} Friend: ${f.userId}`, isFriendWithUser2 ? 'success' : 'error');
+                });
+            }
+
+            log('verifyResult', '=== User 2 Friendships ===', 'info');
+            if (user2Friends.length === 0) {
+                log('verifyResult', '❌ No friends found', 'error');
+            } else {
+                user2Friends.forEach(f => {
+                    const isFriendWithUser1 = f.userId === USER1_ID;
+                    log('verifyResult', `${isFriendWithUser1 ? '✅' : '❌'} Friend: ${f.userId}`, isFriendWithUser1 ? 'success' : 'error');
+                });
+            }
+
+            // Summary
+            const bothSetup = user1Friends.some(f => f.userId === USER2_ID) && 
+                            user2Friends.some(f => f.userId === USER1_ID);
+            
+            if (bothSetup) {
+                log('verifyResult', '🎉 SUCCESS! Both users are friends with each other!', 'success');
+                log('verifyResult', '✅ You can now test sharing!', 'success');
+            } else {
+                log('verifyResult', '⚠️ Friendships not properly set up. Run setup on both instances.', 'error');
+            }
+        }
+
+        function createTestPosition() {
+            const el = document.getElementById('testResult');
+            el.innerHTML = '';
+
+            log('testResult', '📝 Creating test trade idea via API...', 'info');
+
+            const testIdea = {
+                symbol: 'AAPL',
+                underlying: 'AAPL',
+                strategy_type: 'covered_call',
+                status: 'planned',
+                notes: 'Test trade idea for sharing',
+                tags: ['test', 'collaboration'],
+                target_quantity: 100,
+                target_entry_price: 150.00,
+                max_profit: 500.00,
+                max_loss: 1500.00,
+                legs: []
+            };
+
+            fetch('http://localhost:8000/api/v1/positions/ideas', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(testIdea)
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(err => {
+                        throw new Error(JSON.stringify(err, null, 2));
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                log('testResult', '✅ Test trade idea created!', 'success');
+                log('testResult', `Position ID: ${data.id}`, 'info');
+                log('testResult', `Symbol: ${data.symbol}`, 'info');
+                log('testResult', 'Now go to Collaboration Dashboard and try sharing this position!', 'success');
+            })
+            .catch(error => {
+                log('testResult', `❌ Error creating position: ${error.message}`, 'error');
+                log('testResult', 'Make sure backend is running on port 8000', 'error');
+            });
+        }
+
+        function clearAll() {
+            if (!confirm('This will clear ALL localStorage data. Continue?')) {
+                return;
+            }
+
+            const el = document.getElementById('troubleshootResult');
+            el.innerHTML = '';
+
+            localStorage.clear();
+            log('troubleshootResult', '✅ All localStorage cleared', 'success');
+            log('troubleshootResult', '🔄 Page will reload in 2 seconds...', 'info');
+            setTimeout(() => location.reload(), 2000);
+        }
+
+        function viewAllData() {
+            const el = document.getElementById('troubleshootResult');
+            el.innerHTML = '<h3>LocalStorage Contents:</h3>';
+
+            const pre = document.createElement('pre');
+            const data = {};
+            
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                try {
+                    data[key] = JSON.parse(localStorage.getItem(key));
+                } catch {
+                    data[key] = localStorage.getItem(key);
+                }
+            }
+            
+            pre.textContent = JSON.stringify(data, null, 2);
+            el.appendChild(pre);
+        }
+
+        // Auto-check on load
+        window.addEventListener('load', () => {
+            checkSetup();
+        });
+    </script>
+</body>
+</html>
+

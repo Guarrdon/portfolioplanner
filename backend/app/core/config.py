@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     # Logging
     LOG_LEVEL: str = "INFO"
     
+    # Collaboration (for distributed architecture)
+    ENABLE_COLLABORATION: bool = False
+    COLLABORATION_SERVICE_URL: str = "http://localhost:9000"
+    BACKEND_USER_ID: str = "default-user"
+    BACKEND_URL: str = "http://localhost:8000"
+    BACKEND_DISPLAY_NAME: str = "Default User"
+    
     class Config:
         env_file = ".env"
         case_sensitive = True

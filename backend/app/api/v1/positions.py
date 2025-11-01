@@ -23,6 +23,14 @@ from app.schemas.comment import (
     CommentListResponse
 )
 from app.services import position_service
+from app.services.websocket_manager import (
+    broadcast_position_update,
+    broadcast_comment_added,
+    broadcast_position_shared,
+    broadcast_share_revoked
+)
+from app.services.collaboration_client import get_collaboration_client
+from app.core.config import settings
 
 router = APIRouter(prefix="/positions", tags=["positions"])
 
@@ -126,6 +134,38 @@ def sync_positions(
         )
 
 
+@router.get("/ideas/{position_id}/public", response_model=PositionResponse)
+def get_position_public(
+    position_id: UUID,
+    db: Session = Depends(get_db)
+):
+    """
+    Get a single position by ID without authentication.
+    
+    This endpoint is used by remote backends to fetch shared positions.
+    In production, this should be secured with some form of share token or API key.
+    """
+    position = db.query(models.Position).filter(
+        models.Position.id == position_id,
+        models.Position.flavor == "idea"  # Only allow fetching ideas
+    ).first()
+    
+    if not position:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Position not found or not shareable"
+        )
+    
+    # Add shared_with list
+    shares = db.query(models.PositionShare).filter(
+        models.PositionShare.position_id == position.id,
+        models.PositionShare.is_active == True
+    ).all()
+    position.shared_with = [str(share.recipient_id) for share in shares]
+    
+    return position
+
+
 @router.get("/ideas", response_model=PositionListResponse)
 def get_trade_ideas(
     status: Optional[str] = Query(None),
@@ -133,6 +173,7 @@ def get_trade_ideas(
     strategy_type: Optional[str] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
+    user_id: Optional[str] = Query(None, description="User ID (for testing without auth)"),
     db: Session = Depends(get_db)
     # TODO: Re-enable auth when frontend login is implemented
     # current_user: User = Depends(get_current_active_user)
@@ -146,9 +187,10 @@ def get_trade_ideas(
     - strategy_type: Filter by strategy type
     - skip: Pagination offset
     - limit: Pagination limit
+    - user_id: User ID (temporary for testing without auth)
     """
     # TODO: Use real user_id when auth is enabled
-    test_user_id = "00000000-0000-0000-0000-000000000001"
+    test_user_id = user_id or "00000000-0000-0000-0000-000000000001"
     
     positions = position_service.get_positions(
         db,
@@ -183,6 +225,7 @@ def get_trade_ideas(
 @router.post("/ideas", response_model=PositionResponse, status_code=status.HTTP_201_CREATED)
 def create_trade_idea(
     position: PositionCreate,
+    user_id: Optional[str] = Query(None, description="User ID (for testing without auth)"),
     db: Session = Depends(get_db)
     # TODO: Re-enable auth when frontend login is implemented
     # current_user: User = Depends(get_current_active_user)
@@ -193,7 +236,7 @@ def create_trade_idea(
     Body: PositionCreate schema with position details and legs
     """
     # TODO: Use real user_id when auth is enabled
-    test_user_id = "00000000-0000-0000-0000-000000000001"
+    test_user_id = user_id or "00000000-0000-0000-0000-000000000001"
     
     try:
         created_position = position_service.create_trade_idea(
@@ -213,13 +256,14 @@ def create_trade_idea(
 @router.get("/ideas/{position_id}", response_model=PositionResponse)
 def get_trade_idea(
     position_id: UUID,
+    user_id: Optional[str] = Query(None, description="User ID (for testing without auth)"),
     db: Session = Depends(get_db)
     # TODO: Re-enable auth when frontend login is implemented
     # current_user: User = Depends(get_current_active_user)
 ):
     """Get a specific trade idea by ID"""
     # TODO: Use real user_id when auth is enabled
-    test_user_id = "00000000-0000-0000-0000-000000000001"
+    test_user_id = user_id or "00000000-0000-0000-0000-000000000001"
     
     position = position_service.get_position_by_id(db, position_id, test_user_id)
     
@@ -240,16 +284,17 @@ def get_trade_idea(
 
 
 @router.put("/ideas/{position_id}", response_model=PositionResponse)
-def update_trade_idea(
+async def update_trade_idea(
     position_id: UUID,
     position_update: PositionUpdate,
+    user_id: Optional[str] = Query(None, description="User ID (for testing without auth)"),
     db: Session = Depends(get_db)
     # TODO: Re-enable auth when frontend login is implemented
     # current_user: User = Depends(get_current_active_user)
 ):
     """Update a trade idea"""
     # TODO: Use real user_id when auth is enabled
-    test_user_id = "00000000-0000-0000-0000-000000000001"
+    test_user_id = user_id or "00000000-0000-0000-0000-000000000001"
     
     updated_position = position_service.update_position(
         db,
@@ -264,35 +309,162 @@ def update_trade_idea(
             detail="Trade idea not found or cannot be updated"
         )
     
+    # Add shared_with list
+    shares = db.query(models.PositionShare).filter(
+        models.PositionShare.position_id == updated_position.id,
+        models.PositionShare.is_active == True
+    ).all()
+    updated_position.shared_with = [share.recipient_id for share in shares]
+    
+    # Broadcast update to all connected clients who have access
+    await broadcast_position_update(
+        position_id=str(position_id),
+        position_data={
+            "id": str(updated_position.id),
+            "symbol": updated_position.symbol,
+            "tags": updated_position.tags,
+            "status": updated_position.status,
+            "notes": updated_position.notes,
+            "updated_at": updated_position.updated_at.isoformat() if updated_position.updated_at else None
+        },
+        owner_id=test_user_id,
+        shared_with=updated_position.shared_with
+    )
+    
+    return updated_position
+
+
+@router.patch("/ideas/{position_id}/tags", response_model=PositionResponse)
+async def update_trade_idea_tags(
+    position_id: UUID,
+    tags: List[str],
+    user_id: Optional[str] = Query(None, description="User ID (for testing without auth)"),
+    db: Session = Depends(get_db)
+    # TODO: Re-enable auth when frontend login is implemented
+    # current_user: User = Depends(get_current_active_user)
+):
+    """
+    Update tags on a trade idea
+    
+    Allows both owners AND recipients to add/remove tags
+    """
+    # TODO: Use real user_id when auth is enabled
+    test_user_id = user_id or "00000000-0000-0000-0000-000000000001"
+    
+    updated_position = position_service.update_position_tags(
+        db,
+        position_id=position_id,
+        user_id=test_user_id,
+        tags=tags
+    )
+    
+    if not updated_position:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trade idea not found or you don't have access to update tags"
+        )
+    
+    # Add shared_with list
+    shares = db.query(models.PositionShare).filter(
+        models.PositionShare.position_id == updated_position.id,
+        models.PositionShare.is_active == True
+    ).all()
+    updated_position.shared_with = [share.recipient_id for share in shares]
+    
+    # Broadcast update to all connected clients who have access
+    await broadcast_position_update(
+        position_id=str(position_id),
+        position_data={
+            "id": str(updated_position.id),
+            "symbol": updated_position.symbol,
+            "tags": updated_position.tags,
+            "status": updated_position.status,
+        },
+        owner_id=test_user_id,
+        shared_with=updated_position.shared_with
+    )
+    
     return updated_position
 
 
 @router.delete("/ideas/{position_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_trade_idea(
     position_id: UUID,
+    user_id: Optional[str] = Query(None, description="User ID (for testing without auth)"),
     db: Session = Depends(get_db)
     # TODO: Re-enable auth when frontend login is implemented
     # current_user: User = Depends(get_current_active_user)
 ):
-    """Delete a trade idea"""
+    """Delete a trade idea (only owner can delete)"""
     # TODO: Use real user_id when auth is enabled
-    test_user_id = "00000000-0000-0000-0000-000000000001"
+    test_user_id = user_id or "00000000-0000-0000-0000-000000000001"
     
     success = position_service.delete_position(db, position_id, test_user_id)
     
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Trade idea not found or cannot be deleted"
+            detail="Trade idea not found or cannot be deleted (you may not be the owner)"
         )
     
     return None
 
 
+@router.delete("/ideas/{position_id}/unshare", status_code=status.HTTP_204_NO_CONTENT)
+async def unshare_from_me(
+    position_id: UUID,
+    user_id: Optional[str] = Query(None, description="User ID (for testing without auth)"),
+    db: Session = Depends(get_db)
+    # TODO: Re-enable auth when frontend login is implemented
+    # current_user: User = Depends(get_current_active_user)
+):
+    """
+    Remove a shared position from your view (recipient removing themselves from share)
+    
+    DELETE /api/v1/positions/ideas/{position_id}/unshare
+    """
+    # TODO: Use real user_id when auth is enabled
+    current_user_id = user_id or "00000000-0000-0000-0000-000000000001"
+    
+    # Find the share where current user is the recipient
+    from app.models.position import PositionShare
+    share = db.query(PositionShare).filter(
+        PositionShare.position_id == position_id,
+        PositionShare.recipient_id == current_user_id,
+        PositionShare.is_active == True
+    ).first()
+    
+    if not share:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="This position is not shared with you"
+        )
+    
+    # Deactivate the share
+    share.is_active = False
+    db.commit()
+    
+    # Broadcast to WebSocket
+    from app.services.websocket_manager import manager
+    await manager.broadcast_to_user(
+        current_user_id,
+        {
+            "event": "share_revoked",
+            "data": {
+                "position_id": str(position_id),
+                "message": "Position removed from your view"
+            }
+        }
+    )
+    
+    return None
+
+
 @router.post("/ideas/{position_id}/share", status_code=status.HTTP_200_OK)
-def share_trade_idea(
+async def share_trade_idea(
     position_id: UUID,
     share_request: PositionShareCreate,
+    user_id: Optional[str] = Query(None, description="User ID (for testing without auth)"),
     db: Session = Depends(get_db)
     # TODO: Re-enable auth when frontend login is implemented
     # current_user: User = Depends(get_current_active_user)
@@ -301,13 +473,20 @@ def share_trade_idea(
     Share a trade idea with friends
     
     Body:
-    - friend_ids: List of friend user IDs to share with
+    - friend_ids: List of friend user IDs to share with (empty array to unshare all)
     - access_level: Access level (view, comment)
     """
     # TODO: Use real user_id when auth is enabled
-    test_user_id = "00000000-0000-0000-0000-000000000001"
+    test_user_id = user_id or "00000000-0000-0000-0000-000000000001"
     
     try:
+        # Get existing shares before update
+        existing_shares = db.query(models.PositionShare).filter(
+            models.PositionShare.position_id == position_id,
+            models.PositionShare.is_active == True
+        ).all()
+        existing_recipient_ids = set(str(share.recipient_id) for share in existing_shares)
+        
         # Convert friend_ids to UUIDs if they're strings
         friend_uuids = []
         for friend_id in share_request.friend_ids:
@@ -329,10 +508,67 @@ def share_trade_idea(
             friend_ids=friend_uuids
         )
         
+        new_recipient_ids = set(str(share.recipient_id) for share in shares)
+        
+        # Determine who got new access and who lost access
+        added_recipients = new_recipient_ids - existing_recipient_ids
+        removed_recipients = existing_recipient_ids - new_recipient_ids
+        
+        # Broadcast to newly added recipients (local WebSocket)
+        if added_recipients:
+            await broadcast_position_shared(
+                position_id=str(position_id),
+                recipient_ids=list(added_recipients),
+                owner_id=test_user_id
+            )
+            
+            # Also send via collaboration service for distributed instances
+            if settings.ENABLE_COLLABORATION:
+                collab_client = get_collaboration_client()
+                if collab_client and collab_client.is_connected():
+                    # Fetch full position data to share
+                    position = db.query(models.Position).filter(
+                        models.Position.id == position_id
+                    ).first()
+                    
+                    if position:
+                        # Build share URL for recipients to fetch from
+                        share_url = f"{settings.BACKEND_URL}/api/v1/positions/ideas/{position_id}"
+                        
+                        await collab_client.send_event(
+                            event_type='position_shared',
+                            to_users=list(added_recipients),
+                            data={
+                                'position_id': str(position_id),
+                                'share_url': share_url,
+                                'shared_at': position.created_at.isoformat() if position.created_at else None
+                            }
+                        )
+        
+        # Broadcast to removed recipients (local WebSocket)
+        if removed_recipients:
+            await broadcast_share_revoked(
+                position_id=str(position_id),
+                recipient_ids=list(removed_recipients)
+            )
+            
+            # Also send via collaboration service
+            if settings.ENABLE_COLLABORATION:
+                collab_client = get_collaboration_client()
+                if collab_client and collab_client.is_connected():
+                    await collab_client.send_event(
+                        event_type='share_revoked',
+                        to_users=list(removed_recipients),
+                        data={
+                            'position_id': str(position_id)
+                        }
+                    )
+        
         return {
             "success": True,
-            "message": f"Position shared with {len(shares)} friends",
-            "share_count": len(shares)
+            "message": f"Position shared with {len(shares)} friends" if len(shares) > 0 else "All shares removed",
+            "share_count": len(shares),
+            "shared_with": [str(share.recipient_id) for share in shares]
         }
     
     except ValueError as e:
@@ -354,6 +590,7 @@ def share_trade_idea(
 def get_shared_positions(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
+    user_id: Optional[str] = Query(None, description="User ID (for testing without auth)"),
     db: Session = Depends(get_db)
     # TODO: Re-enable auth when frontend login is implemented
     # current_user: User = Depends(get_current_active_user)
@@ -364,9 +601,11 @@ def get_shared_positions(
     Query parameters:
     - skip: Pagination offset
     - limit: Pagination limit
+    - user_id: User ID (temporary for testing without auth)
     """
     # TODO: Use real user_id when auth is enabled
-    test_user_id = "00000000-0000-0000-0000-000000000001"
+    # For now, accept user_id from query param, default to User 1
+    test_user_id = user_id or "00000000-0000-0000-0000-000000000001"
     
     # Get positions where user is a recipient of a share
     from app.models.position import PositionShare
@@ -409,6 +648,9 @@ def convert_actual_to_trade_idea(
             position_id=position_id,
             user_id=test_user_id
         )
+        
+        # Initialize empty shared_with list for new trade idea
+        trade_idea.shared_with = []
         
         return trade_idea
     
@@ -490,7 +732,7 @@ def get_position_comments(
 
 
 @router.post("/{position_id}/comments", response_model=CommentResponse, status_code=status.HTTP_201_CREATED)
-def create_position_comment(
+async def create_position_comment(
     position_id: UUID,
     comment_data: CommentCreate,
     db: Session = Depends(get_db)
@@ -533,6 +775,51 @@ def create_position_comment(
     # Attach user info
     if comment.user:
         comment.user.display_name = comment.user.full_name or comment.user.username
+    
+    # Get shared_with list for broadcasting
+    shares = db.query(models.PositionShare).filter(
+        models.PositionShare.position_id == position_id,
+        models.PositionShare.is_active == True
+    ).all()
+    shared_with = [str(share.recipient_id) for share in shares]
+    
+    # Broadcast new comment to all users with access (local WebSocket)
+    comment_payload = {
+        "id": str(comment.id),
+        "text": comment.text,
+        "user": {
+            "id": str(comment.user_id),
+            "display_name": comment.user.display_name if comment.user else "User"
+        },
+        "created_at": comment.created_at.isoformat() if comment.created_at else None
+    }
+    
+    await broadcast_comment_added(
+        position_id=str(position_id),
+        comment_data=comment_payload,
+        owner_id=str(position.user_id),
+        shared_with=shared_with
+    )
+    
+    # Also send via collaboration service for distributed instances
+    if settings.ENABLE_COLLABORATION:
+        collab_client = get_collaboration_client()
+        if collab_client and collab_client.is_connected():
+            # Send to owner (if different from commenter) + all shared users
+            recipients = [str(position.user_id)]
+            recipients.extend([uid for uid in shared_with if uid != str(position.user_id)])
+            # Remove the commenter from recipients (they already see it)
+            recipients = [uid for uid in recipients if uid != test_user_id]
+            
+            if recipients:
+                await collab_client.send_event(
+                    event_type='comment_added',
+                    to_users=recipients,
+                    data={
+                        'position_id': str(position_id),
+                        'comment': comment_payload
+                    }
+                )
     
     return comment
 

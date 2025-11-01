@@ -12,6 +12,8 @@ A collaborative platform for tracking, planning, and sharing stock and option tr
 
 ### Installation & Startup
 
+#### Standard Mode (Single Backend)
+
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
@@ -31,6 +33,21 @@ A collaborative platform for tracking, planning, and sharing stock and option tr
    - ✓ Create configuration files
    - ✓ Start backend (port 8000)
    - ✓ Start frontend (port 3000)
+
+#### Distributed Mode (Multi-Instance Collaboration)
+
+For testing true multi-tenant collaboration with independent instances:
+
+```bash
+./start-distributed.sh
+```
+
+This starts:
+- Collaboration Service (port 9000)
+- Backend A + Frontend A (ports 8000, 3000)
+- Backend B + Frontend B (ports 8001, 3001)
+
+See [DISTRIBUTED_TESTING_GUIDE.md](./DISTRIBUTED_TESTING_GUIDE.md) for details.
 
 3. **Configure environment (first time)**
 

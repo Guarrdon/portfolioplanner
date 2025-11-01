@@ -71,8 +71,28 @@ export function FriendsProvider({ children }) {
     if (!currentUser?.id) return;
 
     try {
-      const storedData = localStorage.getItem(buildUserRelationshipKey(currentUser.id));
-      const relationships = storedData ? JSON.parse(storedData) : [];
+      let storedData = localStorage.getItem(buildUserRelationshipKey(currentUser.id));
+      let relationships = storedData ? JSON.parse(storedData) : [];
+      
+      // MIGRATION: Fix old friend IDs (1, 2) to UUIDs
+      const needsMigration = relationships.some(rel => rel.userId === '1' || rel.userId === '2');
+      
+      if (needsMigration) {
+        console.log('🔧 Migrating friend IDs to UUIDs...');
+        relationships = relationships.map(rel => {
+          if (rel.userId === '1') {
+            return { ...rel, userId: '00000000-0000-0000-0000-000000000001' };
+          } else if (rel.userId === '2') {
+            return { ...rel, userId: '00000000-0000-0000-0000-000000000002' };
+          }
+          return rel;
+        });
+        
+        // Save migrated relationships
+        localStorage.setItem(buildUserRelationshipKey(currentUser.id), JSON.stringify(relationships));
+        console.log('✅ Friend IDs migrated');
+      }
+      
       dispatch({ type: 'INITIALIZE_RELATIONSHIPS', payload: relationships });
     } catch (error) {
       dispatch({ 

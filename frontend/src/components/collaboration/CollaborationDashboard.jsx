@@ -17,9 +17,12 @@ import {
   TrendingUp,
   Search,
   X,
-  Check
+  Check,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 import { TradeIdeaCard } from './TradeIdeaCard';
+import { useCollaboration } from '../../hooks/useWebSocket';
 
 export const CollaborationDashboard = () => {
   const queryClient = useQueryClient();
@@ -30,6 +33,9 @@ export const CollaborationDashboard = () => {
   const [filterStrategy, setFilterStrategy] = useState('');
   const [showNewIdeaForm, setShowNewIdeaForm] = useState(false);
   const [highlightId, setHighlightId] = useState(null);
+  
+  // Enable real-time collaboration
+  const { isConnected, notification } = useCollaboration();
 
   // Check for highlight parameter in URL (from conversion)
   useEffect(() => {
@@ -142,6 +148,28 @@ export const CollaborationDashboard = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Share Notification Toast */}
+      {notification && (
+        <div className="fixed top-4 right-4 z-50 animate-slide-in-right">
+          <div className={`rounded-lg shadow-lg p-4 ${
+            notification.type === 'shared' 
+              ? 'bg-green-50 border border-green-200' 
+              : 'bg-orange-50 border border-orange-200'
+          }`}>
+            <div className="flex items-center gap-3">
+              <Share2 className={`w-5 h-5 ${
+                notification.type === 'shared' ? 'text-green-600' : 'text-orange-600'
+              }`} />
+              <p className={`text-sm font-medium ${
+                notification.type === 'shared' ? 'text-green-900' : 'text-orange-900'
+              }`}>
+                {notification.message}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Header */}
       <div className="bg-white border-b border-gray-200 shadow-sm">
         <div className="px-6">
@@ -151,9 +179,18 @@ export const CollaborationDashboard = () => {
                 <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
                   <Users className="w-6 h-6 text-blue-600" />
                   Collaboration Hub
+                  {/* Connection status indicator */}
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                    isConnected 
+                      ? 'bg-green-100 text-green-700' 
+                      : 'bg-gray-100 text-gray-600'
+                  }`}>
+                    {isConnected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+                    {isConnected ? 'Live' : 'Offline'}
+                  </span>
                 </h1>
                 <p className="mt-1 text-xs text-gray-600">
-                  Create, share, and collaborate on trade ideas
+                  Create, share, and collaborate on trade ideas{isConnected ? ' in real-time' : ''}
                 </p>
               </div>
               <button

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Force Reset - Portfolio Planner</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #fee2e2;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border: 3px solid #ef4444;
+        }
+        h1 {
+            color: #dc2626;
+            margin-top: 0;
+        }
+        button {
+            background: #dc2626;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            width: 100%;
+            margin: 10px 0;
+        }
+        button:hover {
+            background: #b91c1c;
+        }
+        .status {
+            padding: 15px;
+            border-radius: 4px;
+            margin: 15px 0;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        .error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        .warning {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        pre {
+            background: #1f2937;
+            color: #f9fafb;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>⚠️ Force Reset & Fix User IDs</h1>
+        <p><strong>This will:</strong></p>
+        <ul>
+            <li>Clear ALL localStorage</li>
+            <li>Set up users with proper UUIDs</li>
+            <li>Create friendship between users</li>
+            <li>Force page reload</li>
+        </ul>
+
+        <div class="warning">
+            Run this in <strong>BOTH</strong> browser instances!
+        </div>
+
+        <h2>Instance 1 (Port 3000)</h2>
+        <button onclick="resetInstance1()">🔥 Reset Instance 1 as User 1 (Matt)</button>
+
+        <h2>Instance 2 (Port 3001)</h2>
+        <button onclick="resetInstance2()">🔥 Reset Instance 2 as User 2 (Jason)</button>
+
+        <div id="result"></div>
+    </div>
+
+    <script>
+        const USER1_ID = '00000000-0000-0000-0000-000000000001';
+        const USER2_ID = '00000000-0000-0000-0000-000000000002';
+
+        function log(message, type = 'success') {
+            const el = document.getElementById('result');
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.innerHTML = message;
+            el.appendChild(div);
+        }
+
+        function resetInstance1() {
+            const el = document.getElementById('result');
+            el.innerHTML = '<h3>Resetting Instance 1...</h3>';
+
+            // Clear everything
+            localStorage.clear();
+            sessionStorage.clear();
+
+            // Create users with UUIDs
+            const users = [
+                {
+                    id: USER1_ID,
+                    username: 'matt',
+                    displayName: 'Matt Lyons',
+                    full_name: 'Matt Lyons',
+                    email: 'matt@optionsquared.com',
+                    profilePicture: null,
+                    preferences: {
+                        defaultView: 'portfolio',
+                        theme: 'light',
+                        dateFormat: 'MM/dd/yyyy',
+                        timezone: 'America/New_York'
+                    },
+                    createdAt: new Date().toISOString(),
+                    role: 'admin'
+                },
+                {
+                    id: USER2_ID,
+                    username: 'jason',
+                    displayName: 'Jason Hall',
+                    full_name: 'Jason Hall',
+                    email: 'sneaksoft@gmail.com',
+                    profilePicture: null,
+                    preferences: {
+                        defaultView: 'calendar',
+                        theme: 'light',
+                        dateFormat: 'MM/dd/yyyy',
+                        timezone: 'America/Los_Angeles'
+                    },
+                    createdAt: new Date().toISOString(),
+                    role: 'admin'
+                }
+            ];
+
+            // Save users
+            localStorage.setItem('portfolio_users', JSON.stringify(users));
+            log('✅ Created users with UUIDs');
+
+            // Set current user to User 1
+            localStorage.setItem('current_user_id', USER1_ID);
+            log(`✅ Set current user: ${USER1_ID} (Matt Lyons)`);
+
+            // Add User 2 as friend
+            const friendship = {
+                userId: USER2_ID,
+                createdAt: new Date().toISOString(),
+                status: 'active',
+                type: 'individual'
+            };
+            localStorage.setItem(
+                `user_${USER1_ID}_relationships`,
+                JSON.stringify([friendship])
+            );
+            log('✅ Added Jason as friend');
+
+            // Show current state
+            const pre = document.createElement('pre');
+            pre.textContent = JSON.stringify({
+                currentUser: USER1_ID,
+                users: users.map(u => ({ id: u.id, username: u.username })),
+                friendships: [friendship]
+            }, null, 2);
+            el.appendChild(pre);
+
+            log('🔄 Reloading in 3 seconds...', 'warning');
+            setTimeout(() => location.reload(), 3000);
+        }
+
+        function resetInstance2() {
+            const el = document.getElementById('result');
+            el.innerHTML = '<h3>Resetting Instance 2...</h3>';
+
+            // Clear everything
+            localStorage.clear();
+            sessionStorage.clear();
+
+            // Create users with UUIDs
+            const users = [
+                {
+                    id: USER1_ID,
+                    username: 'matt',
+                    displayName: 'Matt Lyons',
+                    full_name: 'Matt Lyons',
+                    email: 'matt@optionsquared.com',
+                    profilePicture: null,
+                    preferences: {
+                        defaultView: 'portfolio',
+                        theme: 'light',
+                        dateFormat: 'MM/dd/yyyy',
+                        timezone: 'America/New_York'
+                    },
+                    createdAt: new Date().toISOString(),
+                    role: 'admin'
+                },
+                {
+                    id: USER2_ID,
+                    username: 'jason',
+                    displayName: 'Jason Hall',
+                    full_name: 'Jason Hall',
+                    email: 'sneaksoft@gmail.com',
+                    profilePicture: null,
+                    preferences: {
+                        defaultView: 'calendar',
+                        theme: 'light',
+                        dateFormat: 'MM/dd/yyyy',
+                        timezone: 'America/Los_Angeles'
+                    },
+                    createdAt: new Date().toISOString(),
+                    role: 'admin'
+                }
+            ];
+
+            // Save users
+            localStorage.setItem('portfolio_users', JSON.stringify(users));
+            log('✅ Created users with UUIDs');
+
+            // Set current user to User 2
+            localStorage.setItem('current_user_id', USER2_ID);
+            log(`✅ Set current user: ${USER2_ID} (Jason Hall)`);
+
+            // Add User 1 as friend
+            const friendship = {
+                userId: USER1_ID,
+                createdAt: new Date().toISOString(),
+                status: 'active',
+                type: 'individual'
+            };
+            localStorage.setItem(
+                `user_${USER2_ID}_relationships`,
+                JSON.stringify([friendship])
+            );
+            log('✅ Added Matt as friend');
+
+            // Show current state
+            const pre = document.createElement('pre');
+            pre.textContent = JSON.stringify({
+                currentUser: USER2_ID,
+                users: users.map(u => ({ id: u.id, username: u.username })),
+                friendships: [friendship]
+            }, null, 2);
+            el.appendChild(pre);
+
+            log('🔄 Reloading in 3 seconds...', 'warning');
+            setTimeout(() => location.reload(), 3000);
+        }
+    </script>
+</body>
+</html>
+

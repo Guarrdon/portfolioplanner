@@ -25,7 +25,15 @@ export const convertActualToTradeIdea = async (positionId) => {
  * @returns {Promise<{total: number, positions: Array}>}
  */
 export const fetchTradeIdeas = async (params = {}) => {
-  const response = await api.get('/positions/ideas', { params });
+  // Get current user ID from localStorage (correct key)
+  const currentUserId = localStorage.getItem('portfolio_planner_current_user');
+  
+  const response = await api.get('/positions/ideas', { 
+    params: {
+      ...params,
+      user_id: currentUserId
+    }
+  });
   return response.data;
 };
 
@@ -35,7 +43,13 @@ export const fetchTradeIdeas = async (params = {}) => {
  * @returns {Promise<Object>} Created trade idea
  */
 export const createTradeIdea = async (tradeIdea) => {
-  const response = await api.post('/positions/ideas', tradeIdea);
+  // Pass current user ID for authorization
+  const currentUserId = localStorage.getItem('portfolio_planner_current_user');
+  const response = await api.post('/positions/ideas', tradeIdea, {
+    params: {
+      user_id: currentUserId
+    }
+  });
   return response.data;
 };
 
@@ -46,17 +60,61 @@ export const createTradeIdea = async (tradeIdea) => {
  * @returns {Promise<Object>} Updated trade idea
  */
 export const updateTradeIdea = async (positionId, updates) => {
-  const response = await api.put(`/positions/ideas/${positionId}`, updates);
+  // Pass current user ID for authorization
+  const currentUserId = localStorage.getItem('portfolio_planner_current_user');
+  const response = await api.put(`/positions/ideas/${positionId}`, updates, {
+    params: {
+      user_id: currentUserId
+    }
+  });
   return response.data;
 };
 
 /**
- * Delete a trade idea
+ * Update tags on a trade idea (allowed for both owners and recipients)
+ * @param {string} positionId - Position ID
+ * @param {string[]} tags - Array of tag strings
+ * @returns {Promise<Object>} Updated trade idea
+ */
+export const updateTradeIdeaTags = async (positionId, tags) => {
+  // Pass current user ID for authorization
+  const currentUserId = localStorage.getItem('portfolio_planner_current_user');
+  const response = await api.patch(`/positions/ideas/${positionId}/tags`, tags, {
+    params: {
+      user_id: currentUserId
+    }
+  });
+  return response.data;
+};
+
+/**
+ * Delete a trade idea (only owner can delete)
  * @param {string} positionId - Position ID to delete
  * @returns {Promise<void>}
  */
 export const deleteTradeIdea = async (positionId) => {
-  await api.delete(`/positions/ideas/${positionId}`);
+  // Pass current user ID for authorization
+  const currentUserId = localStorage.getItem('portfolio_planner_current_user');
+  await api.delete(`/positions/ideas/${positionId}`, {
+    params: {
+      user_id: currentUserId
+    }
+  });
+};
+
+/**
+ * Remove a shared position from your view (unshare from yourself)
+ * @param {string} positionId - Position ID to unshare
+ * @returns {Promise<void>}
+ */
+export const unshareFromMe = async (positionId) => {
+  // Pass current user ID
+  const currentUserId = localStorage.getItem('portfolio_planner_current_user');
+  await api.delete(`/positions/ideas/${positionId}/unshare`, {
+    params: {
+      user_id: currentUserId
+    }
+  });
 };
 
 /**
@@ -67,9 +125,15 @@ export const deleteTradeIdea = async (positionId) => {
  * @returns {Promise<{success: boolean, message: string, share_count: number}>}
  */
 export const shareTradeIdea = async (positionId, friendIds, accessLevel = 'comment') => {
+  // Pass current user ID for authorization (to verify ownership)
+  const currentUserId = localStorage.getItem('portfolio_planner_current_user');
   const response = await api.post(`/positions/ideas/${positionId}/share`, {
     friend_ids: friendIds,
     access_level: accessLevel
+  }, {
+    params: {
+      user_id: currentUserId
+    }
   });
   return response.data;
 };
@@ -79,7 +143,14 @@ export const shareTradeIdea = async (positionId, friendIds, accessLevel = 'comme
  * @returns {Promise<{total: number, positions: Array}>}
  */
 export const fetchSharedPositions = async () => {
-  const response = await api.get('/positions/shared');
+  // Get current user ID from localStorage
+  const currentUserId = localStorage.getItem('portfolio_planner_current_user');
+  
+  const response = await api.get('/positions/shared', {
+    params: {
+      user_id: currentUserId
+    }
+  });
   return response.data;
 };
 
