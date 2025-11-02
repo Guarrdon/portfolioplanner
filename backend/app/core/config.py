@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
-    ENCRYPTION_KEY: str
+    ENCRYPTION_KEY: str = "not-used-currently"  # Optional: Only needed if storing encrypted credentials
     
     # CORS
     CORS_ORIGINS: str = "http://localhost:3000"

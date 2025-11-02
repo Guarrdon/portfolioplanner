@@ -98,8 +98,7 @@ def create_trade_idea(db: Session, position_data: PositionCreate, user_id: UUID)
         **position_dict,
         user_id=user_id,
         flavor="idea",
-        read_only=False,
-        status="planned"
+        read_only=False
     )
     
     db.add(position)

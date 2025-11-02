@@ -19,8 +19,15 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # OAuth2 scheme for token authentication
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
-# Fernet cipher for encrypting sensitive data
-cipher_suite = Fernet(settings.ENCRYPTION_KEY.encode())
+# Fernet cipher for encrypting sensitive data (lazy initialization)
+_cipher_suite = None
+
+def _get_cipher_suite():
+    """Lazy initialization of Fernet cipher suite"""
+    global _cipher_suite
+    if _cipher_suite is None:
+        _cipher_suite = Fernet(settings.ENCRYPTION_KEY.encode())
+    return _cipher_suite
 
 
 # Password Hashing
@@ -84,12 +91,12 @@ def decode_token(token: str) -> dict:
 # Data Encryption
 def encrypt_data(data: str) -> str:
     """Encrypt sensitive data using Fernet"""
-    return cipher_suite.encrypt(data.encode()).decode()
+    return _get_cipher_suite().encrypt(data.encode()).decode()
 
 
 def decrypt_data(encrypted_data: str) -> str:
     """Decrypt data encrypted with Fernet"""
-    return cipher_suite.decrypt(encrypted_data.encode()).decode()
+    return _get_cipher_suite().decrypt(encrypted_data.encode()).decode()
 
 
 # Authentication Dependency
