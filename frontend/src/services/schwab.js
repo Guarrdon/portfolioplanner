@@ -61,3 +61,18 @@ export const getPosition = async (positionId) => {
   return response.data;
 };
 
+/**
+ * Manually update a position's strategy type
+ * @param {string} positionId - Position ID
+ * @param {string} strategyType - New strategy type
+ * @returns {Promise<Object>}
+ */
+export const updatePositionStrategy = async (positionId, strategyType) => {
+  const response = await api.patch(
+    `/positions/actual/${positionId}/strategy`,
+    null,
+    { params: { strategy_type: strategyType } }
+  );
+  return response.data;
+};
+

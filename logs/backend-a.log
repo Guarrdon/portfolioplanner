@@ -1,12 +1,80 @@
-INFO:     Started server process [31190]
+INFO:     Started server process [46018]
 INFO:     Waiting for application startup.
-2025-11-02 19:50:38,963 - app.main - INFO - Starting up Portfolio Planner backend
-2025-11-02 19:50:38,963 - app.main - INFO - Initializing collaboration client
-2025-11-02 19:50:38,996 - app.services.collaboration_client - INFO - Collaboration client initialized for user 00000000-0000-0000-0000-000000000001
-2025-11-02 19:50:38,996 - app.services.collaboration_client - INFO - Connecting to collaboration service
-2025-11-02 19:50:39,009 - app.services.collaboration_client - INFO - Connected to collaboration service
-2025-11-02 19:50:39,010 - app.main - INFO - Collaboration client connected successfully
+2025-11-02 19:58:28,344 - app.main - INFO - Starting up Portfolio Planner backend
+2025-11-02 19:58:28,344 - app.main - INFO - Initializing collaboration client
+2025-11-02 19:58:28,362 - app.services.collaboration_client - INFO - Collaboration client initialized for user 00000000-0000-0000-0000-000000000001
+2025-11-02 19:58:28,362 - app.services.collaboration_client - INFO - Connecting to collaboration service
+2025-11-02 19:58:28,369 - app.services.collaboration_client - INFO - Connected to collaboration service
+2025-11-02 19:58:28,370 - app.main - INFO - Collaboration client connected successfully
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-2025-11-02 19:50:39,011 - app.services.collaboration_client - ERROR - Error from collaboration service
-2025-11-02 19:50:39,011 - app.services.collaboration_client - WARNING - Disconnected from collaboration service
+2025-11-02 19:58:28,370 - app.services.collaboration_client - ERROR - Error from collaboration service
+2025-11-02 19:58:28,370 - app.services.collaboration_client - WARNING - Disconnected from collaboration service
+INFO:     127.0.0.1:56044 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56054 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56054 - "OPTIONS /api/v1/positions/sync HTTP/1.1" 200 OK
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO - === GROUPING POSITIONS: 23 input positions ===
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: AAPL | stock | qty=100.0 | acct=F89A
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: AAPL | option | qty=-1.0 | acct=F89A
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: MSFT | stock | qty=100.0 | acct=F89A
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: MSFT | option | qty=-1.0 | acct=F89A
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: SPY | option | qty=-20.0 | acct=F89A
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: SPY | option | qty=20.0 | acct=F89A
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: IWM | option | qty=-20.0 | acct=F89A
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: IWM | option | qty=20.0 | acct=F89A
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: QQQ | option | qty=-5.0 | acct=F89A
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: QQQ | option | qty=5.0 | acct=F89A
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: TSLA | option | qty=3.0 | acct=F89A
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: T | stock | qty=470.0 | acct=F89A
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: AAPL | stock | qty=100.0 | acct=A8D5
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: AAPL | option | qty=-1.0 | acct=A8D5
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: MSFT | stock | qty=100.0 | acct=A8D5
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: MSFT | option | qty=-1.0 | acct=A8D5
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: SPY | option | qty=-20.0 | acct=A8D5
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: SPY | option | qty=20.0 | acct=A8D5
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: QQQ | option | qty=-5.0 | acct=A8D5
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: QQQ | option | qty=5.0 | acct=A8D5
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: TSLA | option | qty=2.0 | acct=A8D5
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: T | stock | qty=365.0 | acct=A8D5
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: VZ | stock | qty=301.0 | acct=A8D5
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO - === GROUPED OUTPUT: 16 grouped positions ===
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: AAPL | covered_call | legs=2
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: MSFT | covered_call | legs=2
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: SPY | vertical_spread | legs=2
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: IWM | vertical_spread | legs=2
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: QQQ | single_option | legs=1
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: QQQ | single_option | legs=1
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: TSLA | single_option | legs=1
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: T | long_stock | legs=1
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: AAPL | covered_call | legs=2
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: MSFT | covered_call | legs=2
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: SPY | vertical_spread | legs=2
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: QQQ | single_option | legs=1
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: QQQ | single_option | legs=1
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: TSLA | single_option | legs=1
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: T | long_stock | legs=1
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: VZ | long_stock | legs=1
+2025-11-02 19:58:47,663 - app.services.schwab_service - INFO - ✅ All 23 positions accounted for
+DEBUG: Found 2 accounts from Schwab API
+  - Account: 12345678
+  - Account: 87654321
+DEBUG: Found 7 enabled accounts in database
+DEBUG: Enabled hashes from DB: {'EFCD00A7A452640948919B61B6721F079E015190E7BCB34830F119FE63E99F32', 'F9C2A8D5E4B6F1A3C7E9D2B4', '09E853B0423F56E7543F89F57EB93BFD98A2C5566060EC86CBEB6EECD9479384', '333CD5EED0E28D2ECA852C66D4506746DDEFF45755C653641B2452298B405393', 'F2671FE298880BA6D792296F7D5A72F5733D7441C97475F73333B22249A8CC64', 'E5B3F89A2C1D4E6F7A8B9C0D', '9E9DF84F62697F45000AB3E42505DA6C7A2B8D2949ED2925555FEEC7BF7EB5F0'}
+DEBUG: Hashes from Schwab API: {'F9C2A8D5E4B6F1A3C7E9D2B4', 'E5B3F89A2C1D4E6F7A8B9C0D'}
+DEBUG: Matched accounts: 2
+DEBUG: Will fetch positions from 2 accounts
+DEBUG: Account E5B3F89A has 12 positions
+DEBUG: Sample position keys: ['instrument', 'longQuantity', 'shortQuantity', 'averagePrice', 'marketValue']
+DEBUG: Sample instrument keys: ['assetType', 'symbol']
+DEBUG: Transformed position - Symbol: AAPL, Type: stock, Value: $16081.85, Legs: 0
+DEBUG: Transformed position - Symbol: AAPL  251217C00168859, Type: option, Value: $-250.00, Legs: 0
+DEBUG: Account F9C2A8D5 has 11 positions
+DEBUG: Sample position keys: ['instrument', 'longQuantity', 'shortQuantity', 'averagePrice', 'marketValue']
+DEBUG: Sample instrument keys: ['assetType', 'symbol']
+DEBUG: Total positions fetched: 23
+INFO:     127.0.0.1:56054 - "POST /api/v1/positions/sync HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56054 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56191 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56207 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56225 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56236 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK

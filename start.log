@@ -1,0 +1,48 @@
+[0;34m========================================[0m
+[0;34mPortfolio Planner - Distributed Mode[0m
+[0;34m========================================[0m
+
+[1;33m[1/7] Installing Collaboration Service dependencies...[0m
+[1;33m[2/7] Starting Collaboration Service (port 9000)...[0m
+[0;32m✓ Collaboration Service started (PID: 42722)[0m
+[1;33m[3/7] Setting up Backend Instance A (User A)...[0m
+[0;32m  Using existing .env.instance_a[0m
+[1;33m[4/7] Starting Backend Instance A (port 8000)...[0m
+[0;32m✓ Backend A started (PID: 43191)[0m
+[1;33m[5/7] Setting up Backend Instance B (User B)...[0m
+[0;32m  Using existing .env.instance_b[0m
+[0;32m✓ Backend B started (PID: 43267)[0m
+[1;33m[6/7] Installing Frontend dependencies...[0m
+[1;33m[7/7] Starting Frontend instances...[0m
+[0;32m✓ Frontend A started (PID: 43350) - http://localhost:3000[0m
+[0;32m✓ Frontend B started (PID: 43351) - http://localhost:3001[0m
+
+[0;32m========================================[0m
+[0;32mAll services started successfully![0m
+[0;32m========================================[0m
+
+[0;34mServices:[0m
+  Collaboration Service: [0;32mhttp://localhost:9000/health[0m
+  Backend A (User A):    [0;32mhttp://localhost:8000/docs[0m
+  Frontend A (User A):   [0;32mhttp://localhost:3000[0m
+  Backend B (User B):    [0;32mhttp://localhost:8001/docs[0m
+  Frontend B (User B):   [0;32mhttp://localhost:3001[0m
+
+[0;34mTesting Collaboration:[0m
+  1. Open http://localhost:3000 (User A)
+  2. Open http://localhost:3001 (User B) in a different browser/incognito
+  3. User A: Create a trade idea
+  4. User A: Share it with User B
+  5. User B: Should see it in 'Shared With Me' tab
+  6. User B: Add a comment
+  7. User A: Should see the comment in real-time
+
+[1;33mLogs are available in logs/ directory[0m
+[1;33mPress Ctrl+C to stop all services[0m
+
+
+[1;33mShutting down all services...[0m
+[0;32mAll services stopped[0m
+
+[1;33mShutting down all services...[0m
+[0;32mAll services stopped[0m

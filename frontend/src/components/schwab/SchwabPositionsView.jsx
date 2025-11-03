@@ -4,8 +4,8 @@
  */
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchActualPositions, syncSchwabPositions } from '../../services/schwab';
-import { RefreshCw, ChevronRight, ChevronDown, Minimize2, Maximize2, ChevronsRight, ChevronsDown, Share2 } from 'lucide-react';
+import { fetchActualPositions, syncSchwabPositions, updatePositionStrategy } from '../../services/schwab';
+import { RefreshCw, ChevronRight, ChevronDown, Minimize2, Maximize2, ChevronsRight, ChevronsDown, Share2, Edit2 } from 'lucide-react';
 import { CollaborationModal } from '../modals/CollaborationModal';
 
 export const SchwabPositionsView = () => {
@@ -20,6 +20,7 @@ export const SchwabPositionsView = () => {
     symbol: ''
   });
   const [collaborationModalPosition, setCollaborationModalPosition] = useState(null);
+  const [editingStrategyId, setEditingStrategyId] = useState(null); // For inline strategy editing
 
   // Fetch positions
   const { data, isLoading, error, refetch } = useQuery({
@@ -32,6 +33,16 @@ export const SchwabPositionsView = () => {
     mutationFn: syncSchwabPositions,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['positions', 'actual'] });
+    }
+  });
+
+  // Update strategy mutation
+  const updateStrategyMutation = useMutation({
+    mutationFn: ({ positionId, strategyType }) => 
+      updatePositionStrategy(positionId, strategyType),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['positions', 'actual'] });
+      setEditingStrategyId(null);
     }
   });
 
@@ -666,7 +677,45 @@ export const SchwabPositionsView = () => {
                       </td>
                       <td className="px-2 py-1.5 font-semibold text-gray-900">{formatPositionSymbol(position)}</td>
                       <td className="px-2 py-1.5 text-gray-700">
-                        {getStrategyLabel(position.strategy_type)}
+                        {editingStrategyId === position.id ? (
+                          <select
+                            className="text-xs py-0.5 px-1 border rounded focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                            value={position.strategy_type}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              updateStrategyMutation.mutate({
+                                positionId: position.id,
+                                strategyType: e.target.value
+                              });
+                            }}
+                            onBlur={() => setEditingStrategyId(null)}
+                            onClick={(e) => e.stopPropagation()}
+                            autoFocus
+                          >
+                            <option value="covered_call">Covered Call</option>
+                            <option value="vertical_spread">Vertical Spread</option>
+                            <option value="box_spread">Box Spread</option>
+                            <option value="long_stock">Long Stock</option>
+                            <option value="short_stock">Short Stock</option>
+                            <option value="big_option">Big Option</option>
+                            <option value="single_option">Single Option</option>
+                            <option value="unallocated">Unallocated</option>
+                          </select>
+                        ) : (
+                          <div className="flex items-center gap-1 group">
+                            <span>{getStrategyLabel(position.strategy_type)}</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingStrategyId(position.id);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-gray-100 rounded"
+                              title="Change strategy"
+                            >
+                              <Edit2 className="w-3 h-3 text-gray-400" />
+                            </button>
+                          </div>
+                        )}
                       </td>
                       <td className="px-2 py-1.5 text-right text-gray-900">
                         {formatQuantity(position.quantity)}
