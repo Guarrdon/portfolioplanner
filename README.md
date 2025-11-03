@@ -2,6 +2,17 @@
 
 A collaborative platform for tracking, planning, and sharing stock and option trading strategies with Schwab API integration.
 
+## 📚 Documentation
+
+**Complete documentation is in the [`documentation/`](./documentation/) folder.**
+
+- **[Getting Started](./documentation/development-guide.md)** - Setup and first steps
+- **[Architecture](./documentation/architecture-overview.md)** - System design
+- **[Strategy Management](./documentation/STRATEGY_LOCKING_DESIGN.md)** - Manual strategy assignment
+- **[All Documentation](./documentation/README.md)** - Complete index
+
+---
+
 ## Quick Start
 
 ### Prerequisites
@@ -47,7 +58,7 @@ This starts:
 - Backend A + Frontend A (ports 8000, 3000)
 - Backend B + Frontend B (ports 8001, 3001)
 
-See [DISTRIBUTED_TESTING_GUIDE.md](./DISTRIBUTED_TESTING_GUIDE.md) for details.
+See [documentation/DISTRIBUTED_TESTING_GUIDE.md](./documentation/DISTRIBUTED_TESTING_GUIDE.md) for details.
 
 3. **Configure environment (first time)**
 
