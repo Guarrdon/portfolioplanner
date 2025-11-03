@@ -31,8 +31,30 @@ from app.services.websocket_manager import (
 )
 from app.services.collaboration_client import get_collaboration_client
 from app.core.config import settings
+from app.core.strategy_types import ALL_STRATEGY_TYPES, STRATEGY_LABELS, get_strategy_label
 
 router = APIRouter(prefix="/positions", tags=["positions"])
+
+
+@router.get("/strategy-types")
+def get_strategy_types():
+    """
+    Get list of all available strategy types.
+    
+    Returns both auto-detected strategies (from Schwab grouping) 
+    and custom user-defined strategies.
+    """
+    return {
+        "strategy_types": [
+            {
+                "value": strategy_type,
+                "label": get_strategy_label(strategy_type),
+                "is_custom": strategy_type not in ["covered_call", "vertical_spread", "box_spread", 
+                                                     "long_stock", "short_stock", "big_option", "single_option"]
+            }
+            for strategy_type in ALL_STRATEGY_TYPES
+        ]
+    }
 
 
 @router.get("/actual", response_model=PositionListResponse)

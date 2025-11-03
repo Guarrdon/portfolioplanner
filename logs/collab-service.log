@@ -1,4 +1,4 @@
-2025-11-03T01:06:44.170Z [INFO]: Collaboration Service running on port 9000 
-2025-11-03T01:06:44.172Z [INFO]: Ready to accept backend connections 
-2025-11-03T01:06:46.880Z [WARN]: Connection rejected: missing user_id or backend_url {"socketId":"4E6cX6tPY3Ta0BPMAAAB"}
-2025-11-03T01:06:49.613Z [WARN]: Connection rejected: missing user_id or backend_url {"socketId":"7g_ywsGLCNkyDZ4JAAAD"}
+2025-11-03T02:06:37.335Z [INFO]: Collaboration Service running on port 9000 
+2025-11-03T02:06:37.337Z [INFO]: Ready to accept backend connections 
+2025-11-03T02:06:39.125Z [WARN]: Connection rejected: missing user_id or backend_url {"socketId":"XmwxI5tgKFfPzcOhAAAB"}
+2025-11-03T02:06:39.849Z [WARN]: Connection rejected: missing user_id or backend_url {"socketId":"RPx4IH55JcmWT2u3AAAD"}

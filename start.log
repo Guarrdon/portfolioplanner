@@ -4,18 +4,18 @@
 
 [1;33m[1/7] Installing Collaboration Service dependencies...[0m
 [1;33m[2/7] Starting Collaboration Service (port 9000)...[0m
-[0;32m✓ Collaboration Service started (PID: 42722)[0m
+[0;32m✓ Collaboration Service started (PID: 52990)[0m
 [1;33m[3/7] Setting up Backend Instance A (User A)...[0m
-[0;32m  Using existing .env.instance_a[0m
+[0;32m  Using .env.instance_a[0m
 [1;33m[4/7] Starting Backend Instance A (port 8000)...[0m
-[0;32m✓ Backend A started (PID: 43191)[0m
+[0;32m✓ Backend A started (PID: 53066)[0m
 [1;33m[5/7] Setting up Backend Instance B (User B)...[0m
-[0;32m  Using existing .env.instance_b[0m
-[0;32m✓ Backend B started (PID: 43267)[0m
+[0;32m  Using .env.instance_b[0m
+[0;32m✓ Backend B started (PID: 53133)[0m
 [1;33m[6/7] Installing Frontend dependencies...[0m
 [1;33m[7/7] Starting Frontend instances...[0m
-[0;32m✓ Frontend A started (PID: 43350) - http://localhost:3000[0m
-[0;32m✓ Frontend B started (PID: 43351) - http://localhost:3001[0m
+[0;32m✓ Frontend A started (PID: 53249) - http://localhost:3000[0m
+[0;32m✓ Frontend B started (PID: 53250) - http://localhost:3001[0m
 
 [0;32m========================================[0m
 [0;32mAll services started successfully![0m
@@ -40,9 +40,10 @@
 [1;33mLogs are available in logs/ directory[0m
 [1;33mPress Ctrl+C to stop all services[0m
 
-
-[1;33mShutting down all services...[0m
-[0;32mAll services stopped[0m
+start-distributed.sh: line 190: 52990 Killed: 9               node server.js > ../logs/collab-service.log 2>&1  (wd: ~/Development/Guarrdon/portfolioplanner/collaboration-service)
+start-distributed.sh: line 190: 53066 Killed: 9               PORT=8000 uvicorn app.main:app --host 0.0.0.0 --port 8000 > ../logs/backend-a.log 2>&1  (wd: ~/Development/Guarrdon/portfolioplanner/backend)
+start-distributed.sh: line 190: 53133 Killed: 9               PORT=8001 uvicorn app.main:app --host 0.0.0.0 --port 8001 > ../logs/backend-b.log 2>&1  (wd: ~/Development/Guarrdon/portfolioplanner/backend)
+start-distributed.sh: line 198: syntax error near unexpected token `('
 
 [1;33mShutting down all services...[0m
 [0;32mAll services stopped[0m

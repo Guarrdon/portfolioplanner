@@ -48,18 +48,27 @@ def generate_position_signature(legs: List[Dict[str, Any]], symbol: str, account
     
     for leg in sorted_legs:
         # Include key leg characteristics
+        # NOTE: We intentionally do NOT include quantity or average_price because those
+        # change constantly with market fluctuations. We want a STABLE signature that
+        # identifies the position STRUCTURE, not its current values.
         leg_signature = f"leg:{leg.get('asset_type')}:{leg.get('symbol')}:"
         
         if leg.get('asset_type') == 'option':
-            leg_signature += f"{leg.get('option_type')}:{leg.get('strike')}:{leg.get('expiration')}:"
-        
-        # Use quantity and average price to differentiate lots
-        quantity = leg.get('quantity', 0)
-        avg_price = leg.get('average_price', 0)
-        
-        # Round prices to 2 decimals to avoid floating point issues
-        # But keep them significant enough to differentiate different entries
-        leg_signature += f"{float(quantity):.4f}:{float(avg_price):.2f}"
+            leg_signature += f"{leg.get('option_type')}:{leg.get('strike')}:{leg.get('expiration')}"
+        else:
+            # For stocks, include a quantity RANGE to differentiate lot sizes
+            # but not exact quantity (which changes with fractional shares, etc.)
+            quantity = abs(float(leg.get('quantity', 0)))
+            # Group into ranges: tiny (<10), small (10-99), medium (100-999), large (1000+)
+            if quantity < 10:
+                qty_range = "tiny"
+            elif quantity < 100:
+                qty_range = "small"
+            elif quantity < 1000:
+                qty_range = "medium"
+            else:
+                qty_range = "large"
+            leg_signature += f"qty_range:{qty_range}"
         
         signature_parts.append(leg_signature)
     
