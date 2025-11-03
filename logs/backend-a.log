@@ -1,80 +1,411 @@
-INFO:     Started server process [46018]
+INFO:     Started server process [59449]
 INFO:     Waiting for application startup.
-2025-11-02 19:58:28,344 - app.main - INFO - Starting up Portfolio Planner backend
-2025-11-02 19:58:28,344 - app.main - INFO - Initializing collaboration client
-2025-11-02 19:58:28,362 - app.services.collaboration_client - INFO - Collaboration client initialized for user 00000000-0000-0000-0000-000000000001
-2025-11-02 19:58:28,362 - app.services.collaboration_client - INFO - Connecting to collaboration service
-2025-11-02 19:58:28,369 - app.services.collaboration_client - INFO - Connected to collaboration service
-2025-11-02 19:58:28,370 - app.main - INFO - Collaboration client connected successfully
+2025-11-02 20:06:46,856 - app.main - INFO - Starting up Portfolio Planner backend
+2025-11-02 20:06:46,856 - app.main - INFO - Initializing collaboration client
+2025-11-02 20:06:46,873 - app.services.collaboration_client - INFO - Collaboration client initialized for user 00000000-0000-0000-0000-000000000001
+2025-11-02 20:06:46,874 - app.services.collaboration_client - INFO - Connecting to collaboration service
+2025-11-02 20:06:46,880 - app.services.collaboration_client - INFO - Connected to collaboration service
+2025-11-02 20:06:46,881 - app.main - INFO - Collaboration client connected successfully
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-2025-11-02 19:58:28,370 - app.services.collaboration_client - ERROR - Error from collaboration service
-2025-11-02 19:58:28,370 - app.services.collaboration_client - WARNING - Disconnected from collaboration service
-INFO:     127.0.0.1:56044 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56054 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56054 - "OPTIONS /api/v1/positions/sync HTTP/1.1" 200 OK
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO - === GROUPING POSITIONS: 23 input positions ===
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: AAPL | stock | qty=100.0 | acct=F89A
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: AAPL | option | qty=-1.0 | acct=F89A
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: MSFT | stock | qty=100.0 | acct=F89A
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: MSFT | option | qty=-1.0 | acct=F89A
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: SPY | option | qty=-20.0 | acct=F89A
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: SPY | option | qty=20.0 | acct=F89A
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: IWM | option | qty=-20.0 | acct=F89A
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: IWM | option | qty=20.0 | acct=F89A
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: QQQ | option | qty=-5.0 | acct=F89A
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: QQQ | option | qty=5.0 | acct=F89A
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: TSLA | option | qty=3.0 | acct=F89A
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: T | stock | qty=470.0 | acct=F89A
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: AAPL | stock | qty=100.0 | acct=A8D5
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: AAPL | option | qty=-1.0 | acct=A8D5
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: MSFT | stock | qty=100.0 | acct=A8D5
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: MSFT | option | qty=-1.0 | acct=A8D5
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: SPY | option | qty=-20.0 | acct=A8D5
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: SPY | option | qty=20.0 | acct=A8D5
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: QQQ | option | qty=-5.0 | acct=A8D5
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: QQQ | option | qty=5.0 | acct=A8D5
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: TSLA | option | qty=2.0 | acct=A8D5
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: T | stock | qty=365.0 | acct=A8D5
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Input: VZ | stock | qty=301.0 | acct=A8D5
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO - === GROUPED OUTPUT: 16 grouped positions ===
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: AAPL | covered_call | legs=2
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: MSFT | covered_call | legs=2
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: SPY | vertical_spread | legs=2
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: IWM | vertical_spread | legs=2
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: QQQ | single_option | legs=1
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: QQQ | single_option | legs=1
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: TSLA | single_option | legs=1
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: T | long_stock | legs=1
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: AAPL | covered_call | legs=2
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: MSFT | covered_call | legs=2
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: SPY | vertical_spread | legs=2
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: QQQ | single_option | legs=1
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: QQQ | single_option | legs=1
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: TSLA | single_option | legs=1
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: T | long_stock | legs=1
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO -   Output: VZ | long_stock | legs=1
-2025-11-02 19:58:47,663 - app.services.schwab_service - INFO - ✅ All 23 positions accounted for
-DEBUG: Found 2 accounts from Schwab API
-  - Account: 12345678
-  - Account: 87654321
+2025-11-02 20:06:46,881 - app.services.collaboration_client - ERROR - Error from collaboration service
+2025-11-02 20:06:46,881 - app.services.collaboration_client - WARNING - Disconnected from collaboration service
+INFO:     127.0.0.1:56444 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56454 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+2025-11-02 20:07:03,107 - schwab.auth - INFO - Loading token from file /Users/mlyons/Development/Guarrdon/portfolioplanner/backend/app/services/../../schwab_tokens.json
+2025-11-02 20:07:03,689 - httpx - INFO - HTTP Request: POST https://api.schwabapi.com/v1/oauth/token "HTTP/1.1 200 OK"
+2025-11-02 20:07:03,690 - schwab.auth - INFO - Updating token to file /Users/mlyons/Development/Guarrdon/portfolioplanner/backend/app/services/../../schwab_tokens.json
+2025-11-02 20:07:03,899 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/trader/v1/accounts/accountNumbers "HTTP/1.1 200 OK"
+2025-11-02 20:07:04,306 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/trader/v1/accounts/EFCD00A7A452640948919B61B6721F079E015190E7BCB34830F119FE63E99F32?fields=positions "HTTP/1.1 200 OK"
+2025-11-02 20:07:04,611 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/trader/v1/accounts/09E853B0423F56E7543F89F57EB93BFD98A2C5566060EC86CBEB6EECD9479384?fields=positions "HTTP/1.1 200 OK"
+2025-11-02 20:07:05,023 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/trader/v1/accounts/9E9DF84F62697F45000AB3E42505DA6C7A2B8D2949ED2925555FEEC7BF7EB5F0?fields=positions "HTTP/1.1 200 OK"
+2025-11-02 20:07:05,291 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/trader/v1/accounts/F2671FE298880BA6D792296F7D5A72F5733D7441C97475F73333B22249A8CC64?fields=positions "HTTP/1.1 200 OK"
+2025-11-02 20:07:05,605 - httpx - INFO - HTTP Request: GET https://api.schwabapi.com/trader/v1/accounts/333CD5EED0E28D2ECA852C66D4506746DDEFF45755C653641B2452298B405393?fields=positions "HTTP/1.1 200 OK"
+2025-11-02 20:07:05,606 - app.services.schwab_service - INFO - === GROUPING POSITIONS: 175 input positions ===
+2025-11-02 20:07:05,607 - app.services.schwab_service - INFO -   Input: NVDA | option | qty=2.0 | acct=7628
+2025-11-02 20:07:05,607 - app.services.schwab_service - INFO -   Input: GOOG | option | qty=2.0 | acct=7628
+2025-11-02 20:07:05,607 - app.services.schwab_service - INFO -   Input: NVDA | option | qty=-2.0 | acct=7628
+2025-11-02 20:07:05,607 - app.services.schwab_service - INFO -   Input: GOOG | option | qty=-2.0 | acct=7628
+2025-11-02 20:07:05,607 - app.services.schwab_service - INFO -   Input: AAL | option | qty=40.0 | acct=7628
+2025-11-02 20:07:05,607 - app.services.schwab_service - INFO -   Input: IOT | stock | qty=100.0 | acct=7628
+2025-11-02 20:07:05,607 - app.services.schwab_service - INFO -   Input: NVDA | option | qty=1.0 | acct=1973
+2025-11-02 20:07:05,607 - app.services.schwab_service - INFO -   Input: QBTS | option | qty=-1.0 | acct=1973
+2025-11-02 20:07:05,607 - app.services.schwab_service - INFO -   Input: QBTS | stock | qty=100.0 | acct=1973
+2025-11-02 20:07:05,607 - app.services.schwab_service - INFO -   Input: QBTS | option | qty=1.0 | acct=1973
+2025-11-02 20:07:05,607 - app.services.schwab_service - INFO -   Input: GOOG | option | qty=1.0 | acct=1973
+2025-11-02 20:07:05,607 - app.services.schwab_service - INFO -   Input: QUBT | stock | qty=100.0 | acct=1973
+2025-11-02 20:07:05,607 - app.services.schwab_service - INFO -   Input: QUBT | option | qty=2.0 | acct=1973
+2025-11-02 20:07:05,607 - app.services.schwab_service - INFO -   Input: DX | stock | qty=800.0 | acct=0458
+2025-11-02 20:07:05,607 - app.services.schwab_service - INFO -   Input: UUUU | stock | qty=900.0 | acct=0458
+2025-11-02 20:07:05,607 - app.services.schwab_service - INFO -   Input: NVDA | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,607 - app.services.schwab_service - INFO -   Input: BSX | option | qty=3.0 | acct=0458
+2025-11-02 20:07:05,607 - app.services.schwab_service - INFO -   Input: BSX | stock | qty=100.0 | acct=0458
+2025-11-02 20:07:05,607 - app.services.schwab_service - INFO -   Input: CRWV | option | qty=-2.0 | acct=0458
+2025-11-02 20:07:05,607 - app.services.schwab_service - INFO -   Input: SANM | stock | qty=200.0 | acct=0458
+2025-11-02 20:07:05,607 - app.services.schwab_service - INFO -   Input: NVDA | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: INTC | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: NVDA | stock | qty=100.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: PATH | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: ACWI | option | qty=1.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: BOTZ | option | qty=16.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: SMCI | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: QBTS | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: PATH | stock | qty=600.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: QBTS | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: PLTR | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: RGTI | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: $VIX | option | qty=10.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: SANM | option | qty=-2.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: BULL | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: ARES | stock | qty=100.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: NVDA | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: CARR | option | qty=-2.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: SMCI | stock | qty=300.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: UUUU | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: UUUU | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: LRCX | stock | qty=100.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: RDDT | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: UUUU | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: HOOD | option | qty=-2.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: UUUU | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: TER | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: SMCI | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,608 - app.services.schwab_service - INFO -   Input: SMCI | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: HON | stock | qty=100.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: CTVA | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: CTVA | stock | qty=100.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: ARES | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: MSFT | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: TSM | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: AAL | option | qty=20.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: RDDT | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: AAL | option | qty=10.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: AAL | option | qty=10.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: $VIX | option | qty=1.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: UUUU | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: $VIX | option | qty=1.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: WDAY | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: ORCL | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: CLF | stock | qty=1000.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: UUUU | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: BLK | option | qty=1.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: EPD | stock | qty=200.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: COIN | option | qty=1.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: $VIX | option | qty=10.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: ASM | stock | qty=500.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: COIN | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: BLK | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: $SPX | option | qty=-10.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: QBTS | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: $SPX | option | qty=10.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: $SPX | option | qty=10.0 | acct=0458
+2025-11-02 20:07:05,609 - app.services.schwab_service - INFO -   Input: IOT | stock | qty=300.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: TSM | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: $SPX | option | qty=-10.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: UUUU | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: $VIX | option | qty=1.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: UUUU | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: UUUU | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: ARES | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: LNG | option | qty=-2.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: LNG | stock | qty=100.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: IOT | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: KMX | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: IOT | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: AVGO | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: IOT | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: GNRC | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: FLUT | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: QBTS | stock | qty=400.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: BULL | stock | qty=300.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: $VIX | option | qty=2.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: W | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: RGTI | stock | qty=200.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: W | stock | qty=100.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: KMX | option | qty=-2.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: BYND | stock | qty=5000.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: $VIX | option | qty=2.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: $SPX | option | qty=2.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: FMC | option | qty=5.0 | acct=0458
+2025-11-02 20:07:05,610 - app.services.schwab_service - INFO -   Input: $SPX | option | qty=-2.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: $SPX | option | qty=2.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: ORCL | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: HLN | option | qty=5.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: $SPX | option | qty=-2.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: KMX | option | qty=-2.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: HLN | stock | qty=500.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: SMCI | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: BLK | stock | qty=40.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: SMCI | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: AAPL | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: LLY | stock | qty=20.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: PLTR | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: NVDA | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: QBTS | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: AXP | stock | qty=35.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: V | option | qty=-2.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: COIN | option | qty=-2.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: $SPX | option | qty=10.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: $SPX | option | qty=-10.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: PFE | stock | qty=100.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: $VIX | option | qty=2.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: FMC | stock | qty=300.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: $SPX | option | qty=10.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: $SPX | option | qty=-10.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: KMX | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: RGTI | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: GT | option | qty=20.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: $VIX | option | qty=1.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: $VIX | option | qty=1.0 | acct=0458
+2025-11-02 20:07:05,611 - app.services.schwab_service - INFO -   Input: GOOG | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: $VIX | option | qty=1.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: KMX | stock | qty=300.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: INTC | stock | qty=300.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: MBLY | stock | qty=500.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: AMZN | stock | qty=100.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: FIS | stock | qty=200.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: ACWI | option | qty=2.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: RGTI | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: DIN | stock | qty=200.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: GOOG | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: GOOG | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: ARM | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: AAPL | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: AMZN | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: UUUU | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: CHWY | option | qty=-2.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: FIS | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: CSL | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: ARM | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: MSFT | stock | qty=35.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: UUUU | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: AVGO | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: ARAFF | stock | qty=3000.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: GOOG | stock | qty=100.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: RGTI | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: QQQ | option | qty=-2.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: INTC | option | qty=-1.0 | acct=0458
+2025-11-02 20:07:05,612 - app.services.schwab_service - INFO -   Input: $VIX | option | qty=5.0 | acct=0458
+2025-11-02 20:07:05,613 - app.services.schwab_service - INFO -   Input: QQQ | option | qty=4.0 | acct=0458
+2025-11-02 20:07:05,613 - app.services.schwab_service - INFO -   Input: W | stock | qty=100.0 | acct=3757
+2025-11-02 20:07:05,613 - app.services.schwab_service - INFO -   Input: AA | stock | qty=100.0 | acct=3757
+2025-11-02 20:07:05,613 - app.services.schwab_service - INFO -   Input: NCLH | stock | qty=200.0 | acct=3757
+2025-11-02 20:07:05,613 - app.services.schwab_service - INFO -   Input: QUBT | stock | qty=300.0 | acct=3757
+2025-11-02 20:07:05,613 - app.services.schwab_service - INFO -   Input: RIVN | stock | qty=200.0 | acct=3757
+2025-11-02 20:07:05,613 - app.services.schwab_service - INFO -   Input: AAL | stock | qty=200.0 | acct=3757
+2025-11-02 20:07:05,613 - app.services.schwab_service - INFO -   Input: SCHW | option | qty=1.0 | acct=3757
+2025-11-02 20:07:05,613 - app.services.schwab_service - INFO -   Input: LAES | stock | qty=400.0 | acct=3757
+2025-11-02 20:07:05,613 - app.services.schwab_service - INFO -   Input: QBTS | stock | qty=100.0 | acct=3757
+2025-11-02 20:07:05,613 - app.services.schwab_service - INFO -   Input: SCHW | option | qty=-1.0 | acct=3757
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO - === GROUPED OUTPUT: 159 grouped positions ===
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: NVDA | vertical_spread | legs=2
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: GOOG | vertical_spread | legs=2
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: AAL | big_option | legs=1
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: IOT | long_stock | legs=1
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: NVDA | single_option | legs=1
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: QBTS | covered_call | legs=2
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: QBTS | single_option | legs=1
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: GOOG | single_option | legs=1
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: QUBT | long_stock | legs=1
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: QUBT | single_option | legs=1
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: DX | long_stock | legs=1
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: UUUU | covered_call | legs=2
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: UUUU | single_option | legs=1
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: UUUU | single_option | legs=1
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: UUUU | single_option | legs=1
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: UUUU | single_option | legs=1
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: UUUU | single_option | legs=1
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: UUUU | single_option | legs=1
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: UUUU | single_option | legs=1
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: UUUU | single_option | legs=1
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: UUUU | single_option | legs=1
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: UUUU | single_option | legs=1
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: NVDA | long_stock | legs=1
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: NVDA | single_option | legs=1
+2025-11-02 20:07:05,614 - app.services.schwab_service - INFO -   Output: NVDA | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: NVDA | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: NVDA | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: BSX | long_stock | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: BSX | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: CRWV | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: SANM | long_stock | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: SANM | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: INTC | covered_call | legs=2
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: INTC | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: PATH | covered_call | legs=2
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: ACWI | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: ACWI | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: BOTZ | big_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: SMCI | covered_call | legs=2
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: SMCI | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: SMCI | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: SMCI | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: SMCI | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: QBTS | long_stock | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: QBTS | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: QBTS | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: QBTS | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: QBTS | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: PLTR | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: PLTR | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: RGTI | covered_call | legs=2
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: RGTI | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: RGTI | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: RGTI | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: $VIX | big_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: $VIX | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: $VIX | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: $VIX | big_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: $VIX | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: $VIX | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: $VIX | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: $VIX | single_option | legs=1
+2025-11-02 20:07:05,615 - app.services.schwab_service - INFO -   Output: $VIX | single_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: $VIX | single_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: $VIX | single_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: $VIX | single_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: BULL | covered_call | legs=2
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: ARES | long_stock | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: ARES | single_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: ARES | single_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: CARR | single_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: LRCX | long_stock | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: RDDT | single_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: RDDT | single_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: HOOD | single_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: TER | single_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: HON | long_stock | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: CTVA | covered_call | legs=2
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: MSFT | long_stock | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: MSFT | single_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: TSM | single_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: TSM | single_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: AAL | big_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: AAL | big_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: AAL | big_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: WDAY | single_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: ORCL | single_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: ORCL | single_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: CLF | long_stock | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: BLK | long_stock | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: BLK | single_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: BLK | single_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: EPD | long_stock | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: COIN | single_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: COIN | single_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: COIN | single_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: ASM | long_stock | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: $SPX | box_spread | legs=4
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: $SPX | big_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: $SPX | big_option | legs=1
+2025-11-02 20:07:05,616 - app.services.schwab_service - INFO -   Output: $SPX | big_option | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: $SPX | big_option | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: $SPX | big_option | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: $SPX | big_option | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: $SPX | big_option | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: $SPX | big_option | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: IOT | long_stock | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: IOT | single_option | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: IOT | single_option | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: IOT | single_option | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: LNG | long_stock | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: LNG | single_option | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: KMX | covered_call | legs=2
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: KMX | single_option | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: KMX | single_option | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: KMX | single_option | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: AVGO | single_option | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: AVGO | single_option | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: GNRC | single_option | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: FLUT | single_option | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: W | long_stock | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: W | single_option | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: BYND | long_stock | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: FMC | long_stock | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: FMC | single_option | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: HLN | long_stock | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: HLN | single_option | legs=1
+2025-11-02 20:07:05,617 - app.services.schwab_service - INFO -   Output: AAPL | single_option | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: AAPL | single_option | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: LLY | long_stock | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: AXP | long_stock | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: V | single_option | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: PFE | long_stock | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: GT | big_option | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: GOOG | long_stock | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: GOOG | single_option | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: GOOG | single_option | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: GOOG | single_option | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: MBLY | long_stock | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: AMZN | long_stock | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: AMZN | single_option | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: FIS | covered_call | legs=2
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: DIN | long_stock | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: ARM | single_option | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: ARM | single_option | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: CHWY | single_option | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: CSL | single_option | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: ARAFF | long_stock | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: QQQ | single_option | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: QQQ | single_option | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: W | long_stock | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: AA | long_stock | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: NCLH | long_stock | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: QUBT | long_stock | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: RIVN | long_stock | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: AAL | long_stock | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: SCHW | vertical_spread | legs=2
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: LAES | long_stock | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO -   Output: QBTS | long_stock | legs=1
+2025-11-02 20:07:05,618 - app.services.schwab_service - INFO - ✅ All 175 positions accounted for
+DEBUG: Found 5 accounts from Schwab API
+  - Account: 10427628
+  - Account: 24181973
+  - Account: 27360458
+  - Account: 67453757
+  - Account: 96788544
 DEBUG: Found 7 enabled accounts in database
-DEBUG: Enabled hashes from DB: {'EFCD00A7A452640948919B61B6721F079E015190E7BCB34830F119FE63E99F32', 'F9C2A8D5E4B6F1A3C7E9D2B4', '09E853B0423F56E7543F89F57EB93BFD98A2C5566060EC86CBEB6EECD9479384', '333CD5EED0E28D2ECA852C66D4506746DDEFF45755C653641B2452298B405393', 'F2671FE298880BA6D792296F7D5A72F5733D7441C97475F73333B22249A8CC64', 'E5B3F89A2C1D4E6F7A8B9C0D', '9E9DF84F62697F45000AB3E42505DA6C7A2B8D2949ED2925555FEEC7BF7EB5F0'}
-DEBUG: Hashes from Schwab API: {'F9C2A8D5E4B6F1A3C7E9D2B4', 'E5B3F89A2C1D4E6F7A8B9C0D'}
-DEBUG: Matched accounts: 2
-DEBUG: Will fetch positions from 2 accounts
-DEBUG: Account E5B3F89A has 12 positions
-DEBUG: Sample position keys: ['instrument', 'longQuantity', 'shortQuantity', 'averagePrice', 'marketValue']
-DEBUG: Sample instrument keys: ['assetType', 'symbol']
-DEBUG: Transformed position - Symbol: AAPL, Type: stock, Value: $16081.85, Legs: 0
-DEBUG: Transformed position - Symbol: AAPL  251217C00168859, Type: option, Value: $-250.00, Legs: 0
-DEBUG: Account F9C2A8D5 has 11 positions
-DEBUG: Sample position keys: ['instrument', 'longQuantity', 'shortQuantity', 'averagePrice', 'marketValue']
-DEBUG: Sample instrument keys: ['assetType', 'symbol']
-DEBUG: Total positions fetched: 23
-INFO:     127.0.0.1:56054 - "POST /api/v1/positions/sync HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56054 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56191 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56207 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56225 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
-INFO:     127.0.0.1:56236 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+DEBUG: Enabled hashes from DB: {'F9C2A8D5E4B6F1A3C7E9D2B4', 'F2671FE298880BA6D792296F7D5A72F5733D7441C97475F73333B22249A8CC64', '09E853B0423F56E7543F89F57EB93BFD98A2C5566060EC86CBEB6EECD9479384', 'E5B3F89A2C1D4E6F7A8B9C0D', '333CD5EED0E28D2ECA852C66D4506746DDEFF45755C653641B2452298B405393', '9E9DF84F62697F45000AB3E42505DA6C7A2B8D2949ED2925555FEEC7BF7EB5F0', 'EFCD00A7A452640948919B61B6721F079E015190E7BCB34830F119FE63E99F32'}
+DEBUG: Hashes from Schwab API: {'F2671FE298880BA6D792296F7D5A72F5733D7441C97475F73333B22249A8CC64', '09E853B0423F56E7543F89F57EB93BFD98A2C5566060EC86CBEB6EECD9479384', '333CD5EED0E28D2ECA852C66D4506746DDEFF45755C653641B2452298B405393', '9E9DF84F62697F45000AB3E42505DA6C7A2B8D2949ED2925555FEEC7BF7EB5F0', 'EFCD00A7A452640948919B61B6721F079E015190E7BCB34830F119FE63E99F32'}
+DEBUG: Matched accounts: 5
+DEBUG: Will fetch positions from 5 accounts
+DEBUG: Account 10427628 has 6 positions
+DEBUG: Sample position keys: ['shortQuantity', 'averagePrice', 'currentDayProfitLoss', 'currentDayProfitLossPercentage', 'longQuantity', 'settledLongQuantity', 'settledShortQuantity', 'instrument', 'marketValue', 'maintenanceRequirement', 'averageLongPrice', 'taxLotAverageLongPrice', 'longOpenProfitLoss', 'previousSessionLongQuantity', 'currentDayCost']
+DEBUG: Sample instrument keys: ['assetType', 'cusip', 'symbol', 'description', 'netChange', 'type', 'putCall', 'underlyingSymbol']
+DEBUG: Transformed position - Symbol: NVDA  251219P00160000, Type: option, Value: $332.00, Legs: 0
+DEBUG: Transformed position - Symbol: GOOG  260220P00265000, Type: option, Value: $2800.00, Legs: 0
+DEBUG: Account 24181973 has 7 positions
+DEBUG: Sample position keys: ['shortQuantity', 'averagePrice', 'currentDayProfitLoss', 'currentDayProfitLossPercentage', 'longQuantity', 'settledLongQuantity', 'settledShortQuantity', 'instrument', 'marketValue', 'maintenanceRequirement', 'averageLongPrice', 'taxLotAverageLongPrice', 'longOpenProfitLoss', 'previousSessionLongQuantity', 'currentDayCost']
+DEBUG: Sample instrument keys: ['assetType', 'cusip', 'symbol', 'description', 'netChange', 'type', 'putCall', 'underlyingSymbol']
+DEBUG: Account 27360458 has 167 positions
+DEBUG: Sample position keys: ['shortQuantity', 'averagePrice', 'currentDayProfitLoss', 'currentDayProfitLossPercentage', 'longQuantity', 'settledLongQuantity', 'settledShortQuantity', 'instrument', 'marketValue', 'maintenanceRequirement', 'averageLongPrice', 'taxLotAverageLongPrice', 'longOpenProfitLoss', 'previousSessionLongQuantity', 'currentDayCost']
+DEBUG: Sample instrument keys: ['assetType', 'cusip', 'symbol', 'netChange']
+DEBUG: Skipped position BTCI
+DEBUG: Skipped position BOTZ
+DEBUG: Skipped position MSFO
+DEBUG: Skipped position BITO
+DEBUG: Skipped position YMAG
+DEBUG: Skipped position SDIV
+DEBUG: Skipped position FSCO
+DEBUG: Skipped position QDTE
+DEBUG: Skipped position AIQ
+DEBUG: Skipped position VWO
+DEBUG: Skipped position CLM
+DEBUG: Skipped position AMZP
+DEBUG: Skipped position PEX
+DEBUG: Skipped position PULS
+DEBUG: Skipped position ACWI
+DEBUG: Account 67453757 has 14 positions
+DEBUG: Sample position keys: ['shortQuantity', 'averagePrice', 'currentDayProfitLoss', 'currentDayProfitLossPercentage', 'longQuantity', 'settledLongQuantity', 'settledShortQuantity', 'instrument', 'marketValue', 'maintenanceRequirement', 'averageLongPrice', 'taxLotAverageLongPrice', 'longOpenProfitLoss', 'previousSessionLongQuantity', 'currentDayCost']
+DEBUG: Sample instrument keys: ['assetType', 'cusip', 'symbol', 'netChange']
+DEBUG: Skipped position NVYY
+DEBUG: Skipped position BITO
+DEBUG: Skipped position FEPI
+DEBUG: Skipped position BTCI
+DEBUG: Account 96788544 has 0 positions
+DEBUG: Total positions fetched: 175
+INFO:     127.0.0.1:56460 - "POST /api/v1/positions/sync HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56460 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56613 - "GET /api/v1/positions/actual HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56651 - "GET /api/v1/positions/actual?status=active HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56663 - "GET /api/v1/positions/actual?status=active&limit=500 HTTP/1.1" 200 OK

@@ -41,7 +41,7 @@ def get_actual_positions(
     account_id: Optional[str] = Query(None),
     symbol: Optional[str] = Query(None),
     skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
+    limit: int = Query(1000, ge=1, le=5000),  # Increased default from 100 to 1000
     db: Session = Depends(get_db)
     # TODO: Re-enable auth when frontend login is implemented
     # current_user: User = Depends(get_current_active_user)
