@@ -1,13 +1,13 @@
-INFO:     Started server process [62962]
+INFO:     Started server process [96178]
 INFO:     Waiting for application startup.
-2025-11-02 21:06:39,828 - app.main - INFO - Starting up Portfolio Planner backend
-2025-11-02 21:06:39,828 - app.main - INFO - Initializing collaboration client
-2025-11-02 21:06:39,847 - app.services.collaboration_client - INFO - Collaboration client initialized for user 00000000-0000-0000-0000-000000000002
-2025-11-02 21:06:39,847 - app.services.collaboration_client - INFO - Connecting to collaboration service
-2025-11-02 21:06:39,849 - app.services.collaboration_client - INFO - Connected to collaboration service
-2025-11-02 21:06:39,850 - app.main - INFO - Collaboration client connected successfully
+2025-11-02 21:18:58,942 - app.main - INFO - Starting up Portfolio Planner backend
+2025-11-02 21:18:58,942 - app.main - INFO - Initializing collaboration client
+2025-11-02 21:18:58,965 - app.services.collaboration_client - INFO - Collaboration client initialized for user 00000000-0000-0000-0000-000000000002
+2025-11-02 21:18:58,965 - app.services.collaboration_client - INFO - Connecting to collaboration service
+2025-11-02 21:18:58,971 - app.services.collaboration_client - INFO - Connected to collaboration service
+2025-11-02 21:18:58,972 - app.main - INFO - Collaboration client connected successfully
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
-2025-11-02 21:06:39,850 - app.services.collaboration_client - ERROR - Error from collaboration service
-2025-11-02 21:06:39,850 - app.services.collaboration_client - WARNING - Disconnected from collaboration service
-INFO:     127.0.0.1:59818 - "GET /docs HTTP/1.1" 200 OK
+2025-11-02 21:18:58,972 - app.services.collaboration_client - ERROR - Error from collaboration service
+2025-11-02 21:18:58,972 - app.services.collaboration_client - WARNING - Disconnected from collaboration service
+INFO:     127.0.0.1:60571 - "GET /docs HTTP/1.1" 200 OK

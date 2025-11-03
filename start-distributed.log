@@ -1,0 +1,162 @@
+[0;34m========================================[0m
+[0;34mPortfolio Planner - Distributed Mode[0m
+[0;34m========================================[0m
+
+[1;33mRunning pre-flight checks...[0m
+[0;32m  ✓ Node.js installed: v20.17.0[0m
+[0;32m  ✓ Python installed: Python 3.11.5[0m
+[1;33mChecking for port conflicts...[0m
+[0;32m  ✓ All ports are available[0m
+[1;33mChecking configuration files...[0m
+[0;32m  ✓ backend/.env.instance_a found[0m
+[0;32m  ✓ backend/.env.instance_b found[0m
+[1;33mChecking database migrations...[0m
+[0;32m  ✓ Database migrations applied[0m
+[0;32mPre-flight checks passed![0m
+
+[1;33m[1/7] Installing Collaboration Service dependencies...[0m
+[1;33m[2/7] Starting Collaboration Service (port 9000)...[0m
+[1;33m  Waiting for Collaboration Service to be ready...[0m
+[0;32m  ✓ Collaboration Service is ready[0m
+[1;33m[3/7] Setting up Backend Instance A (User A)...[0m
+[1;33m[4/7] Starting Backend Instance A (port 8000)...[0m
+[1;33m  Waiting for Backend A to be ready...[0m
+[0;32m  ✓ Backend A is ready[0m
+[1;33m[5/7] Starting Backend Instance B (User B)...[0m
+[1;33m  Waiting for Backend B to be ready...[0m
+[0;32m  ✓ Backend B is ready[0m
+[1;33m[6/7] Installing Frontend dependencies...[0m
+[1;33m[7/7] Starting Frontend instances...[0m
+[1;33m  Waiting for frontends to compile (this may take 30-60 seconds)...[0m
+[1;33m  Waiting for Frontend A to be ready...[0m
+[0;32m  ✓ Frontend A is ready[0m
+[1;33m  Waiting for Frontend B to be ready...[0m
+[0;32m  ✓ Frontend B is ready[0m
+
+[1;33mFinal health check...[0m
+[0;32m  ✓ Collaboration Service is running (PID: 86180)[0m
+[0;32m  ✓ Backend A is running (PID: 86205)[0m
+[0;32m  ✓ Backend B is running (PID: 86256)[0m
+[0;32m  ✓ Frontend A is running (PID: 86272)[0m
+[0;32m  ✓ Frontend B is running (PID: 86273)[0m
+
+[0;32m========================================[0m
+[0;32mAll services started successfully![0m
+[0;32m========================================[0m
+
+[0;34mServices:[0m
+  Collaboration Service: [0;32mhttp://localhost:9000/health[0m
+  Backend A (User A):    [0;32mhttp://localhost:8000/docs[0m
+  Frontend A (User A):   [0;32mhttp://localhost:3000[0m
+  Backend B (User B):    [0;32mhttp://localhost:8001/docs[0m
+  Frontend B (User B):   [0;32mhttp://localhost:3001[0m
+
+[0;34mProcess IDs:[0m
+  Collaboration Service: 86180
+  Backend A: 86205
+  Backend B: 86256
+  Frontend A: 86272
+  Frontend B: 86273
+
+[0;34mTesting Collaboration:[0m
+  1. Open http://localhost:3000 (User A)
+  2. Open http://localhost:3001 (User B) in a different browser/incognito
+  3. User A: Create a trade idea
+  4. User A: Share it with User B
+  5. User B: Should see it in 'Shared With Me' tab
+  6. User B: Add a comment
+  7. User A: Should see the comment in real-time
+
+[1;33mLogs are available in logs/ directory[0m
+[1;33mPress Ctrl+C to stop all services[0m
+
+[0;34mMonitoring services... (checking every 10 seconds)[0m
+./start-distributed.sh: line 385: 86180 Killed: 9               node server.js > ../logs/collab-service.log 2>&1  (wd: ~/Development/Guarrdon/portfolioplanner/collaboration-service)
+./start-distributed.sh: line 385: 86205 Killed: 9               PORT=8000 uvicorn app.main:app --host 0.0.0.0 --port 8000 > ../logs/backend-a.log 2>&1  (wd: ~/Development/Guarrdon/portfolioplanner/backend)
+./start-distributed.sh: line 385: 86256 Killed: 9               PORT=8001 uvicorn app.main:app --host 0.0.0.0 --port 8001 > ../logs/backend-b.log 2>&1  (wd: ~/Development/Guarrdon/portfolioplanner/backend)
+[0;31m⚠️  Collaboration Service crashed![0m
+2025-11-03T02:13:45.758Z [INFO]: Collaboration Service running on port 9000 
+2025-11-03T02:13:45.762Z [INFO]: Ready to accept backend connections 
+2025-11-03T02:13:47.951Z [WARN]: Connection rejected: missing user_id or backend_url {"socketId":"kBkV24-jl1__wFZqAAAB"}
+2025-11-03T02:13:49.333Z [WARN]: Connection rejected: missing user_id or backend_url {"socketId":"kyjJ1-JyQz2ysCmNAAAD"}
+[0;31m⚠️  Backend A crashed![0m
+DEBUG: Skipped position PULS
+DEBUG: Skipped position ACWI
+DEBUG: Account 67453757 has 14 positions
+DEBUG: Sample position keys: ['shortQuantity', 'averagePrice', 'currentDayProfitLoss', 'currentDayProfitLossPercentage', 'longQuantity', 'settledLongQuantity', 'settledShortQuantity', 'instrument', 'marketValue', 'maintenanceRequirement', 'averageLongPrice', 'taxLotAverageLongPrice', 'longOpenProfitLoss', 'previousSessionLongQuantity', 'currentDayCost']
+DEBUG: Sample instrument keys: ['assetType', 'cusip', 'symbol', 'netChange']
+DEBUG: Skipped position NVYY
+DEBUG: Skipped position BITO
+DEBUG: Skipped position FEPI
+DEBUG: Skipped position BTCI
+DEBUG: Account 96788544 has 0 positions
+DEBUG: Total positions fetched: 175
+INFO:     127.0.0.1:60393 - "POST /api/v1/positions/sync HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60393 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60445 - "GET /api/v1/positions/actual?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60474 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60502 - "OPTIONS /api/v1/positions/actual/dabbba3d-939f-4b09-b36a-7ce25465aee8/strategy?strategy_type=unallocated HTTP/1.1" 200 OK
+2025-11-02 21:18:15,243 - app.api.v1.positions - INFO - Manual strategy lock: UUUU | single_option → unallocated | Signature: 3c99ecea962a... | 🔒 LOCKED
+INFO:     127.0.0.1:60502 - "PATCH /api/v1/positions/actual/dabbba3d-939f-4b09-b36a-7ce25465aee8/strategy?strategy_type=unallocated HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60502 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60519 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+[0;31m⚠️  Backend B crashed![0m
+INFO:     Started server process [86256]
+INFO:     Waiting for application startup.
+2025-11-02 21:13:49,310 - app.main - INFO - Starting up Portfolio Planner backend
+2025-11-02 21:13:49,310 - app.main - INFO - Initializing collaboration client
+2025-11-02 21:13:49,329 - app.services.collaboration_client - INFO - Collaboration client initialized for user 00000000-0000-0000-0000-000000000002
+2025-11-02 21:13:49,329 - app.services.collaboration_client - INFO - Connecting to collaboration service
+2025-11-02 21:13:49,333 - app.services.collaboration_client - INFO - Connected to collaboration service
+2025-11-02 21:13:49,333 - app.main - INFO - Collaboration client connected successfully
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
+2025-11-02 21:13:49,333 - app.services.collaboration_client - ERROR - Error from collaboration service
+2025-11-02 21:13:49,333 - app.services.collaboration_client - WARNING - Disconnected from collaboration service
+INFO:     127.0.0.1:60271 - "GET /docs HTTP/1.1" 200 OK
+[0;31m⚠️  Frontend A crashed![0m
+Browserslist: browsers data (caniuse-lite) is 9 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+(node:86345) [DEP_WEBPACK_DEV_SERVER_ON_AFTER_SETUP_MIDDLEWARE] DeprecationWarning: 'onAfterSetupMiddleware' option is deprecated. Please use the 'setupMiddlewares' option.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:86345) [DEP_WEBPACK_DEV_SERVER_ON_BEFORE_SETUP_MIDDLEWARE] DeprecationWarning: 'onBeforeSetupMiddleware' option is deprecated. Please use the 'setupMiddlewares' option.
+Starting the development server...
+
+Compiled successfully!
+
+You can now view portfolio-planner in the browser.
+
+  Local:            http://localhost:3000
+  On Your Network:  http://10.10.1.60:3000
+
+Note that the development build is not optimized.
+To create a production build, use npm run build.
+
+webpack compiled successfully
+The build failed because the process exited too early. This probably means the system ran out of memory or someone called `kill -9` on the process.
+[0;31m⚠️  Frontend B crashed![0m
+Browserslist: browsers data (caniuse-lite) is 9 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+(node:86344) [DEP_WEBPACK_DEV_SERVER_ON_AFTER_SETUP_MIDDLEWARE] DeprecationWarning: 'onAfterSetupMiddleware' option is deprecated. Please use the 'setupMiddlewares' option.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:86344) [DEP_WEBPACK_DEV_SERVER_ON_BEFORE_SETUP_MIDDLEWARE] DeprecationWarning: 'onBeforeSetupMiddleware' option is deprecated. Please use the 'setupMiddlewares' option.
+Starting the development server...
+
+Compiled successfully!
+
+You can now view portfolio-planner in the browser.
+
+  Local:            http://localhost:3001
+  On Your Network:  http://10.10.1.60:3001
+
+Note that the development build is not optimized.
+To create a production build, use npm run build.
+
+webpack compiled successfully
+The build failed because the process exited too early. This probably means the system ran out of memory or someone called `kill -9` on the process.
+[0;31mOne or more services crashed - shutting down[0m
+
+[1;33mShutting down all services...[0m
+[0;32mAll services stopped[0m
