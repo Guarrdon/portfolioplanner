@@ -134,6 +134,47 @@ def sync_positions(
         )
 
 
+@router.patch("/actual/{position_id}/strategy", response_model=PositionResponse)
+def update_position_strategy(
+    position_id: UUID,
+    strategy_type: str = Query(..., description="New strategy type"),
+    user_id: Optional[str] = Query(None, description="User ID (for testing without auth)"),
+    db: Session = Depends(get_db)
+):
+    """
+    Manually update the strategy type for a position.
+    
+    Allows users to override automatic strategy detection and assign
+    positions to their preferred strategy categories.
+    """
+    # TODO: Use real user_id when auth is enabled
+    test_user_id = user_id or "00000000-0000-0000-0000-000000000001"
+    
+    position = db.query(models.Position).filter(
+        models.Position.id == position_id,
+        models.Position.user_id == test_user_id,
+        models.Position.flavor == "actual"
+    ).first()
+    
+    if not position:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Position not found"
+        )
+    
+    # Update strategy type
+    old_strategy = position.strategy_type
+    position.strategy_type = strategy_type
+    db.commit()
+    db.refresh(position)
+    
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Manual strategy update: {position.symbol} | {old_strategy} → {strategy_type}")
+    
+    return position
+
+
 @router.get("/ideas/{position_id}/public", response_model=PositionResponse)
 def get_position_public(
     position_id: UUID,

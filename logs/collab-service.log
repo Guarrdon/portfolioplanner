@@ -1,4 +1,12 @@
-2025-11-03T00:05:09.778Z [INFO]: Collaboration Service running on port 9000 
-2025-11-03T00:05:09.785Z [INFO]: Ready to accept backend connections 
-2025-11-03T00:05:12.876Z [WARN]: Connection rejected: missing user_id or backend_url {"socketId":"G1WyNrOeCTF0iqk8AAAB"}
-2025-11-03T00:05:15.341Z [WARN]: Connection rejected: missing user_id or backend_url {"socketId":"mPiGDFn-59hU4epEAAAD"}
+node:events:497
+      throw er; // Unhandled 'error' event
+      ^
+
+Error: listen EADDRINUSE: address already in use 0.0.0.0:9000
+    at Server.setupListenHandle [as _listen2] (node:net:1904:16)
+    at listenInCluster (node:net:1961:12)
+    at doListen (node:net:2135:7)
+    at process.processTicksAndRejections (node:internal/process/task_queues:83:21)
+Emitted 'error' event on Server ins2025-11-03T00:45:51.729Z [WARN]: Connection rejected: missing user_id or backend_url {"socketId":"lJxhoWHFxZX4y0SOAAAF"}
+2025-11-03T00:45:54.447Z [WARN]: Connection rejected: missing user_id or backend_url {"socketId":"P3TPHJ4DD0hfKrvJAAAH"}
+0

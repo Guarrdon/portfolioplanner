@@ -359,18 +359,32 @@ def group_positions_by_strategy(positions: List[Dict[str, Any]]) -> List[Dict[st
     
     This analyzes positions for the same underlying and attempts to detect
     known strategy patterns like covered calls, spreads, etc.
+    
+    ALL positions will be included in output. Positions that don't match
+    known patterns will be marked as 'unallocated' for manual assignment.
     """
-    # Group by underlying symbol
-    by_underlying = {}
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"=== GROUPING POSITIONS: {len(positions)} input positions ===")
+    
+    # Log all input positions for debugging
+    for pos in positions:
+        logger.info(f"  Input: {pos['underlying']} | {pos['asset_type']} | qty={pos['quantity']} | acct={pos.get('account_number', 'N/A')[-4:]}")
+    
+    # Group by (underlying, account_hash) to keep positions from different accounts separate
+    by_underlying_account = {}
     for pos in positions:
         underlying = pos["underlying"]
-        if underlying not in by_underlying:
-            by_underlying[underlying] = []
-        by_underlying[underlying].append(pos)
+        account_hash = pos.get("account_hash", "unknown")
+        key = (underlying, account_hash)
+        if key not in by_underlying_account:
+            by_underlying_account[key] = []
+        by_underlying_account[key].append(pos)
     
     result_positions = []
     
-    for underlying, group in by_underlying.items():
+    for (underlying, account_hash), group in by_underlying_account.items():
         # Separate stocks and options
         stocks = [p for p in group if p["asset_type"] == "stock"]
         options = [p for p in group if p["asset_type"] == "option"]
@@ -497,6 +511,21 @@ def group_positions_by_strategy(positions: List[Dict[str, Any]]) -> List[Dict[st
                 "legs": [opt],
                 "underlying": underlying
             })
+    
+    # Log output for verification
+    logger.info(f"=== GROUPED OUTPUT: {len(result_positions)} grouped positions ===")
+    for gpos in result_positions:
+        logger.info(f"  Output: {gpos['underlying']} | {gpos['strategy_type']} | legs={len(gpos['legs'])}")
+    
+    # CRITICAL: Verify ALL input positions made it to output
+    input_count = len(positions)
+    output_leg_count = sum(len(gpos['legs']) for gpos in result_positions)
+    
+    if input_count != output_leg_count:
+        logger.error(f"❌ POSITION MISMATCH: Input={input_count}, Output legs={output_leg_count}")
+        logger.error("Some positions were dropped during grouping!")
+    else:
+        logger.info(f"✅ All {input_count} positions accounted for")
     
     return result_positions
 
