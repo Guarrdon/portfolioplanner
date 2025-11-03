@@ -106,7 +106,7 @@ ENCRYPTION_KEY=dev-encryption-key-user-a
 CORS_ORIGINS=http://localhost:3000
 
 # Schwab API
-USE_MOCK_SCHWAB_DATA=true
+USE_MOCK_SCHWAB_DATA=false
 
 # Logging
 LOG_LEVEL=INFO
