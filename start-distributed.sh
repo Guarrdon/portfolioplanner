@@ -23,12 +23,94 @@ echo -e "${BLUE}Portfolio Planner - Distributed Mode${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
+# Function to check if a port is in use
+check_port() {
+    local port=$1
+    if lsof -Pi :$port -sTCP:LISTEN -t >/dev/null 2>&1; then
+        return 0  # Port is in use
+    else
+        return 1  # Port is free
+    fi
+}
+
+# Function to kill process on a specific port
+kill_port() {
+    local port=$1
+    local pids=$(lsof -ti:$port 2>/dev/null)
+    if [ ! -z "$pids" ]; then
+        echo -e "${YELLOW}  Killing process on port $port (PIDs: $pids)${NC}"
+        echo "$pids" | xargs kill -9 2>/dev/null || true
+        sleep 1
+    fi
+}
+
+# Function to wait for a service to be ready
+wait_for_service() {
+    local url=$1
+    local name=$2
+    local max_attempts=30
+    local attempt=0
+    
+    echo -e "${YELLOW}  Waiting for $name to be ready...${NC}"
+    
+    while [ $attempt -lt $max_attempts ]; do
+        if curl -s "$url" > /dev/null 2>&1; then
+            echo -e "${GREEN}  ✓ $name is ready${NC}"
+            return 0
+        fi
+        attempt=$((attempt + 1))
+        sleep 1
+    done
+    
+    echo -e "${RED}  ✗ $name failed to start (timeout after ${max_attempts}s)${NC}"
+    return 1
+}
+
+# Function to verify service is still running
+verify_process() {
+    local pid=$1
+    local name=$2
+    
+    if ps -p $pid > /dev/null 2>&1; then
+        echo -e "${GREEN}  ✓ $name is running (PID: $pid)${NC}"
+        return 0
+    else
+        echo -e "${RED}  ✗ $name crashed or failed to start${NC}"
+        return 1
+    fi
+}
+
+# Function to kill background processes on exit
+cleanup() {
+    echo ""
+    echo -e "${YELLOW}Shutting down all services...${NC}"
+    
+    # Kill by port to ensure cleanup even if PIDs are stale
+    kill_port 9000  # Collaboration Service
+    kill_port 8000  # Backend A
+    kill_port 8001  # Backend B
+    kill_port 3000  # Frontend A
+    kill_port 3001  # Frontend B
+    
+    # Also kill any remaining background jobs
+    jobs -p | xargs kill 2>/dev/null || true
+    
+    echo -e "${GREEN}All services stopped${NC}"
+    exit 0
+}
+
+trap cleanup EXIT INT TERM
+
+# PRE-FLIGHT CHECKS
+echo -e "${YELLOW}Running pre-flight checks...${NC}"
+
 # Check if Node.js is installed
 if ! command -v node &> /dev/null; then
     echo -e "${RED}Error: Node.js is not installed${NC}"
     echo "Please install Node.js 18+ from https://nodejs.org/"
     exit 1
 fi
+echo -e "${GREEN}  ✓ Node.js installed: $(node --version)${NC}"
 
 # Check if Python is installed
 if ! command -v python3 &> /dev/null; then
@@ -36,21 +118,74 @@ if ! command -v python3 &> /dev/null; then
     echo "Please install Python 3.11+ from https://www.python.org/"
     exit 1
 fi
+echo -e "${GREEN}  ✓ Python installed: $(python3 --version)${NC}"
 
-# Function to kill background processes on exit
-cleanup() {
-    echo ""
-    echo -e "${YELLOW}Shutting down all services...${NC}"
-    jobs -p | xargs -r kill 2>/dev/null || true
-    echo -e "${GREEN}All services stopped${NC}"
-    exit 0
-}
+# Check for port conflicts
+echo -e "${YELLOW}Checking for port conflicts...${NC}"
+PORTS_IN_USE=()
 
-trap cleanup EXIT INT TERM
+for port in 9000 8000 8001 3000 3001; do
+    if check_port $port; then
+        PORTS_IN_USE+=($port)
+    fi
+done
+
+if [ ${#PORTS_IN_USE[@]} -gt 0 ]; then
+    echo -e "${YELLOW}Ports in use: ${PORTS_IN_USE[*]}${NC}"
+    echo -e "${YELLOW}Cleaning up existing processes...${NC}"
+    for port in "${PORTS_IN_USE[@]}"; do
+        kill_port $port
+    done
+    sleep 2
+fi
+
+# Verify ports are now free
+for port in 9000 8000 8001 3000 3001; do
+    if check_port $port; then
+        echo -e "${RED}Error: Port $port is still in use after cleanup${NC}"
+        echo "Please manually stop the process using: lsof -ti:$port | xargs kill"
+        exit 1
+    fi
+done
+echo -e "${GREEN}  ✓ All ports are available${NC}"
+
+# Check for required configuration files
+echo -e "${YELLOW}Checking configuration files...${NC}"
+if [ ! -f "backend/.env.instance_a" ]; then
+    echo -e "${RED}Error: backend/.env.instance_a not found${NC}"
+    echo "Please create it from backend/.env.instance_a.template"
+    exit 1
+fi
+echo -e "${GREEN}  ✓ backend/.env.instance_a found${NC}"
+
+if [ ! -f "backend/.env.instance_b" ]; then
+    echo -e "${RED}Error: backend/.env.instance_b not found${NC}"
+    echo "Please create it from backend/.env.instance_b.template"
+    exit 1
+fi
+echo -e "${GREEN}  ✓ backend/.env.instance_b found${NC}"
+
+# Check database migrations
+echo -e "${YELLOW}Checking database migrations...${NC}"
+cd backend
+source venv/bin/activate 2>/dev/null || python3 -m venv venv && source venv/bin/activate
+
+# Quick check if the new columns exist
+if python3 -c "import sqlite3; conn = sqlite3.connect('portfolio_user_a.db'); cursor = conn.cursor(); cursor.execute('PRAGMA table_info(positions)'); cols = [row[1] for row in cursor.fetchall()]; exit(0 if 'is_manual_strategy' in cols else 1)" 2>/dev/null; then
+    echo -e "${GREEN}  ✓ Database migrations applied${NC}"
+else
+    echo -e "${YELLOW}  ! Database migrations needed - running now...${NC}"
+    python add_strategy_locking.py
+fi
+cd ..
+
+echo -e "${GREEN}Pre-flight checks passed!${NC}"
+echo ""
 
 # Create log directory
 mkdir -p logs
 
+# START SERVICES
 echo -e "${YELLOW}[1/7] Installing Collaboration Service dependencies...${NC}"
 cd collaboration-service
 if [ ! -d "node_modules" ]; then
@@ -63,13 +198,11 @@ cd collaboration-service
 node server.js > ../logs/collab-service.log 2>&1 &
 COLLAB_PID=$!
 cd ..
-echo -e "${GREEN}✓ Collaboration Service started (PID: $COLLAB_PID)${NC}"
-sleep 2
 
-# Check if collaboration service is running
-if ! curl -s http://localhost:9000/health > /dev/null; then
-    echo -e "${RED}Error: Collaboration Service failed to start${NC}"
-    echo "Check logs/collab-service.log for details"
+# Wait for collaboration service to be ready
+if ! wait_for_service "http://localhost:9000/health" "Collaboration Service"; then
+    echo -e "${RED}Check logs/collab-service.log for details${NC}"
+    tail -20 logs/collab-service.log
     exit 1
 fi
 
@@ -90,43 +223,35 @@ if [ ! -f "venv/.installed" ]; then
     touch venv/.installed
 fi
 
-# Check if .env.instance_a exists
-if [ ! -f ".env.instance_a" ]; then
-    echo -e "${RED}Error: .env.instance_a not found!${NC}"
-    echo "Please create backend/.env.instance_a with your configuration"
-    echo "See CONFIGURATION_MANAGEMENT.md for details"
-    exit 1
-fi
-echo -e "${GREEN}  Using .env.instance_a${NC}"
-
 echo -e "${YELLOW}[4/7] Starting Backend Instance A (port 8000)...${NC}"
 cp .env.instance_a .env
 PORT=8000 uvicorn app.main:app --host 0.0.0.0 --port 8000 > ../logs/backend-a.log 2>&1 &
 BACKEND_A_PID=$!
-echo -e "${GREEN}✓ Backend A started (PID: $BACKEND_A_PID)${NC}"
-sleep 3
+
+# Wait for backend A to be ready
+if ! wait_for_service "http://localhost:8000/docs" "Backend A"; then
+    echo -e "${RED}Check logs/backend-a.log for details${NC}"
+    tail -30 logs/backend-a.log
+    exit 1
+fi
 
 cd ..
 
 # Setup Instance B
-echo -e "${YELLOW}[5/7] Setting up Backend Instance B (User B)...${NC}"
+echo -e "${YELLOW}[5/7] Starting Backend Instance B (User B)...${NC}"
 cd backend
-
-# Check if .env.instance_b exists
-if [ ! -f ".env.instance_b" ]; then
-    echo -e "${RED}Error: .env.instance_b not found!${NC}"
-    echo "Please create backend/.env.instance_b with your configuration"
-    echo "See CONFIGURATION_MANAGEMENT.md for details"
-    exit 1
-fi
-echo -e "${GREEN}  Using .env.instance_b${NC}"
 
 # Start Instance B with different database
 cp .env.instance_b .env
 PORT=8001 uvicorn app.main:app --host 0.0.0.0 --port 8001 > ../logs/backend-b.log 2>&1 &
 BACKEND_B_PID=$!
-echo -e "${GREEN}✓ Backend B started (PID: $BACKEND_B_PID)${NC}"
-sleep 3
+
+# Wait for backend B to be ready
+if ! wait_for_service "http://localhost:8001/docs" "Backend B"; then
+    echo -e "${RED}Check logs/backend-b.log for details${NC}"
+    tail -30 logs/backend-b.log
+    exit 1
+fi
 
 cd ..
 
@@ -139,27 +264,49 @@ fi
 
 echo -e "${YELLOW}[7/7] Starting Frontend instances...${NC}"
 
-# No .env.local needed! Frontend determines backend URL at runtime based on its port.
-# This allows unlimited instances to run from the same codebase:
-#   Frontend :3000 → Backend :8000
-#   Frontend :3001 → Backend :8001
-#   Frontend :3002 → Backend :8002
-#   etc.
-
 # Remove .env.local to ensure runtime detection works
 rm -f .env.local
 
 # Start Frontend A (port 3000)
 PORT=3000 BROWSER=none npm start > ../logs/frontend-a.log 2>&1 &
 FRONTEND_A_PID=$!
-echo -e "${GREEN}✓ Frontend A started (PID: $FRONTEND_A_PID) - http://localhost:3000${NC}"
 
 # Start Frontend B (port 3001)
 PORT=3001 BROWSER=none npm start > ../logs/frontend-b.log 2>&1 &
 FRONTEND_B_PID=$!
-echo -e "${GREEN}✓ Frontend B started (PID: $FRONTEND_B_PID) - http://localhost:3001${NC}"
 
 cd ..
+
+# Wait for frontends to compile and be ready
+echo -e "${YELLOW}  Waiting for frontends to compile (this may take 30-60 seconds)...${NC}"
+if ! wait_for_service "http://localhost:3000" "Frontend A"; then
+    echo -e "${RED}Check logs/frontend-a.log for details${NC}"
+    tail -30 logs/frontend-a.log
+    exit 1
+fi
+
+if ! wait_for_service "http://localhost:3001" "Frontend B"; then
+    echo -e "${RED}Check logs/frontend-b.log for details${NC}"
+    tail -30 logs/frontend-b.log
+    exit 1
+fi
+
+# FINAL VERIFICATION
+echo ""
+echo -e "${YELLOW}Final health check...${NC}"
+
+ALL_HEALTHY=true
+
+verify_process $COLLAB_PID "Collaboration Service" || ALL_HEALTHY=false
+verify_process $BACKEND_A_PID "Backend A" || ALL_HEALTHY=false
+verify_process $BACKEND_B_PID "Backend B" || ALL_HEALTHY=false
+verify_process $FRONTEND_A_PID "Frontend A" || ALL_HEALTHY=false
+verify_process $FRONTEND_B_PID "Frontend B" || ALL_HEALTHY=false
+
+if [ "$ALL_HEALTHY" = false ]; then
+    echo -e "${RED}Some services failed - check logs/ directory${NC}"
+    exit 1
+fi
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
@@ -172,6 +319,13 @@ echo -e "  Backend A (User A):    ${GREEN}http://localhost:8000/docs${NC}"
 echo -e "  Frontend A (User A):   ${GREEN}http://localhost:3000${NC}"
 echo -e "  Backend B (User B):    ${GREEN}http://localhost:8001/docs${NC}"
 echo -e "  Frontend B (User B):   ${GREEN}http://localhost:3001${NC}"
+echo ""
+echo -e "${BLUE}Process IDs:${NC}"
+echo -e "  Collaboration Service: ${COLLAB_PID}"
+echo -e "  Backend A: ${BACKEND_A_PID}"
+echo -e "  Backend B: ${BACKEND_B_PID}"
+echo -e "  Frontend A: ${FRONTEND_A_PID}"
+echo -e "  Frontend B: ${FRONTEND_B_PID}"
 echo ""
 echo -e "${BLUE}Testing Collaboration:${NC}"
 echo "  1. Open http://localhost:3000 (User A)"
@@ -186,6 +340,46 @@ echo -e "${YELLOW}Logs are available in logs/ directory${NC}"
 echo -e "${YELLOW}Press Ctrl+C to stop all services${NC}"
 echo ""
 
-# Wait for all background processes
-wait
-
+# Monitor processes in a loop
+echo -e "${BLUE}Monitoring services... (checking every 10 seconds)${NC}"
+while true; do
+    sleep 10
+    
+    # Check if any process has died
+    DIED=false
+    
+    if ! ps -p $COLLAB_PID > /dev/null 2>&1; then
+        echo -e "${RED}⚠️  Collaboration Service crashed!${NC}"
+        tail -20 logs/collab-service.log
+        DIED=true
+    fi
+    
+    if ! ps -p $BACKEND_A_PID > /dev/null 2>&1; then
+        echo -e "${RED}⚠️  Backend A crashed!${NC}"
+        tail -20 logs/backend-a.log
+        DIED=true
+    fi
+    
+    if ! ps -p $BACKEND_B_PID > /dev/null 2>&1; then
+        echo -e "${RED}⚠️  Backend B crashed!${NC}"
+        tail -20 logs/backend-b.log
+        DIED=true
+    fi
+    
+    if ! ps -p $FRONTEND_A_PID > /dev/null 2>&1; then
+        echo -e "${RED}⚠️  Frontend A crashed!${NC}"
+        tail -20 logs/frontend-a.log
+        DIED=true
+    fi
+    
+    if ! ps -p $FRONTEND_B_PID > /dev/null 2>&1; then
+        echo -e "${RED}⚠️  Frontend B crashed!${NC}"
+        tail -20 logs/frontend-b.log
+        DIED=true
+    fi
+    
+    if [ "$DIED" = true ]; then
+        echo -e "${RED}One or more services crashed - shutting down${NC}"
+        exit 1
+    fi
+done
