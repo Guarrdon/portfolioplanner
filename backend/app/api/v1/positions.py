@@ -145,8 +145,14 @@ def update_position_strategy(
     Manually update the strategy type for a position.
     
     Allows users to override automatic strategy detection and assign
-    positions to their preferred strategy categories.
+    positions to their preferred strategy categories. This locks the
+    strategy so it won't be changed during future syncs.
     """
+    import logging
+    from app.services.position_signature import generate_position_signature_from_db_legs
+    
+    logger = logging.getLogger(__name__)
+    
     # TODO: Use real user_id when auth is enabled
     test_user_id = user_id or "00000000-0000-0000-0000-000000000001"
     
@@ -162,15 +168,70 @@ def update_position_strategy(
             detail="Position not found"
         )
     
-    # Update strategy type
+    # Generate signature if not already set
+    if not position.schwab_position_signature and position.legs:
+        position.schwab_position_signature = generate_position_signature_from_db_legs(
+            position, position.legs
+        )
+    
+    # Update strategy type and lock it
     old_strategy = position.strategy_type
     position.strategy_type = strategy_type
+    position.is_manual_strategy = True  # 🔒 Lock the strategy
+    
     db.commit()
     db.refresh(position)
     
+    logger.info(
+        f"Manual strategy lock: {position.symbol} | "
+        f"{old_strategy} → {strategy_type} | "
+        f"Signature: {position.schwab_position_signature[:12]}... | "
+        f"🔒 LOCKED"
+    )
+    
+    return position
+
+
+@router.patch("/actual/{position_id}/strategy/unlock", response_model=PositionResponse)
+def unlock_position_strategy(
+    position_id: UUID,
+    user_id: Optional[str] = Query(None, description="User ID (for testing without auth)"),
+    db: Session = Depends(get_db)
+):
+    """
+    Unlock a position's strategy assignment.
+    
+    The next sync will re-apply automatic strategy detection for this position.
+    """
     import logging
     logger = logging.getLogger(__name__)
-    logger.info(f"Manual strategy update: {position.symbol} | {old_strategy} → {strategy_type}")
+    
+    # TODO: Use real user_id when auth is enabled
+    test_user_id = user_id or "00000000-0000-0000-0000-000000000001"
+    
+    position = db.query(models.Position).filter(
+        models.Position.id == position_id,
+        models.Position.user_id == test_user_id,
+        models.Position.flavor == "actual"
+    ).first()
+    
+    if not position:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Position not found"
+        )
+    
+    # Unlock the strategy
+    position.is_manual_strategy = False  # 🔓 Unlock
+    
+    db.commit()
+    db.refresh(position)
+    
+    logger.info(
+        f"Strategy unlocked: {position.symbol} | "
+        f"Current: {position.strategy_type} | "
+        f"🔓 Will auto-detect on next sync"
+    )
     
     return position
 

@@ -30,6 +30,10 @@ class Position(Base):
     strategy_type = Column(String(50), nullable=False)  # covered_call, put_spread, etc.
     status = Column(String(20), default="active", index=True)  # active, closed, planned, etc.
     
+    # Strategy management
+    is_manual_strategy = Column(Boolean, default=False)  # True if user manually assigned strategy
+    schwab_position_signature = Column(String(64), nullable=True, index=True)  # Hash of position legs for matching
+    
     # Quantities and values (for actual positions)
     quantity = Column(Numeric(18, 4))
     cost_basis = Column(Numeric(18, 2))

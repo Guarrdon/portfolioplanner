@@ -4,8 +4,8 @@
  */
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchActualPositions, syncSchwabPositions, updatePositionStrategy } from '../../services/schwab';
-import { RefreshCw, ChevronRight, ChevronDown, Minimize2, Maximize2, ChevronsRight, ChevronsDown, Share2, Edit2 } from 'lucide-react';
+import { fetchActualPositions, syncSchwabPositions, updatePositionStrategy, unlockPositionStrategy } from '../../services/schwab';
+import { RefreshCw, ChevronRight, ChevronDown, Minimize2, Maximize2, ChevronsRight, ChevronsDown, Share2, Edit2, Lock, Unlock } from 'lucide-react';
 import { CollaborationModal } from '../modals/CollaborationModal';
 
 export const SchwabPositionsView = () => {
@@ -43,6 +43,13 @@ export const SchwabPositionsView = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['positions', 'actual'] });
       setEditingStrategyId(null);
+    }
+  });
+
+  const unlockStrategyMutation = useMutation({
+    mutationFn: (positionId) => unlockPositionStrategy(positionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['positions', 'actual'] });
     }
   });
 
@@ -703,17 +710,38 @@ export const SchwabPositionsView = () => {
                           </select>
                         ) : (
                           <div className="flex items-center gap-1 group">
-                            <span>{getStrategyLabel(position.strategy_type)}</span>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEditingStrategyId(position.id);
-                              }}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-gray-100 rounded"
-                              title="Change strategy"
-                            >
-                              <Edit2 className="w-3 h-3 text-gray-400" />
-                            </button>
+                            <span className="flex items-center gap-1">
+                              {getStrategyLabel(position.strategy_type)}
+                              {position.is_manual_strategy && (
+                                <Lock className="w-3 h-3 text-blue-500" title="Manual assignment (locked)" />
+                              )}
+                            </span>
+                            <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingStrategyId(position.id);
+                                }}
+                                className="p-0.5 hover:bg-gray-100 rounded"
+                                title="Change strategy"
+                              >
+                                <Edit2 className="w-3 h-3 text-gray-400" />
+                              </button>
+                              {position.is_manual_strategy && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (window.confirm('Reset to automatic strategy detection?')) {
+                                      unlockStrategyMutation.mutate(position.id);
+                                    }
+                                  }}
+                                  className="p-0.5 hover:bg-gray-100 rounded"
+                                  title="Unlock - use auto-detection on next sync"
+                                >
+                                  <Unlock className="w-3 h-3 text-gray-400" />
+                                </button>
+                              )}
+                            </div>
                           </div>
                         )}
                       </td>

@@ -62,7 +62,7 @@ export const getPosition = async (positionId) => {
 };
 
 /**
- * Manually update a position's strategy type
+ * Manually update a position's strategy type (locks the strategy)
  * @param {string} positionId - Position ID
  * @param {string} strategyType - New strategy type
  * @returns {Promise<Object>}
@@ -72,6 +72,19 @@ export const updatePositionStrategy = async (positionId, strategyType) => {
     `/positions/actual/${positionId}/strategy`,
     null,
     { params: { strategy_type: strategyType } }
+  );
+  return response.data;
+};
+
+/**
+ * Unlock a position's strategy assignment
+ * @param {string} positionId - Position ID
+ * @returns {Promise<Object>}
+ */
+export const unlockPositionStrategy = async (positionId) => {
+  const response = await api.patch(
+    `/positions/actual/${positionId}/strategy/unlock`,
+    null
   );
   return response.data;
 };

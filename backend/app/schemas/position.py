@@ -107,6 +107,10 @@ class PositionResponse(PositionBase):
     created_at: datetime
     updated_at: datetime
     
+    # Strategy management
+    is_manual_strategy: bool = False
+    schwab_position_signature: Optional[str] = None
+    
     # Related data
     legs: List[PositionLegResponse] = Field(default_factory=list)
     shared_with: Optional[List[UUID]] = Field(default_factory=list, description="List of friend IDs this position is shared with")

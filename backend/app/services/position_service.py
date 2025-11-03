@@ -12,6 +12,10 @@ from app.models.position import Position, PositionLeg, PositionShare
 from app.models.user import UserSchwabAccount
 from app.schemas.position import PositionCreate, PositionUpdate
 from app.services.schwab_service import fetch_account_data, group_positions_by_strategy
+from app.services.position_signature import generate_position_signature, signatures_match
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def get_positions(
@@ -271,16 +275,30 @@ def sync_schwab_positions(
         
         db_account.last_synced = datetime.utcnow()
     
-    # Mark existing actual positions as stale
+    # Get existing actual positions
     existing_positions = db.query(Position).filter(
         Position.user_id == user_id,
         Position.flavor == "actual"
     ).all()
     
-    existing_by_key = {
+    # Create TWO separate lookups for matching:
+    # 1. Manual (locked) positions - match by signature
+    # 2. Auto-managed (unlocked) positions - match by (symbol, account, strategy)
+    manual_locked_by_signature = {
+        p.schwab_position_signature: p
+        for p in existing_positions
+        if p.is_manual_strategy and p.schwab_position_signature
+    }
+    
+    auto_managed_by_key = {
         (p.symbol, p.account_id, p.strategy_type): p
         for p in existing_positions
+        if not p.is_manual_strategy
     }
+    
+    logger.info(f"=== SYNC START: {len(existing_positions)} existing positions ===")
+    logger.info(f"  🔒 Manual locked: {len(manual_locked_by_signature)}")
+    logger.info(f"  🔓 Auto-managed: {len(auto_managed_by_key)}")
     
     # Process synced positions
     synced_positions = []
@@ -328,96 +346,167 @@ def sync_schwab_positions(
                 entry_date = datetime.now().date()
                 break
         
-        # Check if position already exists
-        position_key = (underlying, account_hash, strategy_type)
-        existing_pos = existing_by_key.get(position_key)
+        # ========================================
+        # 🎯 KEY CHANGE: Signature-based matching
+        # ========================================
         
-        if existing_pos:
-            # Update existing position
-            existing_pos.quantity = total_quantity
-            existing_pos.cost_basis = total_cost
-            existing_pos.current_value = total_value
-            existing_pos.unrealized_pnl = total_pnl
-            existing_pos.maintenance_requirement = total_maintenance
-            existing_pos.current_day_pnl = total_day_pnl
-            existing_pos.current_day_pnl_percentage = total_day_pnl_pct
-            existing_pos.last_synced = datetime.utcnow()
-            existing_pos.status = "active"
+        # Generate signature for this Schwab position
+        position_signature = generate_position_signature(legs, underlying, account_hash)
+        
+        # Check if this position is manually locked (match by signature first)
+        locked_position = manual_locked_by_signature.get(position_signature)
+        
+        if locked_position:
+            # 🔒 LOCKED POSITION: Update data but PRESERVE manual strategy
+            logger.info(
+                f"  🔒 LOCKED: {underlying} | "
+                f"Strategy: {locked_position.strategy_type} (manual) | "
+                f"Signature: {position_signature[:12]}..."
+            )
+            
+            # Update financial data only (strategy stays locked)
+            locked_position.quantity = total_quantity
+            locked_position.cost_basis = total_cost
+            locked_position.current_value = total_value
+            locked_position.unrealized_pnl = total_pnl
+            locked_position.maintenance_requirement = total_maintenance
+            locked_position.current_day_pnl = total_day_pnl
+            locked_position.current_day_pnl_percentage = total_day_pnl_pct
+            locked_position.last_synced = datetime.utcnow()
+            locked_position.status = "active"
             
             # Update legs (delete old, create new)
-            for leg in existing_pos.legs:
+            for leg in locked_position.legs:
                 db.delete(leg)
             
             for leg_data in legs:
                 leg = PositionLeg(
-                    position_id=existing_pos.id,
+                    position_id=locked_position.id,
                     symbol=leg_data.get("symbol"),
                     asset_type=leg_data.get("asset_type"),
                     option_type=leg_data.get("option_type"),
                     strike=leg_data.get("strike"),
                     expiration=leg_data.get("expiration"),
                     quantity=leg_data.get("quantity"),
-                    premium=leg_data.get("average_price"),  # Per-share trade price
-                    current_price=leg_data.get("current_price")  # Per-share current price
+                    premium=leg_data.get("average_price"),
+                    current_price=leg_data.get("current_price")
                 )
                 db.add(leg)
             
-            synced_positions.append(existing_pos)
-            del existing_by_key[position_key]
+            synced_positions.append(locked_position)
+            del manual_locked_by_signature[position_signature]
         
         else:
-            # Create new position
-            position = Position(
-                user_id=user_id,
-                flavor="actual",
-                account_id=account_hash,
-                account_number=account_number,
-                symbol=underlying,
-                underlying=underlying,
-                strategy_type=strategy_type,
-                status="active",
-                quantity=total_quantity,
-                cost_basis=total_cost,
-                current_value=total_value,
-                unrealized_pnl=total_pnl,
-                maintenance_requirement=total_maintenance,
-                current_day_pnl=total_day_pnl,
-                current_day_pnl_percentage=total_day_pnl_pct,
-                entry_date=entry_date,
-                last_synced=datetime.utcnow(),
-                read_only=True
-            )
+            # 🔓 AUTO-MANAGED: Check if position exists with same auto-detected strategy
+            auto_key = (underlying, account_hash, strategy_type)
+            existing_pos = auto_managed_by_key.get(auto_key)
             
-            db.add(position)
-            db.flush()
-            
-            # Create legs
-            for leg_data in legs:
-                leg = PositionLeg(
-                    position_id=position.id,
-                    symbol=leg_data.get("symbol"),
-                    asset_type=leg_data.get("asset_type"),
-                    option_type=leg_data.get("option_type"),
-                    strike=leg_data.get("strike"),
-                    expiration=leg_data.get("expiration"),
-                    quantity=leg_data.get("quantity"),
-                    premium=leg_data.get("average_price"),  # Per-share trade price
-                    current_price=leg_data.get("current_price")  # Per-share current price
+            if existing_pos:
+                # Update existing auto-managed position
+                logger.info(
+                    f"  🔓 AUTO: {underlying} | "
+                    f"Strategy: {strategy_type} (auto-detected) | "
+                    f"Signature: {position_signature[:12]}..."
                 )
-                db.add(leg)
+                
+                existing_pos.quantity = total_quantity
+                existing_pos.cost_basis = total_cost
+                existing_pos.current_value = total_value
+                existing_pos.unrealized_pnl = total_pnl
+                existing_pos.maintenance_requirement = total_maintenance
+                existing_pos.current_day_pnl = total_day_pnl
+                existing_pos.current_day_pnl_percentage = total_day_pnl_pct
+                existing_pos.last_synced = datetime.utcnow()
+                existing_pos.status = "active"
+                existing_pos.schwab_position_signature = position_signature  # Store signature
+                
+                # Update legs (delete old, create new)
+                for leg in existing_pos.legs:
+                    db.delete(leg)
+                
+                for leg_data in legs:
+                    leg = PositionLeg(
+                        position_id=existing_pos.id,
+                        symbol=leg_data.get("symbol"),
+                        asset_type=leg_data.get("asset_type"),
+                        option_type=leg_data.get("option_type"),
+                        strike=leg_data.get("strike"),
+                        expiration=leg_data.get("expiration"),
+                        quantity=leg_data.get("quantity"),
+                        premium=leg_data.get("average_price"),
+                        current_price=leg_data.get("current_price")
+                    )
+                    db.add(leg)
+                
+                synced_positions.append(existing_pos)
+                del auto_managed_by_key[auto_key]
             
-            synced_positions.append(position)
+            else:
+                # Create new position with auto-detected strategy
+                logger.info(
+                    f"  ✨ NEW: {underlying} | "
+                    f"Strategy: {strategy_type} (auto-detected) | "
+                    f"Signature: {position_signature[:12]}..."
+                )
+                
+                position = Position(
+                    user_id=user_id,
+                    flavor="actual",
+                    account_id=account_hash,
+                    account_number=account_number,
+                    symbol=underlying,
+                    underlying=underlying,
+                    strategy_type=strategy_type,
+                    is_manual_strategy=False,  # Auto-managed
+                    schwab_position_signature=position_signature,  # Store signature
+                    status="active",
+                    quantity=total_quantity,
+                    cost_basis=total_cost,
+                    current_value=total_value,
+                    unrealized_pnl=total_pnl,
+                    maintenance_requirement=total_maintenance,
+                    current_day_pnl=total_day_pnl,
+                    current_day_pnl_percentage=total_day_pnl_pct,
+                    entry_date=entry_date,
+                    last_synced=datetime.utcnow(),
+                    read_only=True
+                )
+                
+                db.add(position)
+                db.flush()
+                
+                # Create legs
+                for leg_data in legs:
+                    leg = PositionLeg(
+                        position_id=position.id,
+                        symbol=leg_data.get("symbol"),
+                        asset_type=leg_data.get("asset_type"),
+                        option_type=leg_data.get("option_type"),
+                        strike=leg_data.get("strike"),
+                        expiration=leg_data.get("expiration"),
+                        quantity=leg_data.get("quantity"),
+                        premium=leg_data.get("average_price"),
+                        current_price=leg_data.get("current_price")
+                    )
+                    db.add(leg)
+                
+                synced_positions.append(position)
     
     # Mark positions that no longer exist as closed
-    for remaining_pos in existing_by_key.values():
+    all_remaining = list(manual_locked_by_signature.values()) + list(auto_managed_by_key.values())
+    for remaining_pos in all_remaining:
         remaining_pos.status = "closed"
         remaining_pos.exit_date = datetime.now().date()
+        lock_status = "🔒" if remaining_pos.is_manual_strategy else "🔓"
+        logger.info(f"  ❌ CLOSED: {remaining_pos.symbol} | {remaining_pos.strategy_type} {lock_status}")
     
     db.commit()
     
     # Refresh all synced positions
     for pos in synced_positions:
         db.refresh(pos)
+    
+    logger.info(f"=== SYNC COMPLETE: {len(synced_positions)} positions synced ===")
     
     return synced_positions
 
