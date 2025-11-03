@@ -64,3 +64,5 @@ logs/
 
 # Alembic
 alembic/versions/*.pyc
+.env.instance_a
+.env.instance_b
