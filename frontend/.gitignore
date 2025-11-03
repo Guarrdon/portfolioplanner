@@ -48,3 +48,6 @@ service-worker.js
 # Other
 *.log
 *.cache
+
+# Port-specific env files
+.env.local.*
