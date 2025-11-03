@@ -90,34 +90,29 @@ if [ ! -f "venv/.installed" ]; then
     touch venv/.installed
 fi
 
-# Create .env for Instance A
-cat > .env.instance_a << EOF
-# Database
+# Check if .env.instance_a exists, create from template if not
+if [ ! -f ".env.instance_a" ]; then
+    echo -e "${YELLOW}  Creating .env.instance_a from template...${NC}"
+    cat > .env.instance_a << 'ENVEOF'
+# Instance A Configuration - Edit this file directly to change settings
 DATABASE_URL=sqlite:///./portfolio_user_a.db
-
-# Security
 SECRET_KEY=dev-secret-key-user-a-change-in-production
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 REFRESH_TOKEN_EXPIRE_DAYS=7
-ENCRYPTION_KEY=dev-encryption-key-user-a
-
-# CORS
+ENCRYPTION_KEY=not-used-currently
 CORS_ORIGINS=http://localhost:3000
-
-# Schwab API
-USE_MOCK_SCHWAB_DATA=false
-
-# Logging
+USE_MOCK_SCHWAB_DATA=true
 LOG_LEVEL=INFO
-
-# Collaboration (Distributed Mode)
 ENABLE_COLLABORATION=true
 COLLABORATION_SERVICE_URL=http://localhost:9000
 BACKEND_USER_ID=00000000-0000-0000-0000-000000000001
 BACKEND_URL=http://localhost:8000
 BACKEND_DISPLAY_NAME=User A
-EOF
+ENVEOF
+else
+    echo -e "${GREEN}  Using existing .env.instance_a${NC}"
+fi
 
 echo -e "${YELLOW}[4/7] Starting Backend Instance A (port 8000)...${NC}"
 cp .env.instance_a .env
@@ -132,34 +127,29 @@ cd ..
 echo -e "${YELLOW}[5/7] Setting up Backend Instance B (User B)...${NC}"
 cd backend
 
-# Create .env for Instance B
-cat > .env.instance_b << EOF
-# Database
+# Check if .env.instance_b exists, create from template if not
+if [ ! -f ".env.instance_b" ]; then
+    echo -e "${YELLOW}  Creating .env.instance_b from template...${NC}"
+    cat > .env.instance_b << 'ENVEOF'
+# Instance B Configuration - Edit this file directly to change settings
 DATABASE_URL=sqlite:///./portfolio_user_b.db
-
-# Security
 SECRET_KEY=dev-secret-key-user-b-change-in-production
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 REFRESH_TOKEN_EXPIRE_DAYS=7
-ENCRYPTION_KEY=dev-encryption-key-user-b
-
-# CORS
+ENCRYPTION_KEY=not-used-currently
 CORS_ORIGINS=http://localhost:3001
-
-# Schwab API
 USE_MOCK_SCHWAB_DATA=true
-
-# Logging
 LOG_LEVEL=INFO
-
-# Collaboration (Distributed Mode)
 ENABLE_COLLABORATION=true
 COLLABORATION_SERVICE_URL=http://localhost:9000
 BACKEND_USER_ID=00000000-0000-0000-0000-000000000002
 BACKEND_URL=http://localhost:8001
 BACKEND_DISPLAY_NAME=User B
-EOF
+ENVEOF
+else
+    echo -e "${GREEN}  Using existing .env.instance_b${NC}"
+fi
 
 # Start Instance B with different database
 cp .env.instance_b .env

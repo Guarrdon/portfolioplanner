@@ -1,60 +1,12 @@
-INFO:     Started server process [23007]
+INFO:     Started server process [31247]
 INFO:     Waiting for application startup.
-2025-11-02 19:45:54,396 - app.main - INFO - Starting up Portfolio Planner backend
-2025-11-02 19:45:54,399 - app.main - INFO - Initializing collaboration client
-2025-11-02 19:45:54,434 - app.services.collaboration_client - INFO - Collaboration client initialized for user 00000000-0000-0000-0000-000000000002
-2025-11-02 19:45:54,434 - app.services.collaboration_client - INFO - Connecting to collaboration service
-2025-11-02 19:45:54,446 - app.services.collaboration_client - INFO - Connected to collaboration service
-2025-11-02 19:45:54,447 - app.main - INFO - Collaboration client connected successfully
+2025-11-02 19:50:41,673 - app.main - INFO - Starting up Portfolio Planner backend
+2025-11-02 19:50:41,673 - app.main - INFO - Initializing collaboration client
+2025-11-02 19:50:41,697 - app.services.collaboration_client - INFO - Collaboration client initialized for user 00000000-0000-0000-0000-000000000002
+2025-11-02 19:50:41,697 - app.services.collaboration_client - INFO - Connecting to collaboration service
+2025-11-02 19:50:41,708 - app.services.collaboration_client - INFO - Connected to collaboration service
+2025-11-02 19:50:41,708 - app.main - INFO - Collaboration client connected successfully
 INFO:     Application startup complete.
-ERROR:    [Errno 48] error while attempting to bind on address ('0.0.0.0', 8001): address already in use
-INFO:     Waiting for application shutdown.
-2025-11-02 19:45:54,447 - app.main - INFO - Shutting down Portfolio Planner backend
-2025-11-02 19:45:54,447 - app.services.collaboration_ERROR:    Traceback (most recent call last):
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/lib/python3.11/site-packages/starlette/routing.py", line 747, in lifespan
-    await receive()
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/lib/python3.11/site-packages/uvicorn/lifespan/on.py", line 137, in receive
-    return await self.receive_queue.get()
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mlyons/miniconda3/lib/python3.11/asyncio/queues.py", line 158, in get
-    await getter
-asyncio.exceptions.CancelledError
-
-Traceback (most recent call last):
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/bin/uvicorn", line 8, in <module>
-    sys.exit(main())
-             ^^^^^^
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/lib/python3.11/site-packages/click/core.py", line 1462, in __call__
-    return self.main(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/lib/python3.11/site-packages/click/core.py", line 1383, in main
-    rv = self.invoke(ctx)
-         ^^^^^^^^^^^^^^^^
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/lib/python3.11/site-packages/click/core.py", line 1246, in invoke
-    return ctx.invoke(self.callback, **ctx.params)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/lib/python3.11/site-packages/click/core.py", line 814, in invoke
-    return callback(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/lib/python3.11/site-packages/uvicorn/main.py", line 418, in main
-    run(
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/lib/python3.11/site-packages/uvicorn/main.py", line 587, in run
-    server.run()
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/lib/python3.11/site-packages/uvicorn/server.py", line 62, in run
-    return asyncio.run(self.serve(sockets=sockets))
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mlyons/miniconda3/lib/python3.11/asyncio/runners.py", line 190, in run
-    return runner.run(main)
-           ^^^^^^^^^^^^^^^^
-  File "/Users/mlyons/miniconda3/lib/python3.11/asyncio/runners.py", line 118, in run
-    return self._loop.run_until_complete(task)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "uvloop/loop.pyx", line 1518, in uvloop.loop.Loop.run_until_complete
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/lib/python3.11/site-packages/uvicorn/server.py", line 82, in serve
-    await self.main_loop()
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/lib/python3.11/site-packages/uvicorn/server.py", line 233, in main_loop
-    await asyncio.sleep(0.1)
-  File "/Users/mlyons/miniconda3/lib/python3.11/asyncio/tasks.py", line 639, in sleep
-    return await future
-           ^^^^^^^^^^^^
-asyncio.exceptions.CancelledError
+2025-11-02 19:50:41,708 - app.services.collaboration_client - ERROR - Error from collaboration service
+INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
+2025-11-02 19:50:41,709 - app.services.collaboration_client - WARNING - Disconnected from collaboration service
