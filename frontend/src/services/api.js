@@ -3,9 +3,40 @@
  */
 import axios from 'axios';
 
+/**
+ * Determine the API URL based on the current frontend port
+ * This allows multiple frontend instances to run from the same codebase
+ * in distributed mode without build-time configuration.
+ * 
+ * Mapping:
+ * - Frontend port 3000 → Backend port 8000
+ * - Frontend port 3001 → Backend port 8001
+ * - Frontend port 3002 → Backend port 8002
+ * etc.
+ */
+function getApiBaseUrl() {
+  // Check for explicit environment variable first (for single-instance mode)
+  if (process.env.REACT_APP_API_URL) {
+    return process.env.REACT_APP_API_URL;
+  }
+
+  // In distributed mode, determine backend port from frontend port
+  const frontendPort = window.location.port || '3000';
+  
+  // Map frontend port to backend port (3000 → 8000, 3001 → 8001, etc.)
+  if (frontendPort.startsWith('300')) {
+    const instanceNumber = frontendPort.slice(-1); // Get last digit (0, 1, 2, etc.)
+    const backendPort = `800${instanceNumber}`;
+    return `http://localhost:${backendPort}/api/v1`;
+  }
+  
+  // Default fallback
+  return 'http://localhost:8000/api/v1';
+}
+
 // Create axios instance with base configuration
 const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1',
+  baseURL: getApiBaseUrl(),
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',

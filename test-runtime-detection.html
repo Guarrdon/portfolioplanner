@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head><title>Runtime Detection Test</title></head>
+<body>
+<h2>Testing Runtime Backend Detection</h2>
+<div id="results"></div>
+<script>
+// Simulate the runtime detection logic from api.js
+function getApiBaseUrl(port) {
+  // In distributed mode, determine backend port from frontend port
+  const frontendPort = port || '3000';
+  
+  if (frontendPort.startsWith('300')) {
+    const instanceNumber = frontendPort.slice(-1);
+    const backendPort = `800${instanceNumber}`;
+    return `http://localhost:${backendPort}/api/v1`;
+  }
+  
+  return 'http://localhost:8000/api/v1';
+}
+
+const results = document.getElementById('results');
+results.innerHTML = `
+  <p><strong>Port 3000:</strong> ${getApiBaseUrl('3000')}</p>
+  <p><strong>Port 3001:</strong> ${getApiBaseUrl('3001')}</p>
+  <p><strong>Port 3002:</strong> ${getApiBaseUrl('3002')}</p>
+  <p><strong>Port 3003:</strong> ${getApiBaseUrl('3003')}</p>
+  <p><strong>Port 3009:</strong> ${getApiBaseUrl('3009')}</p>
+  <hr>
+  <p><em>✅ This logic runs in the browser at runtime, not at build time!</em></p>
+  <p><em>Each frontend instance automatically connects to its corresponding backend.</em></p>
+`;
+</script>
+</body>
+</html>

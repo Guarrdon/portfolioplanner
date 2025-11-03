@@ -1,71 +1,62 @@
-Traceback (most recent call last):
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/lib/python3.11/site-packages/cryptography/fernet.py", line 34, in __init__
-    key = base64.urlsafe_b64decode(key)
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mlyons/miniconda3/lib/python3.11/base64.py", line 134, in urlsafe_b64decode
-    return b64decode(s)
-           ^^^^^^^^^^^^
-  File "/Users/mlyons/miniconda3/lib/python3.11/base64.py", line 88, in b64decode
-    return binascii.a2b_base64(s, strict_mode=validate)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-binascii.Error: Invalid base64-encoded string: number of data characters (25) cannot be 1 more than a multiple of 4
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/bin/uvicorn", line 8, in <module>
-    sys.exit(main())
-             ^^^^^^
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/lib/python3.11/site-packages/click/core.py", line 1462, in __call__
-    return self.main(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/lib/python3.11/site-packages/click/core.py", line 1383, in main
-    rv = self.invoke(ctx)
-         ^^^^^^^^^^^^^^^^
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/lib/python3.11/site-packages/click/core.py", line 1246, in invoke
-    return ctx.invoke(self.callback, **ctx.params)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/lib/python3.11/site-packages/click/core.py", line 814, in invoke
-    return callback(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/lib/python3.11/site-packages/uvicorn/main.py", line 418, in main
-    run(
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/lib/python3.11/site-packages/uvicorn/main.py", line 587, in run
-    server.run()
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/lib/python3.11/site-packages/uvicorn/server.py", line 62, in run
-    return asyncio.run(self.serve(sockets=sockets))
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mlyons/miniconda3/lib/python3.11/asyncio/runners.py", line 190, in run
-    return runner.run(main)
-           ^^^^^^^^^^^^^^^^
-  File "/Users/mlyons/miniconda3/lib/python3.11/asyncio/runners.py", line 118, in run
-    return self._loop.run_until_complete(task)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "uvloop/loop.pyx", line 1518, in uvloop.loop.Loop.run_until_complete
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/lib/python3.11/site-packages/uvicorn/server.py", line 69, in serve
-    config.load()
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/lib/python3.11/site-packages/uvicorn/config.py", line 458, in load
-    self.loaded_app = import_from_string(self.app)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/lib/python3.11/site-packages/uvicorn/importer.py", line 21, in import_from_string
-    module = importlib.import_module(module_str)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mlyons/miniconda3/lib/python3.11/importlib/__init__.py", line 126, in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
-  File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
-  File "<frozen importlib._bootstrap>", line 1147, in _find_and_load_unlocked
-  File "<frozen importlib._bootstrap>", line 690, in _load_unlocked
-  File "<frozen importlib._bootstrap_external>", line 940, in exec_module
-  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/app/main.py", line 10, in <module>
-    from app.api.v1 import positions, auth, websocket
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/app/api/v1/positions.py", line 8, in <module>
-    from app.core.security import get_current_active_user
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/app/core/security.py", line 23, in <module>
-    cipher_suite = Fernet(settings.ENCRYPTION_KEY.encode())
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/mlyons/Development/Guarrdon/portfolioplanner/backend/venv/lib/python3.11/site-packages/cryptography/fernet.py", line 36, in __init__
-    raise ValueError(
-ValueError: Fernet key must be 32 url-safe base64-encoded bytes.
+INFO:     Started server process [54064]
+INFO:     Waiting for application startup.
+2025-11-02 19:05:15,311 - app.main - INFO - Starting up Portfolio Planner backend
+2025-11-02 19:05:15,311 - app.main - INFO - Initializing collaboration client
+2025-11-02 19:05:15,334 - app.services.collaboration_client - INFO - Collaboration client initialized for user 00000000-0000-0000-0000-000000000002
+2025-11-02 19:05:15,334 - app.services.collaboration_client - INFO - Connecting to collaboration service
+2025-11-02 19:05:15,341 - app.services.collaboration_client - INFO - Connected to collaboration service
+2025-11-02 19:05:15,341 - app.main - INFO - Collaboration client connected successfully
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
+2025-11-02 19:05:15,341 - app.services.collaboration_client - ERROR - Error from collaboration service
+2025-11-02 19:05:15,342 - app.services.collaboration_client - WARNING - Disconnected from collaboration service
+INFO:     ('127.0.0.1', 62824) - "WebSocket /api/v1/ws/collaborate?user_id=00000000-0000-0000-0000-000000000001" [accepted]
+2025-11-02 19:05:32,304 - app.services.websocket_manager - INFO - WebSocket connected: user_id=00000000-0000-0000-0000-000000000001, total_connections=1
+INFO:     connection open
+INFO:     127.0.0.1:62828 - "GET /api/v1/positions/shared?user_id=00000000-0000-0000-0000-000000000001 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62827 - "GET /api/v1/positions/ideas?user_id=00000000-0000-0000-0000-000000000001 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62827 - "GET /api/v1/positions/shared?user_id=00000000-0000-0000-0000-000000000001 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62828 - "GET /api/v1/positions/ideas?user_id=00000000-0000-0000-0000-000000000001 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62828 - "GET /api/v1/positions/shared?user_id=00000000-0000-0000-0000-000000000001 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62827 - "GET /api/v1/positions/ideas?user_id=00000000-0000-0000-0000-000000000001 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62827 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62828 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62836 - "OPTIONS /api/v1/positions/sync HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:62836 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62854 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62871 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62871 - "OPTIONS /api/v1/positions/sync HTTP/1.1" 200 OK
+DEBUG: Found 2 accounts from Schwab API
+  - Account: 12345678
+  - Account: 87654321
+DEBUG: Found 2 enabled accounts in database
+DEBUG: Enabled hashes from DB: {'F9C2A8D5E4B6F1A3C7E9D2B4', 'E5B3F89A2C1D4E6F7A8B9C0D'}
+DEBUG: Hashes from Schwab API: {'F9C2A8D5E4B6F1A3C7E9D2B4', 'E5B3F89A2C1D4E6F7A8B9C0D'}
+DEBUG: Matched accounts: 2
+DEBUG: Will fetch positions from 2 accounts
+DEBUG: Account E5B3F89A has 10 positions
+DEBUG: Sample position keys: ['instrument', 'longQuantity', 'shortQuantity', 'averagePrice', 'marketValue']
+DEBUG: Sample instrument keys: ['assetType', 'symbol']
+DEBUG: Transformed position - Symbol: AAPL, Type: stock, Value: $15842.98, Legs: 0
+DEBUG: Transformed position - Symbol: AAPL  251204C00166351, Type: option, Value: $-250.00, Legs: 0
+DEBUG: Account F9C2A8D5 has 9 positions
+DEBUG: Sample position keys: ['instrument', 'longQuantity', 'shortQuantity', 'averagePrice', 'marketValue']
+DEBUG: Sample instrument keys: ['assetType', 'symbol']
+DEBUG: Total positions fetched: 19
+INFO:     127.0.0.1:62871 - "POST /api/v1/positions/sync HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62871 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62871 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62877 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62879 - "OPTIONS /api/v1/positions/sync HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:62879 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62883 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62995 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63001 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63003 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63084 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63454 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64331 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64575 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65059 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51525 - "GET /api/v1/positions/actual?status=active&symbol= HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51690 - "GET /health HTTP/1.1" 200 OK

@@ -177,20 +177,24 @@ if [ ! -d "node_modules" ]; then
     npm install
 fi
 
-# Create .env files for both frontend instances
-echo "REACT_APP_API_URL=http://localhost:8000/api/v1" > .env.local.3000
-echo "REACT_APP_API_URL=http://localhost:8001/api/v1" > .env.local.3001
-
 echo -e "${YELLOW}[7/7] Starting Frontend instances...${NC}"
 
+# No .env.local needed! Frontend determines backend URL at runtime based on its port.
+# This allows unlimited instances to run from the same codebase:
+#   Frontend :3000 → Backend :8000
+#   Frontend :3001 → Backend :8001
+#   Frontend :3002 → Backend :8002
+#   etc.
+
+# Remove .env.local to ensure runtime detection works
+rm -f .env.local
+
 # Start Frontend A (port 3000)
-cp .env.local.3000 .env.local
 PORT=3000 BROWSER=none npm start > ../logs/frontend-a.log 2>&1 &
 FRONTEND_A_PID=$!
 echo -e "${GREEN}✓ Frontend A started (PID: $FRONTEND_A_PID) - http://localhost:3000${NC}"
 
 # Start Frontend B (port 3001)
-cp .env.local.3001 .env.local
 PORT=3001 BROWSER=none npm start > ../logs/frontend-b.log 2>&1 &
 FRONTEND_B_PID=$!
 echo -e "${GREEN}✓ Frontend B started (PID: $FRONTEND_B_PID) - http://localhost:3001${NC}"

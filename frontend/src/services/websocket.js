@@ -35,8 +35,25 @@ class WebSocketService {
     this.isConnecting = true;
 
     // Determine WebSocket URL based on current location
+    // This uses the same port mapping as api.js (3000→8000, 3001→8001, etc.)
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = process.env.REACT_APP_API_URL || 'localhost:8000';
+    
+    let host;
+    if (process.env.REACT_APP_API_URL) {
+      // Use explicit env var if set
+      host = process.env.REACT_APP_API_URL;
+    } else {
+      // Determine backend port from frontend port (distributed mode)
+      const frontendPort = window.location.port || '3000';
+      if (frontendPort.startsWith('300')) {
+        const instanceNumber = frontendPort.slice(-1);
+        const backendPort = `800${instanceNumber}`;
+        host = `localhost:${backendPort}`;
+      } else {
+        host = 'localhost:8000';
+      }
+    }
+    
     // Remove protocol and any trailing /api/v1 to avoid duplication
     const cleanHost = host.replace(/^https?:\/\//, '').replace(/\/api\/v1\/?$/, '');
     const wsUrl = `${protocol}//${cleanHost}/api/v1/ws/collaborate?user_id=${userId}`;
