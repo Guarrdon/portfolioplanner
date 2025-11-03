@@ -66,3 +66,18 @@ logs/
 alembic/versions/*.pyc
 .env.instance_a
 .env.instance_b
+
+# Environment files - ALL patterns
+.env*
+!.env*.template
+!.env*.example
+*.env
+*.env.local
+*.env.*.local
+
+# Any secrets or credentials
+*secret*
+*credential*
+*password*
+!**/*secret*.template
+!**/*credential*.example
