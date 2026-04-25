@@ -20,3 +20,6 @@ Thumbs.db
 
 # Reference code (nested git repo)
 ref/LoP-s-Premium-Tracker/
+
+# Local data directory
+.data/

@@ -310,7 +310,16 @@ def sync_schwab_positions(
         
         if not legs:
             continue
-        
+
+        if not underlying or not underlying.strip():
+            logger.warning(
+                f"Skipping position with empty underlying symbol "
+                f"(strategy={strategy_type}, legs={len(legs)}, "
+                f"first_leg_symbol={legs[0].get('symbol')!r}, "
+                f"asset_type={legs[0].get('asset_type')!r})"
+            )
+            continue
+
         # Use first leg's account info
         first_leg = legs[0]
         account_hash = first_leg["account_hash"]

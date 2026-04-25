@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import Base, engine
-from app.api.v1 import positions, auth, websocket
+from app.api.v1 import positions, auth, websocket, transactions
 from app.services.collaboration_client import (
     init_collaboration_client,
     shutdown_collaboration_client
@@ -98,6 +98,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(positions.router, prefix="/api/v1")
 app.include_router(websocket.router, prefix="/api/v1")
+app.include_router(transactions.router, prefix="/api/v1")
 
 
 @app.get("/")

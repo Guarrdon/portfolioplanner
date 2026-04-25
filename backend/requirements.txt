@@ -4,9 +4,9 @@ uvicorn[standard]==0.27.0
 python-multipart==0.0.6
 
 # Database
-sqlalchemy==2.0.25
+sqlalchemy>=2.0.36
 alembic==1.13.1
-psycopg2-binary==2.9.9
+psycopg2-binary
 
 # Authentication & Security
 python-jose[cryptography]==3.3.0
@@ -15,8 +15,8 @@ python-dotenv==1.0.0
 cryptography==42.0.0
 
 # Data Validation
-pydantic==2.5.3
-pydantic-settings==2.1.0
+pydantic
+pydantic-settings
 email-validator==2.1.1
 
 # Schwab API Integration

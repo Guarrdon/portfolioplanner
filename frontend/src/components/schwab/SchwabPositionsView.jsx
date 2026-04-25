@@ -3,9 +3,10 @@
  * Dense, application-style interface for managing 100+ positions
  */
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchActualPositions, syncSchwabPositions, updatePositionStrategy, unlockPositionStrategy } from '../../services/schwab';
-import { RefreshCw, ChevronRight, ChevronDown, Minimize2, Maximize2, ChevronsRight, ChevronsDown, Share2, Edit2, Lock, Unlock } from 'lucide-react';
+import { RefreshCw, ChevronRight, ChevronDown, Minimize2, Maximize2, ChevronsRight, ChevronsDown, Share2, Edit2, Lock, Unlock, History } from 'lucide-react';
 import { CollaborationModal } from '../modals/CollaborationModal';
 
 export const SchwabPositionsView = () => {
@@ -813,13 +814,23 @@ export const SchwabPositionsView = () => {
                         {position.legs?.length || 0}
                       </td>
                       <td className="px-2 py-1.5 text-center">
-                        <button
-                          onClick={(e) => handleCollaborate(position, e)}
-                          className="inline-flex items-center justify-center p-1.5 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
-                          title="Start collaboration on this position"
-                        >
-                          <Share2 className="w-4 h-4" />
-                        </button>
+                        <div className="inline-flex items-center gap-0.5">
+                          <Link
+                            to={`/schwab/transactions/${encodeURIComponent(position.underlying || position.symbol)}${position.account_id ? `?account=${position.account_id}` : ''}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center justify-center p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
+                            title="View transactions for this symbol"
+                          >
+                            <History className="w-4 h-4" />
+                          </Link>
+                          <button
+                            onClick={(e) => handleCollaborate(position, e)}
+                            className="inline-flex items-center justify-center p-1.5 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
+                            title="Start collaboration on this position"
+                          >
+                            <Share2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
 
