@@ -12,7 +12,8 @@ import {
   ChevronRight,
   Building2,
   Home,
-  Users
+  Users,
+  AlertCircle
 } from 'lucide-react';
 import { usePortfolio } from '../../contexts/PortfolioContext';
 import { addDays } from 'date-fns';
@@ -81,6 +82,13 @@ const Navigation = () => {
           icon: Building2,
           description: 'Actual positions from Schwab',
           color: 'indigo'
+        },
+        {
+          name: 'Account Attention',
+          path: '/schwab/attention',
+          icon: AlertCircle,
+          description: 'Upcoming expirations and flagged positions',
+          color: 'amber'
         },
         {
           name: 'Collaboration Hub',

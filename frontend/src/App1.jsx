@@ -32,6 +32,7 @@ import SettingsView from './components/settings/SettingsView';
 // Schwab Views
 import SchwabPositionsView from './components/schwab/SchwabPositionsView';
 import TransactionsView from './components/schwab/TransactionsView';
+import AccountAttentionView from './components/schwab/AccountAttentionView';
 
 // Collaboration Views
 import CollaborationDashboard from './components/collaboration/CollaborationDashboard';
@@ -86,6 +87,7 @@ function App() {
                                   {/* Schwab routes */}
                                   <Route path="/schwab/positions" element={<SchwabPositionsView />} />
                                   <Route path="/schwab/transactions/:underlying" element={<TransactionsView />} />
+                                  <Route path="/schwab/attention" element={<AccountAttentionView />} />
 
                                   {/* Collaboration routes */}
                                   <Route path="/collaboration" element={<CollaborationDashboard />} />
