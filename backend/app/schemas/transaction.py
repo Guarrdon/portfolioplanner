@@ -1,4 +1,5 @@
-"""Transaction schemas (for live-fetched Schwab transactions + user annotations)"""
+"""Transaction schemas (live-fetched Schwab transactions, annotations,
+classified positions, and tag memberships)."""
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 
@@ -10,7 +11,7 @@ class TransactionAnnotationUpdate(BaseModel):
         description="'expired', 'assigned', or empty string to clear"
     )
     note: Optional[str] = None
-    link_group_id: Optional[str] = None
+    transaction_position_id: Optional[str] = None
 
 
 class TransactionAnnotationResponse(BaseModel):
@@ -18,17 +19,23 @@ class TransactionAnnotationResponse(BaseModel):
     hidden: bool
     disposition: Optional[str] = None
     note: Optional[str] = None
-    link_group_id: Optional[str] = None
+    transaction_position_id: Optional[str] = None
 
 
-class LinkTransactionsRequest(BaseModel):
+class ClassifyTransactionsRequest(BaseModel):
     schwab_transaction_ids: List[str]
-    group_id: Optional[str] = None  # None = create new group; pass existing id to add to it
+    transaction_position_id: Optional[str] = None  # None = create new; existing id appends
+    position_type: Optional[str] = None
+    name: Optional[str] = None
 
 
-class LinkTransactionsResponse(BaseModel):
-    group_id: str
+class ClassifyTransactionsResponse(BaseModel):
+    transaction_position_id: str
     count: int
+
+
+class UnclassifyTransactionsRequest(BaseModel):
+    schwab_transaction_ids: List[str]
 
 
 class TransactionLeg(BaseModel):
@@ -66,16 +73,32 @@ class TransactionsSummary(BaseModel):
     total_net_cash: float
 
 
-class LinkGroupInfo(BaseModel):
+class TransactionPositionInfo(BaseModel):
     id: str
     name: Optional[str] = None
     note: Optional[str] = None
+    position_type: Optional[str] = None
     created_at: Optional[str] = None
 
 
-class LinkGroupUpdate(BaseModel):
+class TransactionPositionUpdate(BaseModel):
     name: Optional[str] = None
     note: Optional[str] = None
+    position_type: Optional[str] = None
+
+
+class TagMembershipInfo(BaseModel):
+    tag_id: str
+    member_type: str  # "transaction" | "transaction_position"
+    member_id: str
+
+
+class TagInfo(BaseModel):
+    id: str
+    name: str
+    note: Optional[str] = None
+    color: Optional[str] = None
+    created_at: Optional[str] = None
 
 
 class TransactionsByUnderlyingResponse(BaseModel):
@@ -84,7 +107,21 @@ class TransactionsByUnderlyingResponse(BaseModel):
     transactions: List[TransactionRecord]
     annotations: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     summary: TransactionsSummary
-    link_groups: Dict[str, LinkGroupInfo] = Field(default_factory=dict)
+    positions: Dict[str, TransactionPositionInfo] = Field(default_factory=dict)
+    tags: Dict[str, TagInfo] = Field(default_factory=dict)
+    tag_memberships: List[TagMembershipInfo] = Field(default_factory=list)
+
+
+class TransactionsByAccountResponse(BaseModel):
+    account_hash: str
+    account_number: Optional[str] = None
+    days: int
+    transactions: List[TransactionRecord]
+    annotations: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    summary: TransactionsSummary
+    positions: Dict[str, TransactionPositionInfo] = Field(default_factory=dict)
+    tags: Dict[str, TagInfo] = Field(default_factory=dict)
+    tag_memberships: List[TagMembershipInfo] = Field(default_factory=list)
 
 
 class OpenStockLeg(BaseModel):
@@ -110,5 +147,7 @@ class OpenOptionLeg(BaseModel):
 
 class OpenPositionsResponse(BaseModel):
     underlying: str
+    underlying_price: Optional[float] = None
+    underlying_quote_at: Optional[str] = None
     stock: OpenStockLeg
     options: List[OpenOptionLeg]

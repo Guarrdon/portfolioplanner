@@ -211,9 +211,11 @@ def transform_schwab_position(schwab_position: Dict[str, Any], account_info: Dic
     
     if asset_type == "OPTION":
         return transform_option_position(schwab_position, account_info)
-    elif asset_type in ["EQUITY", "ETF", "PREFERRED_STOCK"]:
+    elif asset_type in ["EQUITY", "ETF", "PREFERRED_STOCK", "COLLECTIVE_INVESTMENT", "MUTUAL_FUND"]:
+        # COLLECTIVE_INVESTMENT covers Schwab's ETF tagging (FLOT, JAAA, VWO, etc.)
+        # — they share the equity payload shape (qty, price, marketValue).
         return transform_equity_position(schwab_position, account_info)
-    
+
     return None
 
 
@@ -222,7 +224,10 @@ def transform_option_position(schwab_position: Dict[str, Any], account_info: Dic
     instrument = schwab_position["instrument"]
     
     symbol = instrument.get("symbol", "").strip()
-    underlying = instrument.get("underlyingSymbol", "")
+    # Schwab quotes indices with a leading "$" (e.g. "$SPX") but the rest
+    # of the app keys everything by bare ticker. Normalize on the way in;
+    # the quotes layer re-adds "$" when calling Schwab's market data.
+    underlying = (instrument.get("underlyingSymbol") or "").lstrip("$")
     put_call = instrument.get("putCall", "").lower()
     expiration_str = instrument.get("optionExpirationDate")
     

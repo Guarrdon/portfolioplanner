@@ -1,25 +1,45 @@
 /**
  * TransactionsView — per-underlying live transaction history from Schwab.
  *
- * Entry: linked from the Schwab Positions row.
+ * Three layers of structure:
+ *   1. Raw transactions (Schwab cache)
+ *   2. Classified positions (chains of transactions classified into a
+ *      position_type — sold_vertical_put, rolled_options, stock, etc.)
+ *   3. Custom tags (open-ended user labels; many-to-many)
+ *
+ * One unified grid with two toggleable grouping levels (Tag → Position → Tx).
+ * Portfolio summary always rolls up from raw transactions and positions —
+ * never from tags, since tag membership overlaps and would double-count.
+ *
  * Route: /schwab/transactions/:underlying?account=<account_hash>
  */
 import React, { useMemo, useState } from 'react';
 import { useParams, useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft, RefreshCw, EyeOff, Eye, StickyNote, Link2, Link2Off, Pencil, X,
-  ChevronDown, ChevronRight, Search,
+  ArrowLeft, RefreshCw, EyeOff, Eye, StickyNote, Pencil, X, Plus, Trash2,
+  ChevronDown, ChevronRight, Search, Sparkles, Tag as TagIcon, Layers, Check,
 } from 'lucide-react';
 import {
   fetchTransactionsByUnderlying,
   fetchOpenPositionsForUnderlying,
   updateTransactionAnnotation,
-  linkTransactions,
-  unlinkTransactions,
-  updateLinkGroup,
+  classifyTransactions,
+  unclassifyTransactions,
+  updateTransactionPosition,
 } from '../../services/transactions';
+import {
+  fetchTags,
+  createTag,
+  updateTag,
+  deleteTag,
+  addTagMember,
+} from '../../services/tags';
 import { fetchActualPositions } from '../../services/schwab';
+import { buildClassifications, positionTypeLabel } from '../../utils/autoClassify';
+import { compareTxsForDisplay } from '../../utils/positionMetrics';
+
+// ---------- formatters ----------
 
 const fmtCurrency = (v) => {
   if (v === null || v === undefined || isNaN(v)) return '-';
@@ -40,12 +60,10 @@ const fmtDate = (iso) => {
   if (!iso) return '-';
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
-  // Display as: "Apr 24, 26 10:52a" — date plus local time so intraday ordering
-  // is visible. Schwab returns full ISO datetimes; we already sort by them.
   const datePart = d.toLocaleDateString('en-US', { year: '2-digit', month: 'short', day: '2-digit' });
   const hour = d.getHours();
   const min = d.getMinutes();
-  if (hour === 0 && min === 0) return datePart; // midnight likely means "no time provided"
+  if (hour === 0 && min === 0) return datePart;
   const h12 = ((hour + 11) % 12) + 1;
   const ampm = hour < 12 ? 'a' : 'p';
   const mm = String(min).padStart(2, '0');
@@ -69,8 +87,11 @@ const fmtOptionSymbol = (leg) => {
   return `${underlying} ${fmtExpiry(leg.expiration)} ${cp}${strike}`.trim();
 };
 
-// Deterministic color palette keyed by group_id hash. No calc impact, visual only.
-const LINK_COLORS = [
+const normalizeSymbol = (s) => (s || '').toUpperCase().replace(/\s+/g, '');
+
+// Stable per-position color from a 12-color palette, keyed by index of first
+// appearance in the rendered list.
+const POSITION_COLORS = [
   { bar: 'bg-amber-500',   bg: 'bg-amber-50',   text: 'text-amber-800',   border: 'border-amber-300' },
   { bar: 'bg-sky-500',     bg: 'bg-sky-50',     text: 'text-sky-800',     border: 'border-sky-300' },
   { bar: 'bg-emerald-500', bg: 'bg-emerald-50', text: 'text-emerald-800', border: 'border-emerald-300' },
@@ -79,24 +100,21 @@ const LINK_COLORS = [
   { bar: 'bg-indigo-500',  bg: 'bg-indigo-50',  text: 'text-indigo-800',  border: 'border-indigo-300' },
   { bar: 'bg-lime-600',    bg: 'bg-lime-50',    text: 'text-lime-800',    border: 'border-lime-300' },
   { bar: 'bg-cyan-600',    bg: 'bg-cyan-50',    text: 'text-cyan-800',    border: 'border-cyan-300' },
+  { bar: 'bg-orange-500',  bg: 'bg-orange-50',  text: 'text-orange-800',  border: 'border-orange-300' },
+  { bar: 'bg-teal-500',    bg: 'bg-teal-50',    text: 'text-teal-800',    border: 'border-teal-300' },
+  { bar: 'bg-pink-500',    bg: 'bg-pink-50',    text: 'text-pink-800',    border: 'border-pink-300' },
+  { bar: 'bg-violet-500',  bg: 'bg-violet-50',  text: 'text-violet-800',  border: 'border-violet-300' },
 ];
 
-// Color is assigned by a group's G-index (order of first appearance), so the
-// first 8 groups always have distinct colors. Falls back to a stable hash for
-// any caller that doesn't have access to the index map.
-const hashStr = (s) => {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
-  return Math.abs(h);
-};
-const colorForGroup = (gid, indexByGroupId) => {
-  if (indexByGroupId && indexByGroupId.has(gid)) {
-    return LINK_COLORS[indexByGroupId.get(gid) % LINK_COLORS.length];
+const colorForPosition = (positionId, indexByPosition) => {
+  if (indexByPosition && indexByPosition.has(positionId)) {
+    return POSITION_COLORS[indexByPosition.get(positionId) % POSITION_COLORS.length];
   }
-  return LINK_COLORS[hashStr(gid) % LINK_COLORS.length];
+  let h = 0;
+  for (let i = 0; i < (positionId || '').length; i++) h = ((h << 5) - h + (positionId || '').charCodeAt(i)) | 0;
+  return POSITION_COLORS[Math.abs(h) % POSITION_COLORS.length];
 };
 
-// Frontend mirror of the backend summary calc — used for optimistic updates.
 const computeSummary = (transactions, annotations) => {
   let stock = 0, opt = 0, hidden = 0, visible = 0;
   for (const t of transactions) {
@@ -110,13 +128,13 @@ const computeSummary = (transactions, annotations) => {
   }
   const r2 = (x) => Math.round(x * 100) / 100;
   return {
-    visible_count: visible,
-    hidden_count: hidden,
-    stock_net_cash: r2(stock),
-    options_net_cash: r2(opt),
+    visible_count: visible, hidden_count: hidden,
+    stock_net_cash: r2(stock), options_net_cash: r2(opt),
     total_net_cash: r2(stock + opt),
   };
 };
+
+// ---------- main component ----------
 
 const TransactionsView = () => {
   const { underlying } = useParams();
@@ -131,15 +149,20 @@ const TransactionsView = () => {
   const [noteEditingId, setNoteEditingId] = useState(null);
   const [noteDraft, setNoteDraft] = useState('');
   const [selected, setSelected] = useState(new Set());
-  const [groupEditId, setGroupEditId] = useState(null);
-  const [positionCollapsed, setPositionCollapsed] = useState(false);
-  const [rollupCollapsed, setRollupCollapsed] = useState(false);
-  const [expandedGroups, setExpandedGroups] = useState(new Set());
-  const [transactionsCollapsed, setTransactionsCollapsed] = useState(false);
+  const [selectedPositions, setSelectedPositions] = useState(new Set());
+  const [editingPositionId, setEditingPositionId] = useState(null);
+  const [tagManagerOpen, setTagManagerOpen] = useState(false);
+  const [tagPickerOpen, setTagPickerOpen] = useState(false);
+  const [groupByTag, setGroupByTag] = useState(true);
+  const [groupByPosition, setGroupByPosition] = useState(true);
+  // Sets track which IDs are *collapsed* (default = expanded everywhere).
+  const [collapsedPositions, setCollapsedPositions] = useState(new Set());
+  const [collapsedTags, setCollapsedTags] = useState(new Set());
+  const [positionStripCollapsed, setPositionStripCollapsed] = useState(false);
   const [symbolDraft, setSymbolDraft] = useState('');
+  // Multi-step background work (auto-classify, bulk tag): {active, current, total, message}
+  const [progress, setProgress] = useState(null);
 
-  // Account list piggy-backs on the positions endpoint, which returns the user's
-  // accounts alongside positions. Cached so opening this view doesn't refetch.
   const { data: accountsData } = useQuery({
     queryKey: ['schwab-accounts-list'],
     queryFn: () => fetchActualPositions(),
@@ -154,11 +177,7 @@ const TransactionsView = () => {
     navigate(`/schwab/transactions/${encodeURIComponent(sym)}${qs}`);
   };
 
-  const handleAccountChange = (e) => {
-    const next = e.target.value || null;
-    navigateTo(underlying, next);
-  };
-
+  const handleAccountChange = (e) => navigateTo(underlying, e.target.value || null);
   const submitSymbolSearch = (e) => {
     e.preventDefault();
     if (!symbolDraft.trim()) return;
@@ -171,20 +190,25 @@ const TransactionsView = () => {
     [underlying, accountId, days]
   );
 
-  const { data, isLoading, error, refetch, isFetching } = useQuery({
+  const { data, isLoading, error, isFetching } = useQuery({
     queryKey,
     queryFn: () => fetchTransactionsByUnderlying(underlying, { accountId, days }),
     enabled: !!underlying,
   });
 
-  // Current open positions for this underlying — live-fetched from Schwab so
-  // we see actual contract counts rather than strategy-group-duplicated DB rows.
-  const openPosKey = ['open-positions', underlying, accountId];
   const { data: openPositionsData } = useQuery({
-    queryKey: openPosKey,
+    queryKey: ['open-positions', underlying, accountId],
     queryFn: () => fetchOpenPositionsForUnderlying(underlying, { accountId }),
     enabled: !!underlying,
   });
+
+  const { data: allTags = [] } = useQuery({
+    queryKey: ['all-tags'],
+    queryFn: () => fetchTags(),
+    staleTime: 60 * 1000,
+  });
+
+  // ---------- mutations ----------
 
   const annMutation = useMutation({
     mutationFn: ({ txId, patch }) => updateTransactionAnnotation(txId, patch),
@@ -194,8 +218,7 @@ const TransactionsView = () => {
       queryClient.setQueryData(queryKey, (old) => {
         if (!old) return old;
         const annotations = { ...(old.annotations || {}) };
-        const existing = annotations[txId] || { hidden: false };
-        annotations[txId] = { ...existing, ...patch };
+        annotations[txId] = { ...(annotations[txId] || { hidden: false }), ...patch };
         const summary = computeSummary(old.transactions || [], annotations);
         return { ...old, annotations, summary };
       });
@@ -205,23 +228,22 @@ const TransactionsView = () => {
     onSettled: () => queryClient.invalidateQueries({ queryKey }),
   });
 
-  const linkMutation = useMutation({
-    mutationFn: ({ txIds, groupId }) => linkTransactions(txIds, groupId),
-    onMutate: async ({ txIds, groupId }) => {
+  const classifyMutation = useMutation({
+    mutationFn: ({ txIds, positionId, positionType, name }) =>
+      classifyTransactions(txIds, { positionId, positionType, name }),
+    onMutate: async ({ txIds, positionId }) => {
       await queryClient.cancelQueries({ queryKey });
       const prev = queryClient.getQueryData(queryKey);
-      const tempId = groupId || `tmp-${Math.random().toString(36).slice(2, 10)}`;
+      const tempId = positionId || `tmp-${Math.random().toString(36).slice(2, 10)}`;
       queryClient.setQueryData(queryKey, (old) => {
         if (!old) return old;
         const annotations = { ...(old.annotations || {}) };
-        const link_groups = { ...(old.link_groups || {}) };
+        const positions = { ...(old.positions || {}) };
         for (const id of txIds) {
-          annotations[id] = { ...(annotations[id] || { hidden: false }), link_group_id: tempId };
+          annotations[id] = { ...(annotations[id] || { hidden: false }), transaction_position_id: tempId };
         }
-        if (!link_groups[tempId]) {
-          link_groups[tempId] = { id: tempId, name: null, note: null };
-        }
-        return { ...old, annotations, link_groups };
+        if (!positions[tempId]) positions[tempId] = { id: tempId, name: null, note: null, position_type: null };
+        return { ...old, annotations, positions };
       });
       return { prev };
     },
@@ -229,8 +251,8 @@ const TransactionsView = () => {
     onSettled: () => queryClient.invalidateQueries({ queryKey }),
   });
 
-  const unlinkMutation = useMutation({
-    mutationFn: ({ txIds }) => unlinkTransactions(txIds),
+  const unclassifyMutation = useMutation({
+    mutationFn: ({ txIds }) => unclassifyTransactions(txIds),
     onMutate: async ({ txIds }) => {
       await queryClient.cancelQueries({ queryKey });
       const prev = queryClient.getQueryData(queryKey);
@@ -238,7 +260,7 @@ const TransactionsView = () => {
         if (!old) return old;
         const annotations = { ...(old.annotations || {}) };
         for (const id of txIds) {
-          if (annotations[id]) annotations[id] = { ...annotations[id], link_group_id: null };
+          if (annotations[id]) annotations[id] = { ...annotations[id], transaction_position_id: null };
         }
         return { ...old, annotations };
       });
@@ -248,16 +270,16 @@ const TransactionsView = () => {
     onSettled: () => queryClient.invalidateQueries({ queryKey }),
   });
 
-  const groupMutation = useMutation({
-    mutationFn: ({ groupId, patch }) => updateLinkGroup(groupId, patch),
-    onMutate: async ({ groupId, patch }) => {
+  const positionMutation = useMutation({
+    mutationFn: ({ positionId, patch }) => updateTransactionPosition(positionId, patch),
+    onMutate: async ({ positionId, patch }) => {
       await queryClient.cancelQueries({ queryKey });
       const prev = queryClient.getQueryData(queryKey);
       queryClient.setQueryData(queryKey, (old) => {
         if (!old) return old;
-        const link_groups = { ...(old.link_groups || {}) };
-        link_groups[groupId] = { ...(link_groups[groupId] || { id: groupId }), ...patch };
-        return { ...old, link_groups };
+        const positions = { ...(old.positions || {}) };
+        positions[positionId] = { ...(positions[positionId] || { id: positionId }), ...patch };
+        return { ...old, positions };
       });
       return { prev };
     },
@@ -265,10 +287,57 @@ const TransactionsView = () => {
     onSettled: () => queryClient.invalidateQueries({ queryKey }),
   });
 
-  const transactions = data?.transactions || [];
-  const annotations = data?.annotations || {};
-  const linkGroupsMeta = data?.link_groups || {};
+  const tagCreateMutation = useMutation({
+    mutationFn: (payload) => createTag(payload),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['all-tags'] }),
+  });
+  const tagUpdateMutation = useMutation({
+    mutationFn: ({ tagId, patch }) => updateTag(tagId, patch),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['all-tags'] });
+      queryClient.invalidateQueries({ queryKey });
+    },
+  });
+  const tagDeleteMutation = useMutation({
+    mutationFn: (tagId) => deleteTag(tagId),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['all-tags'] });
+      queryClient.invalidateQueries({ queryKey });
+    },
+  });
+  const tagAddMutation = useMutation({
+    mutationFn: ({ tagId, memberType, memberId }) => addTagMember(tagId, { memberType, memberId }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey }),
+  });
+
+  // ---------- derived data ----------
+
+  const transactions = useMemo(() => data?.transactions || [], [data]);
+  const annotations = useMemo(() => data?.annotations || {}, [data]);
+  const positionsMeta = useMemo(() => data?.positions || {}, [data]);
+  const tagsMeta = useMemo(() => data?.tags || {}, [data]);
+  const tagMemberships = useMemo(() => data?.tag_memberships || [], [data]);
   const summary = data?.summary || { visible_count: 0, hidden_count: 0, stock_net_cash: 0, options_net_cash: 0, total_net_cash: 0 };
+
+  // Tag membership lookups
+  const tagsByMember = useMemo(() => {
+    const m = new Map(); // `${type}|${id}` → Set<tag_id>
+    for (const tm of tagMemberships) {
+      const k = `${tm.member_type}|${tm.member_id}`;
+      if (!m.has(k)) m.set(k, new Set());
+      m.get(k).add(tm.tag_id);
+    }
+    return m;
+  }, [tagMemberships]);
+
+  const membersByTag = useMemo(() => {
+    const m = new Map();
+    for (const tm of tagMemberships) {
+      if (!m.has(tm.tag_id)) m.set(tm.tag_id, { transaction: new Set(), transaction_position: new Set() });
+      m.get(tm.tag_id)[tm.member_type].add(tm.member_id);
+    }
+    return m;
+  }, [tagMemberships]);
 
   const types = useMemo(() => {
     const s = new Set();
@@ -276,7 +345,7 @@ const TransactionsView = () => {
     return Array.from(s).sort();
   }, [transactions]);
 
-  const visibleRows = useMemo(() => {
+  const visibleTxs = useMemo(() => {
     return transactions.filter(t => {
       const ann = annotations[t.schwab_transaction_id] || {};
       if (ann.hidden && !showHidden) return false;
@@ -285,89 +354,34 @@ const TransactionsView = () => {
     });
   }, [transactions, annotations, showHidden, typeFilter]);
 
-  const toggleHidden = (tx) => {
-    const current = annotations[tx.schwab_transaction_id]?.hidden || false;
-    annMutation.mutate({ txId: tx.schwab_transaction_id, patch: { hidden: !current } });
-  };
+  // Group visible transactions by their position_id (or null = unclassified)
+  const txsByPosition = useMemo(() => {
+    const m = new Map();
+    for (const tx of visibleTxs) {
+      const pid = annotations[tx.schwab_transaction_id]?.transaction_position_id || null;
+      if (!m.has(pid)) m.set(pid, []);
+      m.get(pid).push(tx);
+    }
+    return m;
+  }, [visibleTxs, annotations]);
 
-  const setDisposition = (tx, disposition) => {
-    annMutation.mutate({ txId: tx.schwab_transaction_id, patch: { disposition } });
-  };
-
-  const saveNote = (tx) => {
-    annMutation.mutate({ txId: tx.schwab_transaction_id, patch: { note: noteDraft } });
-    setNoteEditingId(null);
-    setNoteDraft('');
-  };
-
-  const toggleSelect = (txId) => {
-    setSelected(prev => {
-      const next = new Set(prev);
-      if (next.has(txId)) next.delete(txId); else next.add(txId);
-      return next;
-    });
-  };
-
-  const selectedIds = useMemo(() => Array.from(selected), [selected]);
-  const selectedGroupIds = useMemo(() => {
-    const gs = new Set();
-    selectedIds.forEach(id => { gs.add(annotations[id]?.link_group_id || null); });
-    return gs;
-  }, [selectedIds, annotations]);
-
-  const handleGroup = () => {
-    if (selectedIds.length < 1) return;
-    const existingGroups = [...selectedGroupIds].filter(Boolean);
-    const gid = existingGroups.length === 1 ? existingGroups[0] : null;
-    linkMutation.mutate({ txIds: selectedIds, groupId: gid });
-    setSelected(new Set());
-  };
-
-  const handleUngroup = () => {
-    if (selectedIds.length === 0) return;
-    unlinkMutation.mutate({ txIds: selectedIds });
-    setSelected(new Set());
-  };
-
-  // Disposition applies to any transaction with at least one option leg — both
-  // opens (to tag expirations that left no closing transaction) and closes.
-  const hasOptionLeg = (tx) => (tx.legs || []).some(l => (l.asset_type || '').toUpperCase() === 'OPTION');
-
-  // Per-group label ("G1", "G2", …) ordered by GROUP CREATION TIME (not by
-  // transaction date), so a group you just made gets the highest G-number even
-  // if its earliest transaction is years old. Index drives color assignment so
-  // the first 8 groups always have distinct colors.
-  const { groupLabels, indexByGroupId } = useMemo(() => {
-    const gids = new Set();
-    const firstAppearance = new Map();
-    let order = 0;
-    for (const t of transactions) {
-      const g = annotations[t.schwab_transaction_id]?.link_group_id;
-      if (g) {
-        gids.add(g);
-        if (!firstAppearance.has(g)) firstAppearance.set(g, order++);
+  // Position color index (creation order = first appearance order in the data)
+  const indexByPosition = useMemo(() => {
+    const idx = new Map();
+    let i = 0;
+    const seen = new Set();
+    for (const tx of transactions) {
+      const pid = annotations[tx.schwab_transaction_id]?.transaction_position_id;
+      if (pid && !seen.has(pid)) {
+        seen.add(pid);
+        idx.set(pid, i++);
       }
     }
-    const arr = [...gids].sort((a, b) => {
-      const ca = linkGroupsMeta[a]?.created_at;
-      const cb = linkGroupsMeta[b]?.created_at;
-      if (ca && cb) return ca.localeCompare(cb);
-      if (ca) return -1;
-      if (cb) return 1;
-      return (firstAppearance.get(a) ?? 0) - (firstAppearance.get(b) ?? 0);
-    });
-    const labels = new Map();
-    const idx = new Map();
-    arr.forEach((g, i) => {
-      labels.set(g, `G${i + 1}`);
-      idx.set(g, i);
-    });
-    return { groupLabels: labels, indexByGroupId: idx };
-  }, [transactions, annotations, linkGroupsMeta]);
+    return idx;
+  }, [transactions, annotations]);
 
-  // Build a map: normalized OCC symbol → current market price. Used to show
-  // inline "currently trading at" on each transaction leg whose contract is
-  // still open today.
+  // Bucket-level rollup metrics. A bucket = a position OR the loose-unclassified set.
+  // Computed across all visible transactions in the bucket.
   const livePriceBySymbol = useMemo(() => {
     const map = new Map();
     (openPositionsData?.options || []).forEach(o => {
@@ -375,9 +389,7 @@ const TransactionsView = () => {
         map.set(normalizeSymbol(o.symbol), parseFloat(o.current_price));
       }
     });
-    // Also index the underlying stock price under its ticker
     if (openPositionsData?.stock && openPositionsData.stock.quantity !== 0) {
-      // Derive per-share price from value/qty
       const q = parseFloat(openPositionsData.stock.quantity) || 0;
       const v = parseFloat(openPositionsData.stock.current_value) || 0;
       if (q !== 0) map.set(normalizeSymbol(underlying), v / q);
@@ -385,11 +397,192 @@ const TransactionsView = () => {
     return map;
   }, [openPositionsData, underlying]);
 
+  const positionRollups = useMemo(() => {
+    const result = new Map();
+    for (const [pid, txs] of txsByPosition) {
+      result.set(pid, computeBucketRollup(txs, livePriceBySymbol));
+    }
+    return result;
+  }, [txsByPosition, livePriceBySymbol]);
+
+  // Top-level summary: roll up positions + loose unclassified, never tags.
+  const topSummary = useMemo(() => {
+    let cost = 0, credits = 0, currentValue = 0, net = 0;
+    for (const r of positionRollups.values()) {
+      cost += r.cost;
+      credits += r.credits;
+      currentValue += r.currentValue;
+      net += r.net;
+    }
+    const r2 = (x) => Math.round(x * 100) / 100;
+    return { cost: r2(cost), credits: r2(credits), currentValue: r2(currentValue), net: r2(net) };
+  }, [positionRollups]);
+
+  // ---------- selection helpers ----------
+
+  const selectedTxIds = useMemo(() => Array.from(selected), [selected]);
+  const selectedPositionIds = useMemo(() => Array.from(selectedPositions), [selectedPositions]);
+
+  const toggleSelectTx = (txId) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(txId)) next.delete(txId); else next.add(txId);
+      return next;
+    });
+  };
+  const toggleSelectPosition = (pid) => {
+    setSelectedPositions(prev => {
+      const next = new Set(prev);
+      if (next.has(pid)) next.delete(pid); else next.add(pid);
+      return next;
+    });
+  };
+  const clearSelection = () => {
+    setSelected(new Set());
+    setSelectedPositions(new Set());
+  };
+
+  // ---------- handlers ----------
+
+  const toggleHidden = (tx) => {
+    const current = annotations[tx.schwab_transaction_id]?.hidden || false;
+    annMutation.mutate({ txId: tx.schwab_transaction_id, patch: { hidden: !current } });
+  };
+  const setDisposition = (tx, disposition) => {
+    annMutation.mutate({ txId: tx.schwab_transaction_id, patch: { disposition } });
+  };
+  const saveNote = (tx) => {
+    annMutation.mutate({ txId: tx.schwab_transaction_id, patch: { note: noteDraft } });
+    setNoteEditingId(null);
+    setNoteDraft('');
+  };
+
+  const handleClassify = () => {
+    if (selectedTxIds.length < 1) return;
+    // If all selected txs already share a single position, we're "merging" — append-only.
+    const existingPids = new Set(
+      selectedTxIds.map(id => annotations[id]?.transaction_position_id).filter(Boolean)
+    );
+    const positionId = existingPids.size === 1 ? [...existingPids][0] : null;
+    classifyMutation.mutate({ txIds: selectedTxIds, positionId, positionType: 'manual', name: null });
+    clearSelection();
+  };
+
+  const handleUnclassify = () => {
+    if (selectedTxIds.length === 0) return;
+    unclassifyMutation.mutate({ txIds: selectedTxIds });
+    clearSelection();
+  };
+
+  const handleAutoClassify = async () => {
+    const debug = searchParams.get('debug') === 'autoclassify';
+    const groups = buildClassifications(transactions, annotations, { underlying, debug });
+    if (groups.length === 0) {
+      window.alert('Auto-classify found no chains. Already-classified transactions are skipped.');
+      return;
+    }
+    const totalTx = groups.reduce((n, g) => n + g.transactionIds.length, 0);
+    const ok = window.confirm(
+      `Auto-classify will create ${groups.length} position${groups.length === 1 ? '' : 's'} ` +
+      `covering ${totalTx} transaction${totalTx === 1 ? '' : 's'}.\n\n` +
+      `Already-classified transactions are skipped. Continue?`
+    );
+    if (!ok) return;
+    setProgress({ active: true, current: 0, total: groups.length, message: 'Classifying' });
+    try {
+      let i = 0;
+      for (const g of groups) {
+        i += 1;
+        setProgress({ active: true, current: i, total: groups.length, message: `Classifying ${g.name}` });
+        await classifyTransactions(g.transactionIds, {
+          positionType: g.position_type,
+          name: g.name,
+        });
+      }
+    } catch (err) {
+      window.alert('Auto-classify failed: ' + (err?.response?.data?.detail || err?.message || 'unknown error'));
+    } finally {
+      setProgress(null);
+      queryClient.invalidateQueries({ queryKey });
+    }
+  };
+
+  const applyTagToSelection = async (tagId) => {
+    const additions = [];
+    for (const txId of selectedTxIds) additions.push({ tagId, memberType: 'transaction', memberId: txId });
+    for (const pid of selectedPositionIds) additions.push({ tagId, memberType: 'transaction_position', memberId: pid });
+    if (additions.length === 0) return;
+    setProgress({ active: true, current: 0, total: additions.length, message: 'Applying tag' });
+    try {
+      let i = 0;
+      for (const a of additions) {
+        i += 1;
+        setProgress({ active: true, current: i, total: additions.length, message: `Applying tag (${i}/${additions.length})` });
+        try { await tagAddMutation.mutateAsync(a); } catch (_e) { /* ignore duplicates */ }
+      }
+    } finally {
+      setProgress(null);
+      queryClient.invalidateQueries({ queryKey });
+    }
+  };
+
+  // ---------- bulk collapse/expand controls ----------
+  // Levels:
+  //   0 = everything expanded (default)
+  //   1 = positions collapsed, tags expanded
+  //   2 = positions + tags collapsed (tag headers only)
+  // Each click steps one level. State is derived from the two Sets.
+  const collapseLevel = (collapsedTags.size > 0)
+    ? 2
+    : (collapsedPositions.size > 0 ? 1 : 0);
+
+  const allPositionIds = useMemo(() => Object.keys(positionsMeta), [positionsMeta]);
+  const allTagIds = useMemo(() => Object.keys(tagsMeta), [tagsMeta]);
+
+  const collapseLevelDown = () => {
+    if (collapseLevel === 0) {
+      setCollapsedPositions(new Set(allPositionIds));
+      setCollapsedTags(new Set());
+    } else if (collapseLevel === 1) {
+      setCollapsedPositions(new Set(allPositionIds));
+      setCollapsedTags(new Set(allTagIds));
+    }
+  };
+  const collapseLevelUp = () => {
+    if (collapseLevel === 2) {
+      setCollapsedTags(new Set());
+      setCollapsedPositions(new Set(allPositionIds));
+    } else if (collapseLevel === 1) {
+      setCollapsedPositions(new Set());
+      setCollapsedTags(new Set());
+    }
+  };
+
+  const hasOptionLeg = (tx) => (tx.legs || []).some(l => (l.asset_type || '').toUpperCase() === 'OPTION');
   const currentPriceForLeg = (leg) => {
     if (!leg?.symbol) return null;
     const p = livePriceBySymbol.get(normalizeSymbol(leg.symbol));
     return p == null ? null : p;
   };
+
+  // ---------- view tree (Tag → Position → Tx) ----------
+
+  const viewTree = useMemo(() => {
+    return buildViewTree({
+      visibleTxs,
+      annotations,
+      positionsMeta,
+      tagsMeta,
+      membersByTag,
+      tagsByMember,
+      groupByTag,
+      groupByPosition,
+    });
+  }, [visibleTxs, annotations, positionsMeta, tagsMeta, membersByTag, tagsByMember, groupByTag, groupByPosition]);
+
+  // ---------- render ----------
+
+  const sign = (v) => (v > 0 ? 'text-green-700' : v < 0 ? 'text-red-700' : 'text-gray-600');
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
@@ -408,11 +601,18 @@ const TransactionsView = () => {
         >
           <option value="">All accounts</option>
           {accounts.map((a) => (
-            <option key={a.account_hash} value={a.account_hash}>
-              Account: {a.account_number}
-            </option>
+            <option key={a.account_hash} value={a.account_hash}>Account: {a.account_number}</option>
           ))}
         </select>
+        {accountId && (
+          <Link
+            to={`/schwab/transactions/account/${encodeURIComponent(accountId)}`}
+            className="text-xs text-sky-700 hover:underline whitespace-nowrap"
+            title="View every transaction for this account"
+          >
+            view account →
+          </Link>
+        )}
 
         <form onSubmit={submitSymbolSearch} className="flex items-center">
           <div className="relative">
@@ -442,82 +642,146 @@ const TransactionsView = () => {
             <input type="checkbox" checked={showHidden} onChange={e => setShowHidden(e.target.checked)} />
             Show hidden
           </label>
-          <button onClick={() => refetch()} disabled={isFetching} className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50" title="Refresh">
+          <button
+            onClick={handleAutoClassify}
+            disabled={!!progress?.active || isLoading || isFetching}
+            className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50"
+            title="Auto-classify chains into positions (skips already-classified)"
+          >
+            <Sparkles className={`w-3 h-3 ${progress?.active ? 'animate-pulse' : ''}`} />
+            Auto Classify
+          </button>
+          <button
+            onClick={() => setTagManagerOpen(true)}
+            className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-800 rounded hover:bg-gray-200"
+            title="Manage custom group tags"
+          >
+            <TagIcon className="w-3 h-3" /> Tags
+          </button>
+          <button
+            onClick={async () => {
+              await fetchTransactionsByUnderlying(underlying, { accountId, days, refresh: true });
+              queryClient.invalidateQueries({ queryKey });
+            }}
+            disabled={isFetching}
+            className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50"
+            title="Refresh from Schwab (bypasses cache)"
+          >
             <RefreshCw className={`w-3 h-3 ${isFetching ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </div>
 
-      {/* Current open position strip */}
+      {/* Current open position strip (live, separate concept) */}
       <CurrentPositionStrip
         data={openPositionsData}
         realized={summary.total_net_cash}
-        collapsed={positionCollapsed}
-        onToggleCollapsed={() => setPositionCollapsed(v => !v)}
+        collapsed={positionStripCollapsed}
+        onToggleCollapsed={() => setPositionStripCollapsed(v => !v)}
       />
 
-      {/* Group/ungrouped rollup strip */}
-      <RollupStrip
-        transactions={transactions}
-        annotations={annotations}
-        linkGroupsMeta={linkGroupsMeta}
-        groupLabels={groupLabels}
-        indexByGroupId={indexByGroupId}
-        livePriceBySymbol={livePriceBySymbol}
-        visibleCount={summary.visible_count}
-        hiddenCount={summary.hidden_count}
-        onEditGroup={(gid) => setGroupEditId(gid)}
-        collapsed={rollupCollapsed}
-        onToggleCollapsed={() => setRollupCollapsed(v => !v)}
-        expandedGroups={expandedGroups}
-        onToggleExpandGroup={(key) => {
-          setExpandedGroups(prev => {
-            const next = new Set(prev);
-            if (next.has(key)) next.delete(key); else next.add(key);
-            return next;
-          });
-        }}
-      />
-
-      {/* Selection bar (only visible when rows are selected) */}
-      {selectedIds.length > 0 && (
-        <div className="bg-blue-50 border-b border-blue-100 px-4 py-2 flex items-center gap-3 text-xs">
-          <span className="font-medium text-blue-900">{selectedIds.length} selected</span>
-          <button
-            onClick={handleGroup}
-            disabled={selectedIds.length < 1}
-            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-            title="Group selected rows"
-          >
-            <Link2 className="w-3 h-3" /> Group
-          </button>
-          <button onClick={handleUngroup} className="inline-flex items-center gap-1 px-2 py-1 bg-gray-200 text-gray-800 rounded hover:bg-gray-300" title="Remove selected from their group">
-            <Link2Off className="w-3 h-3" /> Ungroup
-          </button>
-          <button onClick={() => setSelected(new Set())} className="ml-auto text-blue-700 hover:underline">
-            Clear selection
-          </button>
-        </div>
-      )}
-
-      {/* Transactions table header (collapsible) */}
-      <div className="bg-white border-b px-4 py-2">
-        <div className="border border-gray-200 rounded-lg">
-          <button
-            onClick={() => setTransactionsCollapsed(v => !v)}
-            className="w-full flex items-center gap-2 px-3 py-1.5 bg-gray-50 hover:bg-gray-100 text-left rounded-t-lg"
-          >
-            {transactionsCollapsed ? <ChevronRight className="w-3.5 h-3.5 text-gray-500" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-500" />}
-            <span className="text-sm font-bold text-gray-900">Transactions</span>
-            <span className="text-xs text-gray-500">
-              {transactions.length} in window · {visibleRows.length} showing
-            </span>
-          </button>
+      {/* Top summary bar — rolled up from positions + loose txs only (never tags). */}
+      <div className="bg-white border-b px-4 py-2 flex items-center gap-6 text-xs">
+        <span className="text-gray-500">Portfolio rollup</span>
+        <span><span className="text-gray-500">Cost </span><span className="font-semibold text-gray-900">{fmtCurrency(topSummary.cost)}</span></span>
+        <span><span className="text-gray-500">Credits </span><span className="font-semibold text-gray-900">{fmtCurrency(topSummary.credits)}</span></span>
+        <span title="Cash flow if you close all open legs now at current marks"><span className="text-gray-500">If Closed </span><span className="font-semibold text-gray-900">{fmtCurrency(topSummary.currentValue)}</span></span>
+        <span><span className="text-gray-500">Net </span><span className={`font-bold ${sign(topSummary.net)}`}>{fmtCurrency(topSummary.net)}</span></span>
+        <span className="text-gray-400">·</span>
+        <span className="text-gray-500">{summary.visible_count} visible · {summary.hidden_count} hidden · {Object.keys(positionsMeta).length} position{Object.keys(positionsMeta).length === 1 ? '' : 's'}</span>
+        <div className="ml-auto flex items-center gap-3">
+          <div className="inline-flex items-center gap-1 border border-gray-300 rounded">
+            <button
+              type="button"
+              onClick={() => collapseLevelDown()}
+              className="px-1.5 py-0.5 hover:bg-gray-100 text-gray-700 disabled:opacity-30"
+              title="Collapse one level (positions, then tags)"
+            >−</button>
+            <button
+              type="button"
+              onClick={() => collapseLevelUp()}
+              className="px-1.5 py-0.5 hover:bg-gray-100 text-gray-700 disabled:opacity-30 border-l border-gray-300"
+              title="Expand one level (tags, then positions)"
+            >+</button>
+          </div>
+          <label className="text-xs text-gray-600 flex items-center gap-1">
+            <input type="checkbox" checked={groupByPosition} onChange={e => setGroupByPosition(e.target.checked)} />
+            <Layers className="w-3 h-3" /> Position
+          </label>
+          <label className="text-xs text-gray-600 flex items-center gap-1">
+            <input type="checkbox" checked={groupByTag} onChange={e => setGroupByTag(e.target.checked)} />
+            <TagIcon className="w-3 h-3" /> Tag
+          </label>
         </div>
       </div>
 
+      {/* Progress banner for multi-call ops (auto-classify, bulk tagging) */}
+      {progress?.active && (
+        <div className="bg-purple-50 border-b border-purple-200 px-4 py-1.5 flex items-center gap-3 text-xs text-purple-900">
+          <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+          <span className="font-medium">{progress.message}</span>
+          <span className="text-purple-700">{progress.current} / {progress.total}</span>
+          <div className="flex-1 h-1.5 bg-purple-100 rounded overflow-hidden">
+            <div
+              className="h-full bg-purple-500 transition-all"
+              style={{ width: `${progress.total > 0 ? (progress.current / progress.total) * 100 : 0}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Selection bar */}
+      {(selectedTxIds.length > 0 || selectedPositionIds.length > 0) && (
+        <div className="bg-blue-50 border-b border-blue-100 px-4 py-2 flex items-center gap-3 text-xs flex-wrap">
+          <span className="font-medium text-blue-900">
+            {selectedTxIds.length} tx{selectedTxIds.length === 1 ? '' : 's'}
+            {selectedPositionIds.length > 0 ? `, ${selectedPositionIds.length} position${selectedPositionIds.length === 1 ? '' : 's'}` : ''} selected
+          </span>
+          <button
+            onClick={handleClassify}
+            disabled={selectedTxIds.length < 1}
+            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+            title="Classify selected transactions into a position"
+          >
+            <Layers className="w-3 h-3" /> Classify
+          </button>
+          <button
+            onClick={handleUnclassify}
+            disabled={selectedTxIds.length < 1}
+            className="inline-flex items-center gap-1 px-2 py-1 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 disabled:opacity-50"
+            title="Remove selected transactions from their position"
+          >
+            <X className="w-3 h-3" /> Unclassify
+          </button>
+          <span className="text-gray-300">|</span>
+          <div className="relative">
+            <button
+              onClick={() => setTagPickerOpen(v => !v)}
+              disabled={selectedTxIds.length === 0 && selectedPositionIds.length === 0}
+              className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50"
+              title="Add to a custom tag"
+            >
+              <TagIcon className="w-3 h-3" /> Tag…
+            </button>
+            {tagPickerOpen && (
+              <TagPicker
+                allTags={allTags}
+                onPick={async (tagId) => { await applyTagToSelection(tagId); setTagPickerOpen(false); }}
+                onCreate={async (name) => {
+                  const t = await tagCreateMutation.mutateAsync({ name });
+                  if (t?.id) { await applyTagToSelection(t.id); }
+                  setTagPickerOpen(false);
+                }}
+                onClose={() => setTagPickerOpen(false)}
+              />
+            )}
+          </div>
+          <button onClick={clearSelection} className="ml-auto text-blue-700 hover:underline">Clear selection</button>
+        </div>
+      )}
+
       {/* Body */}
-      <div className={`${transactionsCollapsed ? 'hidden' : 'flex-1'} overflow-auto`}>
+      <div className="flex-1 overflow-auto">
         {isLoading ? (
           <div className="flex items-center justify-center h-full text-gray-500 text-sm">
             <RefreshCw className="w-5 h-5 animate-spin mr-2" /> Loading…
@@ -526,215 +790,76 @@ const TransactionsView = () => {
           <div className="p-4 text-sm text-red-700 bg-red-50 m-4 rounded">
             {error?.response?.data?.detail || error.message}
           </div>
-        ) : visibleRows.length === 0 ? (
+        ) : visibleTxs.length === 0 ? (
           <div className="flex items-center justify-center h-full text-gray-500 text-sm">
             No transactions in this window.
           </div>
         ) : (
-          <table className="w-full text-xs border-collapse">
-            <thead className="bg-gray-100 sticky top-0 z-10 border-b">
-              <tr>
-                <th className="text-center px-1 py-1.5 font-semibold w-8"></th>
-                <th className="text-center px-1 py-1.5 font-semibold w-8"></th>
-                <th className="text-left px-2 py-1.5 font-semibold w-24">Date</th>
-                <th className="text-left px-2 py-1.5 font-semibold w-24">Type</th>
-                <th className="text-left px-2 py-1.5 font-semibold w-16">Account</th>
-                <th className="text-left px-2 py-1.5 font-semibold">Symbol / Legs</th>
-                <th className="text-right px-2 py-1.5 font-semibold w-16">Qty</th>
-                <th className="text-right px-2 py-1.5 font-semibold w-20">Price</th>
-                <th className="text-right px-2 py-1.5 font-semibold w-20">Current</th>
-                <th className="text-right px-2 py-1.5 font-semibold w-24">If Now</th>
-                <th className="text-right px-2 py-1.5 font-semibold w-24">Net Cash</th>
-                <th className="text-left px-2 py-1.5 font-semibold w-28">Disposition</th>
-                <th className="text-left px-2 py-1.5 font-semibold w-48">Note</th>
-                <th className="text-center px-2 py-1.5 font-semibold w-12">Hide</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white">
-              {visibleRows.map(tx => {
-                const ann = annotations[tx.schwab_transaction_id] || {};
-                const editing = noteEditingId === tx.schwab_transaction_id;
-                const showDisposition = hasOptionLeg(tx);
-                const net = parseFloat(tx.net_amount || 0);
-                const isSelected = selected.has(tx.schwab_transaction_id);
-                const gid = ann.link_group_id;
-                const color = gid ? colorForGroup(gid, indexByGroupId) : null;
-                const groupLabel = gid ? groupLabels.get(gid) : null;
-                return (
-                  <tr
-                    key={tx.schwab_transaction_id}
-                    className={`border-b border-gray-100 hover:bg-blue-50 ${ann.hidden ? 'opacity-50' : ''} ${color ? color.bg : ''} ${isSelected ? 'ring-2 ring-inset ring-blue-300' : ''}`}
-                  >
-                    <td className="px-1 py-1.5 text-center">
-                      <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(tx.schwab_transaction_id)} />
-                    </td>
-                    <td className={`px-0 py-0 w-2 ${color ? color.bar : ''}`}>
-                      {groupLabel && (
-                        <button
-                          className={`block text-[10px] font-bold text-white text-center py-0.5 w-full ${color.bar} hover:brightness-110`}
-                          onClick={() => setGroupEditId(gid)}
-                          title="Edit group name / note"
-                        >
-                          {groupLabel}
-                        </button>
-                      )}
-                    </td>
-                    <td className="px-2 py-1.5 text-gray-700">{fmtDate(tx.date)}</td>
-                    <td className="px-2 py-1.5 text-gray-700">{tx.type}</td>
-                    <td className="px-2 py-1.5 text-gray-500">{tx.account_number}</td>
-                    <td className="px-2 py-1.5">
-                      <div className="flex flex-col gap-0.5">
-                        {tx.legs.map((leg, i) => {
-                          const isOpt = (leg.asset_type || '').toUpperCase() === 'OPTION';
-                          return (
-                            <div key={i} className="flex items-center gap-2">
-                              {isOpt ? (
-                                <span className={`px-1 py-0.5 text-[10px] font-bold rounded ${leg.option_type === 'call' ? 'bg-blue-600 text-white' : 'bg-purple-600 text-white'}`}>
-                                  {leg.option_type === 'call' ? 'C' : 'P'}
-                                </span>
-                              ) : (
-                                <span className="px-1 py-0.5 text-[10px] font-bold rounded bg-gray-300 text-gray-800">S</span>
-                              )}
-                              <span className="font-mono text-gray-900">{isOpt ? fmtOptionSymbol(leg) : (leg.symbol || '')}</span>
-                              {leg.position_effect && (<span className="text-[10px] text-gray-500">{leg.position_effect}</span>)}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </td>
-                    <td className="px-2 py-1.5 text-right text-gray-800">
-                      {tx.legs.map((l, i) => (
-                        <div key={i} className={l.amount < 0 ? 'text-red-600' : 'text-green-700'}>
-                          {l.amount != null ? (l.amount > 0 ? `+${fmtQty(l.amount)}` : fmtQty(l.amount)) : '-'}
-                        </div>
-                      ))}
-                    </td>
-                    <td className="px-2 py-1.5 text-right text-gray-700">
-                      {tx.legs.map((l, i) => (
-                        <div key={i}>{l.price != null ? fmtCurrency(l.price) : '-'}</div>
-                      ))}
-                    </td>
-                    <td className="px-2 py-1.5 text-right text-gray-700">
-                      {tx.legs.map((l, i) => {
-                        // Only show Current / If Now for OPENING legs — a CLOSING
-                        // leg is already realized, "if reversed now" makes no sense.
-                        const isClosing = (l.position_effect || '').toUpperCase() === 'CLOSING';
-                        const cur = isClosing ? null : currentPriceForLeg(l);
-                        return (
-                          <div key={i} className={cur != null ? '' : 'text-gray-300'}>
-                            {cur != null ? fmtCurrency(cur) : '—'}
-                          </div>
-                        );
-                      })}
-                    </td>
-                    <td className="px-2 py-1.5 text-right">
-                      {tx.legs.map((l, i) => {
-                        const isClosing = (l.position_effect || '').toUpperCase() === 'CLOSING';
-                        const cur = isClosing ? null : currentPriceForLeg(l);
-                        const mult = (l.asset_type || '').toUpperCase() === 'OPTION' ? 100 : 1;
-                        const traded = l.price != null ? parseFloat(l.price) : null;
-                        const amt = l.amount != null ? parseFloat(l.amount) : null;
-                        let reverse = null;
-                        if (cur != null && traded != null && amt != null) {
-                          reverse = (cur - traded) * amt * mult;
-                        }
-                        return (
-                          <div key={i} className={reverse == null ? 'text-gray-300' : reverse > 0 ? 'text-green-700' : reverse < 0 ? 'text-red-700' : 'text-gray-600'}>
-                            {reverse == null ? '—' : (reverse > 0 ? '+' : '') + fmtCurrency(reverse)}
-                          </div>
-                        );
-                      })}
-                    </td>
-                    <td className={`px-2 py-1.5 text-right font-semibold ${net > 0 ? 'text-green-700' : net < 0 ? 'text-red-700' : 'text-gray-600'}`}>
-                      {fmtCurrency(net)}
-                    </td>
-                    <td className="px-2 py-1.5">
-                      {showDisposition ? (
-                        <select
-                          value={ann.disposition || ''}
-                          onChange={e => setDisposition(tx, e.target.value)}
-                          className="text-xs border rounded px-1 py-0.5"
-                        >
-                          <option value="">—</option>
-                          <option value="closed">Closed</option>
-                          <option value="rolled">Rolled</option>
-                          <option value="expired">Expired</option>
-                          <option value="assigned">Assigned</option>
-                        </select>
-                      ) : (<span className="text-gray-300 text-xs">—</span>)}
-                    </td>
-                    <td className="px-2 py-1.5">
-                      {editing ? (
-                        <div className="flex gap-1">
-                          <input
-                            autoFocus
-                            value={noteDraft}
-                            onChange={e => setNoteDraft(e.target.value)}
-                            onKeyDown={e => { if (e.key === 'Enter') saveNote(tx); if (e.key === 'Escape') { setNoteEditingId(null); setNoteDraft(''); } }}
-                            className="text-xs border rounded px-1 py-0.5 flex-1"
-                          />
-                          <button onClick={() => saveNote(tx)} className="text-xs text-blue-600">Save</button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => { setNoteEditingId(tx.schwab_transaction_id); setNoteDraft(ann.note || ''); }}
-                          className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 group"
-                        >
-                          <StickyNote className="w-3 h-3 opacity-60 group-hover:opacity-100" />
-                          <span className="truncate max-w-[160px]">{ann.note || <span className="italic text-gray-400">add note</span>}</span>
-                        </button>
-                      )}
-                    </td>
-                    <td className="px-2 py-1.5 text-center">
-                      <button onClick={() => toggleHidden(tx)} className="text-gray-500 hover:text-gray-900" title={ann.hidden ? 'Show' : 'Hide'}>
-                        {ann.hidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {/* Status bar */}
-      <div className="bg-white border-t px-3 py-1 text-xs text-gray-600 flex items-center gap-3">
-        <span>{transactions.length} transactions in window • showing {visibleRows.length}</span>
-        {groupLabels.size > 0 && (
-          <span className="ml-auto flex items-center gap-2 flex-wrap">
-            <span className="text-gray-500">Groups:</span>
-            {[...groupLabels.entries()].map(([gid, label]) => {
-              const c = colorForGroup(gid, indexByGroupId);
-              const meta = linkGroupsMeta[gid] || {};
-              return (
-                <button
-                  key={gid}
-                  onClick={() => setGroupEditId(gid)}
-                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${c.bg} ${c.text} ${c.border} border hover:brightness-105`}
-                  title={meta.note || 'Click to edit'}
-                >
-                  <span className={`inline-block w-2 h-2 rounded ${c.bar}`} />
-                  {label}
-                  {meta.name && <span className="font-normal">— {meta.name}</span>}
-                </button>
-              );
+          <UnifiedGrid
+            tree={viewTree}
+            annotations={annotations}
+            tagsByMember={tagsByMember}
+            tagsMeta={tagsMeta}
+            positionsMeta={positionsMeta}
+            positionRollups={positionRollups}
+            indexByPosition={indexByPosition}
+            selected={selected}
+            selectedPositions={selectedPositions}
+            collapsedPositions={collapsedPositions}
+            collapsedTags={collapsedTags}
+            onToggleExpandPosition={(pid) => setCollapsedPositions(prev => {
+              const next = new Set(prev);
+              if (next.has(pid)) next.delete(pid); else next.add(pid);
+              return next;
             })}
-          </span>
+            onToggleExpandTag={(tid) => setCollapsedTags(prev => {
+              const next = new Set(prev);
+              if (next.has(tid)) next.delete(tid); else next.add(tid);
+              return next;
+            })}
+            onSelectTx={toggleSelectTx}
+            onSelectPosition={toggleSelectPosition}
+            onEditPosition={(pid) => setEditingPositionId(pid)}
+            onToggleHidden={toggleHidden}
+            onSetDisposition={setDisposition}
+            noteEditingId={noteEditingId}
+            noteDraft={noteDraft}
+            setNoteEditingId={setNoteEditingId}
+            setNoteDraft={setNoteDraft}
+            saveNote={saveNote}
+            currentPriceForLeg={currentPriceForLeg}
+            hasOptionLeg={hasOptionLeg}
+            groupByPosition={groupByPosition}
+            groupByTag={groupByTag}
+          />
         )}
       </div>
 
-      {/* Group editor modal */}
-      {groupEditId && (
-        <GroupEditorModal
-          groupId={groupEditId}
-          label={groupLabels.get(groupEditId)}
-          meta={linkGroupsMeta[groupEditId] || {}}
-          indexByGroupId={indexByGroupId}
-          onClose={() => setGroupEditId(null)}
+      {/* Position editor modal */}
+      {editingPositionId && (
+        <PositionEditorModal
+          positionId={editingPositionId}
+          meta={positionsMeta[editingPositionId] || {}}
+          colorIdx={indexByPosition.get(editingPositionId)}
+          onClose={() => setEditingPositionId(null)}
           onSave={(patch) => {
-            groupMutation.mutate({ groupId: groupEditId, patch });
-            setGroupEditId(null);
+            positionMutation.mutate({ positionId: editingPositionId, patch });
+            setEditingPositionId(null);
+          }}
+        />
+      )}
+
+      {/* Tag manager modal */}
+      {tagManagerOpen && (
+        <TagManagerModal
+          tags={allTags}
+          onClose={() => setTagManagerOpen(false)}
+          onCreate={(name) => tagCreateMutation.mutate({ name })}
+          onUpdate={(tagId, patch) => tagUpdateMutation.mutate({ tagId, patch })}
+          onDelete={(tagId) => {
+            if (window.confirm('Delete this tag and all its memberships?')) {
+              tagDeleteMutation.mutate(tagId);
+            }
           }}
         />
       )}
@@ -742,55 +867,647 @@ const TransactionsView = () => {
   );
 };
 
-const normalizeSymbol = (s) => (s || '').toUpperCase().replace(/\s+/g, '');
+export default TransactionsView;
+
+// =================================================================
+// Bucket rollup math (per position or loose-unclassified set)
+// =================================================================
+
+function computeBucketRollup(txs, livePriceBySymbol) {
+  // FILO open/close matching to derive remaining-open lots and their cost basis.
+  // Identical semantics to the prior RollupStrip's per-bucket calc.
+  const legsBySymbol = new Map();
+  let cost = 0, credits = 0;
+  for (const tx of txs) {
+    const amt = parseFloat(tx.net_amount) || 0;
+    if (amt < 0) cost += amt;
+    else credits += amt;
+    for (const leg of (tx.legs || [])) {
+      const sym = normalizeSymbol(leg.symbol);
+      if (!sym) continue;
+      const effect = (leg.position_effect || '').toUpperCase();
+      const signedQty = parseFloat(leg.amount) || 0;
+      const absQty = Math.abs(signedQty);
+      const price = parseFloat(leg.price) || 0;
+      if (absQty === 0) continue;
+      const assetType = (leg.asset_type || '').toUpperCase();
+      if (!legsBySymbol.has(sym)) {
+        legsBySymbol.set(sym, { lots: [], asset_type: assetType });
+      }
+      const s = legsBySymbol.get(sym);
+      if (effect === 'CLOSING') {
+        let rem = absQty;
+        while (rem > 0 && s.lots.length > 0) {
+          const last = s.lots[s.lots.length - 1];
+          if (last.qty <= rem + 1e-9) { rem -= last.qty; s.lots.pop(); }
+          else { last.qty -= rem; rem = 0; }
+        }
+      } else {
+        const direction = signedQty > 0 ? 1 : -1;
+        s.lots.push({ qty: absQty, price, direction });
+      }
+    }
+  }
+
+  let marketValueTotal = 0;
+  let closeOutSigned = 0;
+  for (const [sym, s] of legsBySymbol) {
+    if (s.lots.length === 0) continue;
+    const mult = s.asset_type === 'OPTION' ? 100 : 1;
+    let absRemaining = 0;
+    for (const lot of s.lots) absRemaining += lot.qty;
+    if (absRemaining < 1e-9) continue;
+    const direction = s.lots[0].direction;
+    const cur = livePriceBySymbol.get(sym);
+    if (cur != null) {
+      const marketValue = absRemaining * cur * mult;
+      marketValueTotal += marketValue;
+      closeOutSigned += direction * marketValue;
+    }
+  }
+
+  const r2 = (x) => Math.round(x * 100) / 100;
+  return {
+    cost: r2(Math.abs(cost)),
+    credits: r2(credits),
+    currentValue: r2(marketValueTotal),
+    net: r2(credits - Math.abs(cost) + closeOutSigned),
+    txCount: txs.length,
+  };
+}
+
+// =================================================================
+// View tree builder (Tag → Position → Tx)
+// =================================================================
+
+// Pull the underlying ticker from a list of transactions (positions are
+// always single-underlying; loose txs come with their own).
+function underlyingOf(txs) {
+  for (const tx of txs) {
+    for (const leg of (tx.legs || [])) {
+      const u = leg.underlying || leg.symbol;
+      if (u) return String(u).toUpperCase();
+    }
+  }
+  return '?';
+}
+
+function buildViewTree({
+  visibleTxs, annotations, positionsMeta, tagsMeta, membersByTag, tagsByMember,
+  groupByTag, groupByPosition, groupByUnderlying = false,
+}) {
+  // Step 1: bucket visible txs by position_id (or null = unclassified)
+  const txsByPid = new Map();
+  for (const tx of visibleTxs) {
+    const pid = annotations[tx.schwab_transaction_id]?.transaction_position_id || null;
+    if (!txsByPid.has(pid)) txsByPid.set(pid, []);
+    txsByPid.get(pid).push(tx);
+  }
+
+  // Step 2: build position nodes (one per position with at least one visible tx)
+  const positionNodes = []; // {kind:'position', positionId, meta, txs, tagIds}
+  for (const [pid, txs] of txsByPid) {
+    if (pid == null) continue;
+    positionNodes.push({
+      kind: 'position',
+      positionId: pid,
+      meta: positionsMeta[pid] || { id: pid },
+      txs: [...txs].sort(compareTxsForDisplay),
+      tagIds: tagsByMember.get(`transaction_position|${pid}`) || new Set(),
+    });
+  }
+  // Sort positions by latest date (open at top, then most recent)
+  positionNodes.sort((a, b) => {
+    const ad = a.txs.reduce((mx, t) => (t.date && t.date > mx ? t.date : mx), '');
+    const bd = b.txs.reduce((mx, t) => (t.date && t.date > mx ? t.date : mx), '');
+    return bd.localeCompare(ad);
+  });
+
+  // Step 3: loose unclassified txs
+  const looseTxNodes = (txsByPid.get(null) || []).slice().sort(compareTxsForDisplay).map(tx => ({ kind: 'tx', tx }));
+
+  // Helper: take a flat list of (position nodes + loose tx nodes) and return
+  // them — optionally grouped under {kind:'underlying', symbol, children}.
+  const finalizeChildren = (positions, txNodes) => {
+    let kids;
+    if (groupByPosition) {
+      kids = [...positions, ...txNodes];
+    } else {
+      kids = [
+        ...positions.flatMap(p => p.txs.map(tx => ({ kind: 'tx', tx, positionId: p.positionId }))),
+        ...txNodes,
+      ];
+    }
+    if (!groupByUnderlying) return kids;
+    // Bucket by underlying. Position underlying derived from its first tx; tx
+    // underlying from the leg.
+    const buckets = new Map();
+    for (const k of kids) {
+      let sym;
+      if (k.kind === 'position') sym = underlyingOf(k.txs);
+      else if (k.kind === 'tx') sym = underlyingOf([k.tx]);
+      else sym = '?';
+      if (!buckets.has(sym)) buckets.set(sym, []);
+      buckets.get(sym).push(k);
+    }
+    const sortedSymbols = [...buckets.keys()].sort();
+    return sortedSymbols.map(sym => ({ kind: 'underlying', symbol: sym, children: buckets.get(sym) }));
+  };
+
+  if (!groupByTag) {
+    return [{ kind: 'section', label: null, children: finalizeChildren(positionNodes, looseTxNodes) }];
+  }
+
+  // groupByTag = true: build one section per tag, plus an "Untagged" section
+  const tagBuckets = new Map(); // tag_id → {positions: [], txs: []}
+  const sortedTagIds = Object.keys(tagsMeta).sort((a, b) =>
+    (tagsMeta[a]?.name || '').localeCompare(tagsMeta[b]?.name || '')
+  );
+  for (const tid of sortedTagIds) tagBuckets.set(tid, { positions: [], txs: [] });
+
+  // Place each position under any tag it's directly tagged with
+  for (const p of positionNodes) {
+    if (p.tagIds.size === 0) continue;
+    for (const tid of p.tagIds) {
+      if (!tagBuckets.has(tid)) tagBuckets.set(tid, { positions: [], txs: [] });
+      tagBuckets.get(tid).positions.push(p);
+    }
+  }
+
+  // Place each loose tx under any tag it's directly tagged with
+  for (const node of looseTxNodes) {
+    const tIds = tagsByMember.get(`transaction|${node.tx.schwab_transaction_id}`) || new Set();
+    if (tIds.size === 0) continue;
+    for (const tid of tIds) {
+      if (!tagBuckets.has(tid)) tagBuckets.set(tid, { positions: [], txs: [] });
+      tagBuckets.get(tid).txs.push(node);
+    }
+  }
+
+  // Untagged bucket: positions with no tag, loose txs with no tag
+  const untaggedBucket = { positions: [], txs: [] };
+  for (const p of positionNodes) {
+    if (p.tagIds.size === 0) untaggedBucket.positions.push(p);
+  }
+  for (const node of looseTxNodes) {
+    const tIds = tagsByMember.get(`transaction|${node.tx.schwab_transaction_id}`) || new Set();
+    if (tIds.size === 0) untaggedBucket.txs.push(node);
+  }
+
+  const sections = [];
+  for (const [tid, bucket] of tagBuckets) {
+    if (bucket.positions.length === 0 && bucket.txs.length === 0) continue;
+    sections.push({
+      kind: 'tag',
+      tagId: tid,
+      meta: tagsMeta[tid] || { id: tid, name: '?' },
+      children: finalizeChildren(bucket.positions, bucket.txs),
+    });
+  }
+  if (untaggedBucket.positions.length > 0 || untaggedBucket.txs.length > 0) {
+    sections.push({
+      kind: 'tag', tagId: null, meta: { name: 'Untagged' },
+      children: finalizeChildren(untaggedBucket.positions, untaggedBucket.txs),
+    });
+  }
+  return sections;
+}
+
+// =================================================================
+// UnifiedGrid — renders the full Tag → Position → Tx hierarchy
+// =================================================================
+
+const UnifiedGrid = ({
+  tree, annotations, tagsByMember, tagsMeta, positionsMeta, positionRollups,
+  indexByPosition, selected, selectedPositions, collapsedPositions, collapsedTags,
+  onToggleExpandPosition, onToggleExpandTag, onSelectTx, onSelectPosition,
+  onEditPosition, onToggleHidden, onSetDisposition,
+  noteEditingId, noteDraft, setNoteEditingId, setNoteDraft, saveNote,
+  currentPriceForLeg, hasOptionLeg, groupByPosition, groupByTag,
+}) => {
+  return (
+    <table className="w-full text-xs border-collapse">
+      <thead className="bg-gray-100 sticky top-0 z-10 border-b">
+        <tr>
+          <th className="text-center px-1 py-1.5 font-semibold w-8"></th>
+          <th className="text-center px-1 py-1.5 font-semibold w-8"></th>
+          <th className="text-left px-2 py-1.5 font-semibold w-24">Date</th>
+          <th className="text-left px-2 py-1.5 font-semibold w-24">Type</th>
+          <th className="text-left px-2 py-1.5 font-semibold w-16">Account</th>
+          <th className="text-left px-2 py-1.5 font-semibold">Symbol / Legs</th>
+          <th className="text-right px-2 py-1.5 font-semibold w-16">Qty</th>
+          <th className="text-right px-2 py-1.5 font-semibold w-20">Price</th>
+          <th className="text-right px-2 py-1.5 font-semibold w-20" title="Current mark per leg (live)">Mark</th>
+          <th className="text-right px-2 py-1.5 font-semibold w-24" title="Cash flow if you close this leg now at the current mark (signed)">If Closed</th>
+          <th className="text-right px-2 py-1.5 font-semibold w-24" title="Net cash from this transaction (signed: + collected, − paid)">Net Cash</th>
+          <th className="text-left px-2 py-1.5 font-semibold w-28">Disposition</th>
+          <th className="text-left px-2 py-1.5 font-semibold w-48">Note</th>
+          <th className="text-center px-2 py-1.5 font-semibold w-12">Hide</th>
+        </tr>
+      </thead>
+      <tbody className="bg-white">
+        {tree.map((section, si) => (
+          <SectionRows
+            key={section.kind === 'tag' ? `tag-${section.tagId || 'untagged'}` : `sec-${si}`}
+            section={section}
+            depth={section.kind === 'tag' ? 0 : 0}
+            annotations={annotations}
+            tagsByMember={tagsByMember}
+            tagsMeta={tagsMeta}
+            positionsMeta={positionsMeta}
+            positionRollups={positionRollups}
+            indexByPosition={indexByPosition}
+            selected={selected}
+            selectedPositions={selectedPositions}
+            collapsedPositions={collapsedPositions}
+            collapsedTags={collapsedTags}
+            onToggleExpandPosition={onToggleExpandPosition}
+            onToggleExpandTag={onToggleExpandTag}
+            onSelectTx={onSelectTx}
+            onSelectPosition={onSelectPosition}
+            onEditPosition={onEditPosition}
+            onToggleHidden={onToggleHidden}
+            onSetDisposition={onSetDisposition}
+            noteEditingId={noteEditingId}
+            noteDraft={noteDraft}
+            setNoteEditingId={setNoteEditingId}
+            setNoteDraft={setNoteDraft}
+            saveNote={saveNote}
+            currentPriceForLeg={currentPriceForLeg}
+            hasOptionLeg={hasOptionLeg}
+            groupByPosition={groupByPosition}
+            groupByTag={groupByTag}
+          />
+        ))}
+      </tbody>
+    </table>
+  );
+};
+
+const SectionRows = (props) => {
+  const { section, collapsedTags, onToggleExpandTag, groupByTag } = props;
+  if (section.kind === 'tag') {
+    const tagId = section.tagId;
+    const expanded = tagId == null ? true : !collapsedTags.has(tagId);
+    const isUntagged = tagId == null;
+    return (
+      <>
+        {groupByTag && (
+          <tr className={`border-b border-gray-200 ${isUntagged ? 'bg-gray-50' : 'bg-emerald-50'}`}>
+            <td colSpan={14} className="px-3 py-1.5">
+              <button
+                className="inline-flex items-center gap-1.5 text-left hover:underline"
+                onClick={() => tagId != null && onToggleExpandTag(tagId)}
+                title={tagId != null ? (expanded ? 'Collapse tag' : 'Expand tag') : ''}
+              >
+                {tagId != null && (expanded ? <ChevronDown className="w-3.5 h-3.5 text-gray-500" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-500" />)}
+                <TagIcon className="w-3.5 h-3.5 text-emerald-700" />
+                <span className="text-sm font-bold text-gray-900">{section.meta?.name || 'Untagged'}</span>
+                {section.meta?.note && <span className="text-xs text-gray-500">— {section.meta.note}</span>}
+                <span className="text-xs text-gray-500">({section.children.length} item{section.children.length === 1 ? '' : 's'})</span>
+              </button>
+            </td>
+          </tr>
+        )}
+        {expanded && section.children.map((child, i) => (
+          <ChildRow key={i} child={child} {...props} />
+        ))}
+      </>
+    );
+  }
+  // Top-level section without tag grouping (kind:'section')
+  return (
+    <>
+      {section.children.map((child, i) => (
+        <ChildRow key={i} child={child} {...props} />
+      ))}
+    </>
+  );
+};
+
+const ChildRow = (props) => {
+  const { child } = props;
+  if (child.kind === 'position') return <PositionRow {...props} node={child} />;
+  if (child.kind === 'tx') return <TxRow {...props} tx={child.tx} positionId={child.positionId} />;
+  if (child.kind === 'underlying') return <UnderlyingSection {...props} section={child} />;
+  return null;
+};
+
+const UnderlyingSection = (props) => {
+  const { section, collapsedUnderlyings, onToggleExpandUnderlying, drillToUnderlying } = props;
+  const sym = section.symbol;
+  const collapsed = collapsedUnderlyings && collapsedUnderlyings.has(sym);
+  const expanded = !collapsed;
+  return (
+    <>
+      <tr className="border-b border-gray-200 bg-sky-50">
+        <td colSpan={14} className="px-3 py-1">
+          <button
+            className="inline-flex items-center gap-1.5 text-left hover:underline"
+            onClick={() => onToggleExpandUnderlying && onToggleExpandUnderlying(sym)}
+          >
+            {expanded ? <ChevronDown className="w-3.5 h-3.5 text-gray-500" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-500" />}
+            <span className="font-mono text-xs font-bold text-gray-900 bg-white border border-sky-300 px-1.5 py-0.5 rounded">
+              {sym}
+            </span>
+            <span className="text-xs text-gray-500">({section.children.length})</span>
+            {drillToUnderlying && (
+              <button
+                className="ml-2 text-[10px] text-sky-700 hover:underline"
+                onClick={(e) => { e.stopPropagation(); drillToUnderlying(sym); }}
+                title={`Open ${sym} per-underlying view`}
+              >
+                drill in →
+              </button>
+            )}
+          </button>
+        </td>
+      </tr>
+      {expanded && section.children.map((child, i) => (
+        <ChildRow key={i} child={child} {...props} />
+      ))}
+    </>
+  );
+};
+
+const PositionRow = ({
+  node, annotations, tagsByMember, tagsMeta, positionRollups, indexByPosition,
+  selectedPositions, collapsedPositions, onToggleExpandPosition, onSelectPosition,
+  onEditPosition, onToggleHidden, onSetDisposition, onSelectTx, selected,
+  noteEditingId, noteDraft, setNoteEditingId, setNoteDraft, saveNote,
+  currentPriceForLeg, hasOptionLeg, groupByPosition,
+}) => {
+  if (!groupByPosition) {
+    return (
+      <>
+        {node.txs.map(tx => (
+          <TxRow
+            key={tx.schwab_transaction_id}
+            {...{
+              tx, annotations, selected, onSelectTx, onToggleHidden, onSetDisposition,
+              noteEditingId, noteDraft, setNoteEditingId, setNoteDraft, saveNote,
+              currentPriceForLeg, hasOptionLeg, indexByPosition, positionId: node.positionId,
+            }}
+          />
+        ))}
+      </>
+    );
+  }
+
+  const pid = node.positionId;
+  const meta = node.meta;
+  const rollup = positionRollups.get(pid) || { cost: 0, credits: 0, currentValue: 0, net: 0, txCount: node.txs.length };
+  const expanded = !collapsedPositions.has(pid);
+  const isSelected = selectedPositions.has(pid);
+  const color = colorForPosition(pid, indexByPosition);
+  const tagIds = node.tagIds;
+  // Underlying derived from the position's transactions (positions don't store
+  // it directly — every leg of every tx does, and a position is single-underlying).
+  const underlyingForPosition = (() => {
+    for (const tx of node.txs) {
+      for (const leg of (tx.legs || [])) {
+        const u = leg.underlying || leg.symbol;
+        if (u) return String(u).toUpperCase();
+      }
+    }
+    return '';
+  })();
+  const sign = (v) => (v > 0 ? 'text-green-700' : v < 0 ? 'text-red-700' : 'text-gray-600');
+  const blank = <span className="text-gray-300">—</span>;
+
+  return (
+    <>
+      <tr className={`border-b border-gray-200 ${color.bg} ${isSelected ? 'ring-2 ring-inset ring-blue-400' : ''}`}>
+        <td className="px-1 py-1.5 text-center">
+          <input type="checkbox" checked={isSelected} onChange={() => onSelectPosition(pid)} title="Select position (for tag/edit)" />
+        </td>
+        <td className={`px-0 py-0 w-2 ${color.bar}`}></td>
+        <td colSpan={4} className="px-2 py-1.5">
+          <div className="inline-flex items-center gap-2">
+            <button onClick={() => onToggleExpandPosition(pid)} className="text-gray-500 hover:text-gray-900">
+              {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+            </button>
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded text-white ${color.bar}`}>
+              {positionTypeLabel(meta?.position_type)}
+            </span>
+            {underlyingForPosition && (
+              <span className="font-mono text-xs font-bold text-gray-900 bg-white border border-gray-300 px-1.5 py-0.5 rounded">
+                {underlyingForPosition}
+              </span>
+            )}
+            <button onClick={() => onEditPosition(pid)} className="font-semibold text-gray-900 hover:underline">
+              {meta?.name || `Position ${pid.slice(0, 6)}`}
+            </button>
+            <span className="text-xs text-gray-500">{rollup.txCount} tx{rollup.txCount === 1 ? '' : 's'}</span>
+            {tagIds.size > 0 && (
+              <span className="inline-flex gap-1">
+                {[...tagIds].map(tid => {
+                  const t = tagsMeta[tid];
+                  return (
+                    <span key={tid} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-white border border-gray-300" style={{ color: t?.color }}>
+                      <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: t?.color }} />
+                      {t?.name || '?'}
+                    </span>
+                  );
+                })}
+              </span>
+            )}
+          </div>
+        </td>
+        <td className="px-2 py-1.5 text-right text-gray-500"></td>
+        <td className="px-2 py-1.5 text-right text-gray-700"></td>
+        <td className="px-2 py-1.5 text-right text-gray-700"></td>
+        <td className={`px-2 py-1.5 text-right ${rollup.cost > 0 ? 'text-gray-800' : 'text-gray-300'}`} title="Position cost (debits)">
+          {rollup.cost > 0 ? fmtCurrency(rollup.cost) : blank}
+        </td>
+        <td colSpan={3} className="px-2 py-1.5 text-right text-gray-700">
+          <span className="text-gray-500 mr-2" title="Credits = cash collected. If Closed = cash flow if you flatten the open legs at current marks. Net = net P&L right now.">Credits {rollup.credits > 0 ? fmtCurrency(rollup.credits) : '—'} · If Closed {rollup.currentValue > 0 ? fmtCurrency(rollup.currentValue) : '—'}</span>
+          <span className={`font-bold ${sign(rollup.net)}`}>{fmtCurrency(rollup.net)}</span>
+        </td>
+      </tr>
+      {expanded && node.txs.map(tx => (
+        <TxRow
+          key={tx.schwab_transaction_id}
+          tx={tx}
+          positionId={pid}
+          annotations={annotations}
+          selected={selected}
+          onSelectTx={onSelectTx}
+          onToggleHidden={onToggleHidden}
+          onSetDisposition={onSetDisposition}
+          noteEditingId={noteEditingId}
+          noteDraft={noteDraft}
+          setNoteEditingId={setNoteEditingId}
+          setNoteDraft={setNoteDraft}
+          saveNote={saveNote}
+          currentPriceForLeg={currentPriceForLeg}
+          hasOptionLeg={hasOptionLeg}
+          indexByPosition={indexByPosition}
+        />
+      ))}
+    </>
+  );
+};
+
+const TxRow = ({
+  tx, annotations, selected, onSelectTx, onToggleHidden, onSetDisposition,
+  noteEditingId, noteDraft, setNoteEditingId, setNoteDraft, saveNote,
+  currentPriceForLeg, hasOptionLeg, indexByPosition, positionId,
+}) => {
+  const ann = annotations[tx.schwab_transaction_id] || {};
+  const editing = noteEditingId === tx.schwab_transaction_id;
+  const showDisposition = hasOptionLeg(tx);
+  const net = parseFloat(tx.net_amount || 0);
+  const isSelected = selected.has(tx.schwab_transaction_id);
+  const pid = positionId || ann.transaction_position_id;
+  const color = pid ? colorForPosition(pid, indexByPosition) : null;
+  return (
+    <tr
+      className={`border-b border-gray-100 hover:bg-blue-50 ${ann.hidden ? 'opacity-50' : ''} ${isSelected ? 'ring-2 ring-inset ring-blue-300' : ''}`}
+    >
+      <td className="px-1 py-1.5 text-center">
+        <input type="checkbox" checked={isSelected} onChange={() => onSelectTx(tx.schwab_transaction_id)} />
+      </td>
+      <td className={`px-0 py-0 w-2 ${color ? color.bar : ''}`}></td>
+      <td className="px-2 py-1.5 text-gray-700">{fmtDate(tx.date)}</td>
+      <td className="px-2 py-1.5 text-gray-700">{tx.type}</td>
+      <td className="px-2 py-1.5 text-gray-500">{tx.account_number}</td>
+      <td className="px-2 py-1.5">
+        <div className="flex flex-col gap-0.5">
+          {tx.legs.map((leg, i) => {
+            const isOpt = (leg.asset_type || '').toUpperCase() === 'OPTION';
+            return (
+              <div key={i} className="flex items-center gap-2">
+                {isOpt ? (
+                  <span className={`px-1 py-0.5 text-[10px] font-bold rounded ${leg.option_type === 'call' ? 'bg-blue-600 text-white' : 'bg-purple-600 text-white'}`}>
+                    {leg.option_type === 'call' ? 'C' : 'P'}
+                  </span>
+                ) : (
+                  <span className="px-1 py-0.5 text-[10px] font-bold rounded bg-gray-300 text-gray-800">S</span>
+                )}
+                <span className="font-mono text-gray-900">{isOpt ? fmtOptionSymbol(leg) : (leg.symbol || '')}</span>
+                {leg.position_effect && <span className="text-[10px] text-gray-500">{leg.position_effect}</span>}
+              </div>
+            );
+          })}
+        </div>
+      </td>
+      <td className="px-2 py-1.5 text-right text-gray-800">
+        {tx.legs.map((l, i) => (
+          <div key={i} className={l.amount < 0 ? 'text-red-600' : 'text-green-700'}>
+            {l.amount != null ? (l.amount > 0 ? `+${fmtQty(l.amount)}` : fmtQty(l.amount)) : '-'}
+          </div>
+        ))}
+      </td>
+      <td className="px-2 py-1.5 text-right text-gray-700">
+        {tx.legs.map((l, i) => (<div key={i}>{l.price != null ? fmtCurrency(l.price) : '-'}</div>))}
+      </td>
+      <td className="px-2 py-1.5 text-right text-gray-700">
+        {tx.legs.map((l, i) => {
+          const isClosing = (l.position_effect || '').toUpperCase() === 'CLOSING';
+          const cur = isClosing ? null : currentPriceForLeg(l);
+          return (<div key={i} className={cur != null ? '' : 'text-gray-300'}>{cur != null ? fmtCurrency(cur) : '—'}</div>);
+        })}
+      </td>
+      <td className="px-2 py-1.5 text-right">
+        {tx.legs.map((l, i) => {
+          const isClosing = (l.position_effect || '').toUpperCase() === 'CLOSING';
+          const cur = isClosing ? null : currentPriceForLeg(l);
+          const mult = (l.asset_type || '').toUpperCase() === 'OPTION' ? 100 : 1;
+          const traded = l.price != null ? parseFloat(l.price) : null;
+          const amt = l.amount != null ? parseFloat(l.amount) : null;
+          let reverse = null;
+          if (cur != null && traded != null && amt != null) reverse = (cur - traded) * amt * mult;
+          return (
+            <div key={i} className={reverse == null ? 'text-gray-300' : reverse > 0 ? 'text-green-700' : reverse < 0 ? 'text-red-700' : 'text-gray-600'}>
+              {reverse == null ? '—' : (reverse > 0 ? '+' : '') + fmtCurrency(reverse)}
+            </div>
+          );
+        })}
+      </td>
+      <td className={`px-2 py-1.5 text-right font-semibold ${net > 0 ? 'text-green-700' : net < 0 ? 'text-red-700' : 'text-gray-600'}`}>
+        {fmtCurrency(net)}
+      </td>
+      <td className="px-2 py-1.5">
+        {showDisposition ? (
+          <select
+            value={ann.disposition || ''}
+            onChange={e => onSetDisposition(tx, e.target.value)}
+            className="text-xs border rounded px-1 py-0.5"
+          >
+            <option value="">—</option>
+            <option value="closed">Closed</option>
+            <option value="rolled">Rolled</option>
+            <option value="expired">Expired</option>
+            <option value="assigned">Assigned</option>
+          </select>
+        ) : <span className="text-gray-300 text-xs">—</span>}
+      </td>
+      <td className="px-2 py-1.5">
+        {editing ? (
+          <div className="flex gap-1">
+            <input
+              autoFocus
+              value={noteDraft}
+              onChange={e => setNoteDraft(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') saveNote(tx);
+                if (e.key === 'Escape') { setNoteEditingId(null); setNoteDraft(''); }
+              }}
+              className="text-xs border rounded px-1 py-0.5 flex-1"
+            />
+            <button onClick={() => saveNote(tx)} className="text-xs text-blue-600">Save</button>
+          </div>
+        ) : (
+          <button
+            onClick={() => { setNoteEditingId(tx.schwab_transaction_id); setNoteDraft(ann.note || ''); }}
+            className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 group"
+          >
+            <StickyNote className="w-3 h-3 opacity-60 group-hover:opacity-100" />
+            <span className="truncate max-w-[160px]">{ann.note || <span className="italic text-gray-400">add note</span>}</span>
+          </button>
+        )}
+      </td>
+      <td className="px-2 py-1.5 text-center">
+        <button onClick={() => onToggleHidden(tx)} className="text-gray-500 hover:text-gray-900" title={ann.hidden ? 'Show' : 'Hide'}>
+          {ann.hidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+        </button>
+      </td>
+    </tr>
+  );
+};
+
+// =================================================================
+// CurrentPositionStrip — preserved from prior implementation
+// =================================================================
 
 const CurrentPositionStrip = ({ data, realized, collapsed, onToggleCollapsed }) => {
   if (!data) {
-    return (
-      <div className="bg-white border-b px-4 py-2 text-xs text-gray-500 italic">
-        Loading current position…
-      </div>
-    );
+    return <div className="bg-white border-b px-4 py-2 text-xs text-gray-500 italic">Loading current position…</div>;
   }
-
   const stock = data.stock || { quantity: 0, average_cost: 0, cost_basis: 0, current_value: 0, unrealized_pnl: 0 };
   const optionLegs = (data.options || []).map(o => ({
-    ...o,
-    premium: o.open_price,  // keep old key name for fmtOptionSymbol
-    asset_type: 'option',
-    pnl: o.unrealized_pnl,
+    ...o, premium: o.open_price, asset_type: 'option', pnl: o.unrealized_pnl,
   }));
-
   const hasStock = Math.abs(parseFloat(stock.quantity) || 0) > 0;
   const hasOptions = optionLegs.length > 0;
   if (!hasStock && !hasOptions) {
-    return (
-      <div className="bg-white border-b px-4 py-2 text-xs text-gray-500 italic">
-        No open position for this underlying.
-      </div>
-    );
+    return <div className="bg-white border-b px-4 py-2 text-xs text-gray-500 italic">No open position for this underlying.</div>;
   }
 
   const stockQty = parseFloat(stock.quantity) || 0;
-  const stockCost = Math.abs(parseFloat(stock.cost_basis) || 0);      // magnitude, always positive
+  const stockCost = Math.abs(parseFloat(stock.cost_basis) || 0);
   const stockMarketValue = Math.abs(parseFloat(stock.current_value) || 0);
-  const stockNet = parseFloat(stock.unrealized_pnl) || 0;             // signed P&L
+  const stockNet = parseFloat(stock.unrealized_pnl) || 0;
   const stockAvg = parseFloat(stock.average_cost) || 0;
 
-  // Rows use always-positive magnitudes for Cost / Credits / Current Value.
-  // Direction is conveyed by the signed qty next to the symbol. Net is signed.
   const rows = [];
   if (hasStock) {
     const isLong = stockQty > 0;
     rows.push({
-      kind: 'stock',
-      symbol: data.underlying,
-      qty: stockQty,
-      avgPrice: stockAvg,
-      cost: isLong ? stockCost : 0,
-      credits: !isLong ? stockCost : 0,
-      currentValue: stockMarketValue,
-      net: stockNet,
+      kind: 'stock', symbol: data.underlying, qty: stockQty, avgPrice: stockAvg,
+      cost: isLong ? stockCost : 0, credits: !isLong ? stockCost : 0,
+      currentValue: stockMarketValue, net: stockNet,
     });
   }
   for (const o of optionLegs) {
@@ -799,30 +1516,19 @@ const CurrentPositionStrip = ({ data, realized, collapsed, onToggleCollapsed }) 
     const curPrice = parseFloat(o.current_price) || 0;
     const mult = 100;
     const absQty = Math.abs(qty);
-    const costOrCredit = absQty * openPrice * mult;   // positive
-    const marketValue = absQty * curPrice * mult;      // positive
+    const costOrCredit = absQty * openPrice * mult;
+    const marketValue = absQty * curPrice * mult;
     const isLong = qty > 0;
     rows.push({
-      kind: 'option',
-      option_type: o.option_type,
-      underlying: o.underlying,
-      strike: o.strike,
-      expiration: o.expiration,
-      symbol: o.symbol,
-      qty,
-      avgPrice: openPrice,
-      cost: isLong ? costOrCredit : 0,
-      credits: !isLong ? costOrCredit : 0,
-      currentValue: marketValue,
-      net: parseFloat(o.unrealized_pnl) || 0,
+      kind: 'option', option_type: o.option_type, underlying: o.underlying,
+      strike: o.strike, expiration: o.expiration, symbol: o.symbol, qty, avgPrice: openPrice,
+      cost: isLong ? costOrCredit : 0, credits: !isLong ? costOrCredit : 0,
+      currentValue: marketValue, net: parseFloat(o.unrealized_pnl) || 0,
     });
   }
-
   const totals = rows.reduce((a, r) => ({
-    cost: a.cost + r.cost,
-    credits: a.credits + r.credits,
-    currentValue: a.currentValue + r.currentValue,
-    net: a.net + r.net,
+    cost: a.cost + r.cost, credits: a.credits + r.credits,
+    currentValue: a.currentValue + r.currentValue, net: a.net + r.net,
   }), { cost: 0, credits: 0, currentValue: 0, net: 0 });
 
   const sign = (v) => (v > 0 ? 'text-green-700' : v < 0 ? 'text-red-700' : 'text-gray-500');
@@ -837,6 +1543,14 @@ const CurrentPositionStrip = ({ data, realized, collapsed, onToggleCollapsed }) 
         >
           {collapsed ? <ChevronRight className="w-3.5 h-3.5 text-gray-500" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-500" />}
           <span className="text-sm font-bold text-gray-900">Current Open Position</span>
+          {data.underlying_price != null && (
+            <span
+              className="text-xs text-gray-700 font-mono bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded"
+              title={data.underlying_quote_at ? `Quoted ${new Date(data.underlying_quote_at).toLocaleTimeString()}` : 'Underlying spot'}
+            >
+              {data.underlying} {fmtCurrency(data.underlying_price)}
+            </span>
+          )}
           <span className="text-xs text-gray-500">
             {hasStock ? `${fmtQty(stockQty)} shares` : 'no shares'}
             {hasOptions ? ` · ${optionLegs.length} option${optionLegs.length === 1 ? '' : 's'}` : ''}
@@ -866,12 +1580,8 @@ const CurrentPositionStrip = ({ data, realized, collapsed, onToggleCollapsed }) 
                           {r.option_type === 'call' ? 'C' : 'P'}
                         </span>
                         {fmtOptionSymbol({
-                          asset_type: 'OPTION',
-                          option_type: r.option_type,
-                          underlying: r.underlying,
-                          strike: r.strike,
-                          expiration: r.expiration,
-                          symbol: r.symbol,
+                          asset_type: 'OPTION', option_type: r.option_type,
+                          underlying: r.underlying, strike: r.strike, expiration: r.expiration, symbol: r.symbol,
                         })}
                       </span>
                     ) : (
@@ -884,9 +1594,7 @@ const CurrentPositionStrip = ({ data, realized, collapsed, onToggleCollapsed }) 
                       {r.qty > 0 ? '+' : ''}{fmtQty(r.qty)}
                     </span>
                     {r.avgPrice != null && (
-                      <span className="ml-2 text-[10px] text-gray-500">
-                        @ avg {fmtCurrency(r.avgPrice)}
-                      </span>
+                      <span className="ml-2 text-[10px] text-gray-500">@ avg {fmtCurrency(r.avgPrice)}</span>
                     )}
                   </td>
                   <td className={`px-2 py-1 text-right ${r.cost > 0 ? 'text-gray-800' : 'text-gray-300'}`}>
@@ -895,7 +1603,7 @@ const CurrentPositionStrip = ({ data, realized, collapsed, onToggleCollapsed }) 
                   <td className={`px-2 py-1 text-right ${r.credits > 0 ? 'text-gray-800' : 'text-gray-300'}`}>
                     {r.credits > 0 ? fmtCurrency(r.credits) : blank}
                   </td>
-                  <td className={`px-2 py-1 text-right text-gray-800`}>{fmtCurrency(r.currentValue)}</td>
+                  <td className="px-2 py-1 text-right text-gray-800">{fmtCurrency(r.currentValue)}</td>
                   <td className={`px-2 py-1 text-right font-semibold ${sign(r.net)}`}>{fmtCurrency(r.net)}</td>
                 </tr>
               ))}
@@ -914,431 +1622,31 @@ const CurrentPositionStrip = ({ data, realized, collapsed, onToggleCollapsed }) 
   );
 };
 
-const RollupStrip = ({
-  transactions, annotations, linkGroupsMeta, groupLabels, indexByGroupId, livePriceBySymbol,
-  visibleCount, hiddenCount, onEditGroup, collapsed, onToggleCollapsed,
-  expandedGroups, onToggleExpandGroup,
-}) => {
-  // Bucket visible (non-hidden) transactions by link_group_id, with an
-  // "Ungrouped" bucket for those without a group. Within each bucket, per
-  // symbol, we track OPENING lots chronologically and apply FILO (most-recent
-  // first) when CLOSING legs arrive — giving the exact remaining cost basis
-  // for still-open positions even when the bucket has partial closes or
-  // multi-price opens.
-  const rollups = React.useMemo(() => {
-    const buckets = new Map();
-    // transactions come from the API chronologically ASC, so we can walk in order.
-    for (const tx of transactions) {
-      const ann = annotations[tx.schwab_transaction_id] || {};
-      if (ann.hidden) continue;
-      const key = ann.link_group_id || '__ungrouped__';
-      if (!buckets.has(key)) {
-        buckets.set(key, {
-          cost: 0,          // sum of negative net_amount on all txs
-          credits: 0,       // sum of positive net_amount on all txs
-          legsBySymbol: new Map(),
-          txCount: 0,
-          txs: [],          // preserved for expanded-group detail view
-        });
-      }
-      const b = buckets.get(key);
-      b.txCount += 1;
-      b.txs.push(tx);
-      const amt = parseFloat(tx.net_amount) || 0;
-      if (amt < 0) b.cost += amt;
-      else b.credits += amt;
+// =================================================================
+// PositionEditorModal — edit a classified position
+// =================================================================
 
-      for (const leg of (tx.legs || [])) {
-        const sym = normalizeSymbol(leg.symbol);
-        if (!sym) continue;
-        const effect = (leg.position_effect || '').toUpperCase();
-        const signedQty = parseFloat(leg.amount) || 0;
-        const absQty = Math.abs(signedQty);
-        const price = parseFloat(leg.price) || 0;
-        if (absQty === 0) continue;
+const POSITION_TYPE_OPTIONS = [
+  'manual',
+  'stock', 'assigned_stock',
+  'sold_put', 'sold_call', 'bought_put', 'bought_call',
+  'sold_vertical_put', 'sold_vertical_call',
+  'bought_vertical_put', 'bought_vertical_call',
+  'rolled_options',
+  'box_spread', 'iron_condor',
+];
 
-        const assetType = (leg.asset_type || '').toUpperCase();
-        if (!b.legsBySymbol.has(sym)) {
-          b.legsBySymbol.set(sym, {
-            lots: [],             // chronological OPENING lots; each { qty, price, direction }
-            display_symbol: leg.symbol,
-            asset_type: assetType,
-            option_type: leg.option_type,
-            underlying: leg.underlying,
-            strike: leg.strike,
-            expiration: leg.expiration,
-          });
-        }
-        const s = b.legsBySymbol.get(sym);
-
-        if (effect === 'CLOSING') {
-          // FILO: pull from the end
-          let rem = absQty;
-          while (rem > 0 && s.lots.length > 0) {
-            const last = s.lots[s.lots.length - 1];
-            if (last.qty <= rem + 1e-9) {
-              rem -= last.qty;
-              s.lots.pop();
-            } else {
-              last.qty -= rem;
-              rem = 0;
-            }
-          }
-          // Overflow (closing > opens in this bucket) silently dropped — that
-          // just means the matching open wasn't included in this bucket.
-        } else {
-          // Treat OPENING (or unknown) as add-a-lot
-          const direction = signedQty > 0 ? 1 : -1;  // +1 long, -1 short
-          s.lots.push({ qty: absQty, price, direction });
-        }
-      }
-    }
-
-    const result = [];
-    for (const [key, b] of buckets) {
-      let marketValueTotal = 0;       // always-positive sum of |qty| × cur × mult
-      // Signed cash you'd net by closing every still-open leg in the bucket:
-      //   long  → +marketValue (you sell to close)
-      //   short → -marketValue (you buy to close)
-      let closeOutSigned = 0;
-      const legs = [];
-
-      for (const [sym, s] of b.legsBySymbol) {
-        if (s.lots.length === 0) continue;
-        const mult = s.asset_type === 'OPTION' ? 100 : 1;
-        let absRemaining = 0;
-        let weightedPriceNum = 0;
-        for (const lot of s.lots) {
-          absRemaining += lot.qty;
-          weightedPriceNum += lot.qty * lot.price;
-        }
-        if (absRemaining < 1e-9) continue;
-        const direction = s.lots[0].direction;  // +1 long, -1 short
-        const signedQty = direction * absRemaining;
-        const avgPrice = weightedPriceNum / absRemaining;
-        const cur = livePriceBySymbol.get(sym);
-        const costOrCredit = absRemaining * avgPrice * mult;  // positive magnitude
-        const marketValue = cur != null ? absRemaining * cur * mult : null;  // positive
-        // Per-leg standalone "if closed now" P&L (used in sub-rows only).
-        const legUnrealized = marketValue != null
-          ? direction * (marketValue - costOrCredit)
-          : null;
-        if (marketValue != null) {
-          marketValueTotal += marketValue;
-          closeOutSigned += direction * marketValue;
-        }
-
-        legs.push({
-          symbol: s.display_symbol || sym,
-          raw_symbol: sym,
-          asset_type: s.asset_type,
-          option_type: s.option_type,
-          underlying: s.underlying,
-          strike: s.strike,
-          expiration: s.expiration,
-          qty: signedQty,
-          avg_price: avgPrice,
-          cost: direction > 0 ? Math.round(costOrCredit * 100) / 100 : 0,
-          credits: direction < 0 ? Math.round(costOrCredit * 100) / 100 : 0,
-          current_price: cur,
-          current_value: marketValue != null ? Math.round(marketValue * 100) / 100 : null,
-          leg_net: legUnrealized != null ? Math.round(legUnrealized * 100) / 100 : null,
-          still_live: cur != null,
-        });
-      }
-      legs.sort((a, b) => {
-        if (a.asset_type !== b.asset_type) return a.asset_type === 'STOCK' ? -1 : 1;
-        return (a.expiration || '').localeCompare(b.expiration || '');
-      });
-      // Top-row totals:
-      //   Cost    = magnitude of all debits in the bucket (closed + open mixed)
-      //   Credits = magnitude of all credits in the bucket (closed + open mixed)
-      //   Current Value = sum of still-open market values (magnitudes)
-      //   Net = "if everything closed now" P&L
-      //       = (credits − cost) + Σ(direction × marketValue of open legs)
-      //   The first term is the bucket's net cash so far (signed).
-      //   The second term is what you'd net by closing every open leg today.
-      //   This avoids the double-count bug of subtracting per-leg cost/credit
-      //   when those amounts are already inside Cost/Credits at the top row.
-      const cost = Math.round(Math.abs(b.cost) * 100) / 100;        // positive magnitude
-      const credits = Math.round(b.credits * 100) / 100;            // positive
-      const cv = Math.round(marketValueTotal * 100) / 100;           // positive
-      const net = Math.round((credits - cost + closeOutSigned) * 100) / 100;
-      result.push({
-        key,
-        groupId: key === '__ungrouped__' ? null : key,
-        label: key === '__ungrouped__'
-          ? 'Ungrouped'
-          : (linkGroupsMeta[key]?.name || groupLabels.get(key) || `Group ${key.slice(0, 4)}`),
-        shortLabel: key === '__ungrouped__' ? null : groupLabels.get(key),
-        cost,
-        credits,
-        currentValue: cv,
-        net,
-        txCount: b.txCount,
-        legs,
-        txs: b.txs,
-      });
-    }
-    // Sort by G-index (creation order); Ungrouped pinned to the end
-    result.sort((a, b) => {
-      if (a.key === '__ungrouped__') return 1;
-      if (b.key === '__ungrouped__') return -1;
-      const ai = indexByGroupId.get(a.key);
-      const bi = indexByGroupId.get(b.key);
-      return (ai ?? 999) - (bi ?? 999);
-    });
-    return result;
-  }, [transactions, annotations, linkGroupsMeta, groupLabels, indexByGroupId, livePriceBySymbol]);
-
-  const totals = React.useMemo(() => {
-    const t = { cost: 0, credits: 0, currentValue: 0, net: 0, txCount: 0 };
-    for (const r of rollups) {
-      t.cost += r.cost;
-      t.credits += r.credits;
-      t.currentValue += r.currentValue;
-      t.net += r.net;
-      t.txCount += r.txCount;
-    }
-    const r2 = (x) => Math.round(x * 100) / 100;
-    return { cost: r2(t.cost), credits: r2(t.credits), currentValue: r2(t.currentValue), net: r2(t.net), txCount: t.txCount };
-  }, [rollups]);
-
-  if (rollups.length === 0) return null;
-
-  const sign = (v) => (v > 0 ? 'text-green-700' : v < 0 ? 'text-red-700' : 'text-gray-600');
-  const blank = <span className="text-gray-300">—</span>;
-
-  return (
-    <div className="bg-white border-b px-4 py-2">
-      <div className="border border-gray-200 rounded-lg">
-        <button
-          onClick={onToggleCollapsed}
-          className="w-full flex items-center gap-2 px-3 py-1.5 border-b border-gray-200 bg-gray-50 hover:bg-gray-100 text-left"
-        >
-          {collapsed ? <ChevronRight className="w-3.5 h-3.5 text-gray-500" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-500" />}
-          <span className="text-sm font-bold text-gray-900">Group Rollups</span>
-          <span className="text-xs text-gray-500">{visibleCount} visible · {hiddenCount} hidden</span>
-          <span className="ml-auto text-xs text-gray-600">
-            Total: <span className={`font-semibold ${sign(totals.net)}`}>{fmtCurrency(totals.net)}</span>
-          </span>
-        </button>
-        {!collapsed && (
-        <table className="w-full text-xs">
-          <thead className="text-gray-500">
-            <tr className="border-b border-gray-200">
-              <th className="text-left px-0 py-1.5 w-2"></th>
-              <th className="text-left px-2 py-1.5">Group</th>
-              <th className="text-right px-2 py-1.5 w-12">Txs</th>
-              <th className="text-right px-2 py-1.5 w-28">Cost</th>
-              <th className="text-right px-2 py-1.5 w-28">Credits</th>
-              <th className="text-right px-2 py-1.5 w-28">Current Value</th>
-              <th className="text-right px-2 py-1.5 w-28">Net</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rollups.map(r => {
-              const color = r.groupId ? colorForGroup(r.groupId, indexByGroupId) : null;
-              // Per user request: drop the still-open sub-rows under all groups —
-              // the expanded transaction list shows the relevant detail.
-              const stillOpenLegs = [];
-              const isExpanded = expandedGroups.has(r.key);
-              return (
-                <React.Fragment key={r.key}>
-                  <tr className={`border-b border-gray-100 ${color ? color.bg : ''}`}>
-                    <td className={`px-0 py-1.5 w-2 ${color ? color.bar : ''}`}></td>
-                    <td className="px-2 py-1.5">
-                      <div className="inline-flex items-center gap-1.5">
-                        <button
-                          onClick={() => onToggleExpandGroup(r.key)}
-                          className="text-gray-500 hover:text-gray-900"
-                          title={isExpanded ? 'Collapse details' : 'Expand details'}
-                        >
-                          {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                        </button>
-                        {r.groupId ? (
-                          <button
-                            onClick={() => onEditGroup(r.groupId)}
-                            className="inline-flex items-center gap-1.5 hover:underline"
-                            title="Edit group name/note"
-                          >
-                            <span className={`inline-block text-[10px] font-bold text-white px-1 py-0.5 rounded ${color.bar}`}>
-                              {r.shortLabel}
-                            </span>
-                            <span className="font-semibold">{r.label}</span>
-                          </button>
-                        ) : (
-                          <span className="text-gray-600 italic">Ungrouped</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-2 py-1.5 text-right text-gray-700">{r.txCount}</td>
-                    <td className={`px-2 py-1.5 text-right ${r.cost > 0 ? 'text-gray-800' : 'text-gray-300'}`}>{r.cost !== 0 ? fmtCurrency(r.cost) : blank}</td>
-                    <td className={`px-2 py-1.5 text-right ${r.credits > 0 ? 'text-gray-800' : 'text-gray-300'}`}>{r.credits !== 0 ? fmtCurrency(r.credits) : blank}</td>
-                    <td className={`px-2 py-1.5 text-right text-gray-800`}>
-                      {r.currentValue > 0 ? fmtCurrency(r.currentValue) : blank}
-                    </td>
-                    <td className={`px-2 py-1.5 text-right font-bold ${sign(r.net)}`}>{fmtCurrency(r.net)}</td>
-                  </tr>
-                  {/* Sub-row per still-open leg, FILO-matched cost basis in this bucket. */}
-                  {stillOpenLegs.map((leg, idx) => (
-                    <tr key={`${r.key}-leg-${idx}`} className="border-b border-gray-50 text-[11px] text-gray-600 bg-white">
-                      <td className={`px-0 py-1 w-2 ${color ? color.bar : ''} opacity-40`}></td>
-                      <td className="px-2 py-1 pl-8">
-                        {leg.asset_type === 'OPTION' ? (
-                          <span className="font-mono">
-                            <span className={`mr-1.5 px-1 py-0.5 text-[10px] font-bold rounded ${leg.option_type === 'call' ? 'bg-blue-600 text-white' : 'bg-purple-600 text-white'}`}>
-                              {leg.option_type === 'call' ? 'C' : 'P'}
-                            </span>
-                            {fmtOptionSymbol({
-                              asset_type: 'OPTION',
-                              option_type: leg.option_type,
-                              underlying: leg.underlying,
-                              strike: leg.strike,
-                              expiration: leg.expiration,
-                              symbol: leg.symbol,
-                            })}
-                          </span>
-                        ) : (
-                          <span className="font-mono">
-                            <span className="mr-1.5 px-1 py-0.5 text-[10px] font-bold rounded bg-gray-300 text-gray-800">S</span>
-                            {leg.symbol}
-                          </span>
-                        )}
-                        <span className={`ml-2 text-[10px] ${leg.qty < 0 ? 'text-red-600' : 'text-green-700'}`}>
-                          {leg.qty > 0 ? '+' : ''}{fmtQty(leg.qty)}
-                        </span>
-                        {leg.avg_price != null && (
-                          <span className="ml-2 text-[10px] text-gray-500">
-                            @ avg {fmtCurrency(leg.avg_price)}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-2 py-1"></td>
-                      <td className={`px-2 py-1 text-right ${leg.cost > 0 ? 'text-gray-800' : 'text-gray-300'}`}>
-                        {leg.cost > 0 ? fmtCurrency(leg.cost) : blank}
-                      </td>
-                      <td className={`px-2 py-1 text-right ${leg.credits > 0 ? 'text-gray-800' : 'text-gray-300'}`}>
-                        {leg.credits > 0 ? fmtCurrency(leg.credits) : blank}
-                      </td>
-                      <td className="px-2 py-1 text-right text-gray-800">
-                        {leg.current_value != null ? fmtCurrency(leg.current_value) : blank}
-                      </td>
-                      <td className={`px-2 py-1 text-right font-semibold ${sign(leg.leg_net)}`}>
-                        {leg.leg_net != null ? fmtCurrency(leg.leg_net) : blank}
-                      </td>
-                    </tr>
-                  ))}
-                  {/* Expanded: full transaction list for this bucket (opens + closes). */}
-                  {isExpanded && r.txs.length > 0 && (
-                    <tr className={color ? color.bg : ''}>
-                      <td className={`px-0 py-0 w-2 ${color ? color.bar : ''} opacity-40`}></td>
-                      <td colSpan={6} className="px-3 py-2">
-                        <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">
-                          All transactions in this group ({r.txs.length})
-                        </div>
-                        <table className="w-full text-[11px]">
-                          <thead className="text-gray-500">
-                            <tr className="border-b border-gray-200">
-                              <th className="text-left py-0.5 w-20">Date</th>
-                              <th className="text-left py-0.5 w-24">Type</th>
-                              <th className="text-left py-0.5">Legs</th>
-                              <th className="text-right py-0.5 w-14">Qty</th>
-                              <th className="text-right py-0.5 w-20">Price</th>
-                              <th className="text-right py-0.5 w-24">Net Cash</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {r.txs.map(tx => {
-                              const net = parseFloat(tx.net_amount) || 0;
-                              const disp = (annotations[tx.schwab_transaction_id] || {}).disposition;
-                              return (
-                                <tr key={tx.schwab_transaction_id} className="border-b border-gray-100 last:border-0">
-                                  <td className="py-0.5 text-gray-700">{fmtDate(tx.date)}</td>
-                                  <td className="py-0.5 text-gray-700">
-                                    <div className="flex items-center gap-1.5">
-                                      <span>{tx.type}</span>
-                                      {disp && <DispositionBadge value={disp} />}
-                                    </div>
-                                  </td>
-                                  <td className="py-0.5">
-                                    {tx.legs.map((leg, i) => {
-                                      const isOpt = (leg.asset_type || '').toUpperCase() === 'OPTION';
-                                      return (
-                                        <div key={i} className="flex items-center gap-1.5">
-                                          {isOpt ? (
-                                            <span className={`px-1 py-0.5 text-[9px] font-bold rounded ${leg.option_type === 'call' ? 'bg-blue-600 text-white' : 'bg-purple-600 text-white'}`}>
-                                              {leg.option_type === 'call' ? 'C' : 'P'}
-                                            </span>
-                                          ) : (
-                                            <span className="px-1 py-0.5 text-[9px] font-bold rounded bg-gray-300 text-gray-800">S</span>
-                                          )}
-                                          <span className="font-mono text-gray-900">{isOpt ? fmtOptionSymbol(leg) : (leg.symbol || '')}</span>
-                                          {leg.position_effect && (
-                                            <span className="text-[9px] text-gray-500">{leg.position_effect}</span>
-                                          )}
-                                        </div>
-                                      );
-                                    })}
-                                  </td>
-                                  <td className="py-0.5 text-right">
-                                    {tx.legs.map((l, i) => (
-                                      <div key={i} className={l.amount < 0 ? 'text-red-600' : 'text-green-700'}>
-                                        {l.amount != null ? (l.amount > 0 ? `+${fmtQty(l.amount)}` : fmtQty(l.amount)) : '-'}
-                                      </div>
-                                    ))}
-                                  </td>
-                                  <td className="py-0.5 text-right text-gray-700">
-                                    {tx.legs.map((l, i) => (
-                                      <div key={i}>{l.price != null ? fmtCurrency(l.price) : '-'}</div>
-                                    ))}
-                                  </td>
-                                  <td className={`py-0.5 text-right font-semibold ${net > 0 ? 'text-green-700' : net < 0 ? 'text-red-700' : 'text-gray-600'}`}>
-                                    {fmtCurrency(net)}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </td>
-                    </tr>
-                  )}
-                </React.Fragment>
-              );
-            })}
-            {/* Total row replaces the removed transaction-totals panel */}
-            <tr className="bg-gray-100 border-t-2 border-gray-300 font-semibold">
-              <td className="px-0 py-1.5 w-2"></td>
-              <td className="px-2 py-1.5 text-gray-900">Total</td>
-              <td className="px-2 py-1.5 text-right text-gray-700">{totals.txCount}</td>
-              <td className="px-2 py-1.5 text-right text-gray-900">{totals.cost !== 0 ? fmtCurrency(totals.cost) : blank}</td>
-              <td className="px-2 py-1.5 text-right text-gray-900">{totals.credits !== 0 ? fmtCurrency(totals.credits) : blank}</td>
-              <td className="px-2 py-1.5 text-right text-gray-900">{totals.currentValue !== 0 ? fmtCurrency(totals.currentValue) : blank}</td>
-              <td className={`px-2 py-1.5 text-right font-bold ${sign(totals.net)}`}>{fmtCurrency(totals.net)}</td>
-            </tr>
-          </tbody>
-        </table>
-        )}
-      </div>
-    </div>
-  );
-};
-
-
-const GroupEditorModal = ({ groupId, label, meta, indexByGroupId, onClose, onSave }) => {
+const PositionEditorModal = ({ positionId, meta, colorIdx, onClose, onSave }) => {
   const [name, setName] = useState(meta.name || '');
   const [note, setNote] = useState(meta.note || '');
-  const color = colorForGroup(groupId, indexByGroupId);
+  const [positionType, setPositionType] = useState(meta.position_type || 'manual');
+  const color = colorForPosition(positionId, new Map([[positionId, colorIdx ?? 0]]));
   return (
     <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50" onClick={onClose}>
-      <div
-        className="bg-white rounded-lg shadow-lg w-full max-w-md p-4"
-        onClick={e => e.stopPropagation()}
-      >
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-4" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-2 mb-3">
           <span className={`inline-block w-3 h-3 rounded ${color.bar}`} />
-          <h2 className="text-sm font-bold text-gray-900">Edit group {label}</h2>
+          <h2 className="text-sm font-bold text-gray-900">Edit position</h2>
           <button className="ml-auto text-gray-500 hover:text-gray-900" onClick={onClose}><X className="w-4 h-4" /></button>
         </div>
         <label className="block text-xs text-gray-600 mb-1">Name</label>
@@ -1349,61 +1657,177 @@ const GroupEditorModal = ({ groupId, label, meta, indexByGroupId, onClose, onSav
           placeholder="e.g. MSFT P370 roll"
           autoFocus
         />
+        <label className="block text-xs text-gray-600 mb-1">Position type</label>
+        <select
+          className="w-full border rounded px-2 py-1 text-sm mb-3"
+          value={positionType}
+          onChange={e => setPositionType(e.target.value)}
+        >
+          {POSITION_TYPE_OPTIONS.map(t => (
+            <option key={t} value={t}>{positionTypeLabel(t)}</option>
+          ))}
+        </select>
         <label className="block text-xs text-gray-600 mb-1">Note</label>
         <textarea
           className="w-full border rounded px-2 py-1 text-sm mb-3"
           rows={4}
           value={note}
           onChange={e => setNote(e.target.value)}
-          placeholder="What is this roll / cycle about?"
+          placeholder="Context, reasoning, etc."
         />
         <div className="flex justify-end gap-2">
           <button className="px-3 py-1 text-xs bg-gray-100 rounded hover:bg-gray-200" onClick={onClose}>Cancel</button>
           <button
             className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
-            onClick={() => onSave({ name, note })}
-          >
-            Save
-          </button>
+            onClick={() => onSave({ name, note, position_type: positionType })}
+          >Save</button>
         </div>
         <div className="mt-3 text-[10px] text-gray-400 flex items-center gap-1">
-          <Pencil className="w-3 h-3" /> Group ID: {groupId}
+          <Pencil className="w-3 h-3" /> Position ID: {positionId}
         </div>
       </div>
     </div>
   );
 };
 
-const DispositionBadge = ({ value }) => {
-  if (!value) return null;
-  const palette = {
-    closed:   'bg-gray-200 text-gray-800',
-    rolled:   'bg-amber-100 text-amber-800',
-    expired:  'bg-blue-100 text-blue-800',
-    assigned: 'bg-purple-100 text-purple-800',
-  };
-  const cls = palette[value] || 'bg-gray-200 text-gray-800';
-  return (
-    <span className={`inline-block px-1.5 py-0 rounded text-[9px] font-semibold uppercase ${cls}`}>
-      {value}
-    </span>
-  );
-};
+// =================================================================
+// TagManagerModal — list/create/rename/delete tags
+// =================================================================
 
-const SummaryCell = ({ label, value, tone, raw, bold }) => {
-  let color = 'text-gray-900';
-  if (tone !== undefined && !raw) {
-    if (tone > 0) color = 'text-green-700';
-    else if (tone < 0) color = 'text-red-700';
-  }
+const TagManagerModal = ({ tags, onClose, onCreate, onUpdate, onDelete }) => {
+  const [newName, setNewName] = useState('');
+  const [editingId, setEditingId] = useState(null);
+  const [editName, setEditName] = useState('');
+  const [editColor, setEditColor] = useState('');
+
+  const submitCreate = (e) => {
+    e.preventDefault();
+    if (!newName.trim()) return;
+    onCreate(newName.trim());
+    setNewName('');
+  };
+
   return (
-    <div>
-      <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{label}</div>
-      <div className={`${bold ? 'text-lg font-bold' : 'text-sm font-semibold'} ${color}`}>
-        {value}
+    <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-2 mb-3">
+          <TagIcon className="w-4 h-4 text-emerald-700" />
+          <h2 className="text-sm font-bold text-gray-900">Manage Tags</h2>
+          <button className="ml-auto text-gray-500 hover:text-gray-900" onClick={onClose}><X className="w-4 h-4" /></button>
+        </div>
+        <form onSubmit={submitCreate} className="flex gap-2 mb-3">
+          <input
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            placeholder="New tag name…"
+            className="flex-1 border rounded px-2 py-1 text-sm"
+          />
+          <button type="submit" className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-700">
+            <Plus className="w-3 h-3" /> Add
+          </button>
+        </form>
+        <div className="max-h-80 overflow-auto border rounded">
+          {tags.length === 0 ? (
+            <div className="p-3 text-xs text-gray-500 italic">No tags yet.</div>
+          ) : tags.map(t => {
+            const editing = editingId === t.id;
+            return (
+              <div key={t.id} className="flex items-center gap-2 px-3 py-1.5 border-b last:border-0 text-sm">
+                <span className="inline-block w-3 h-3 rounded" style={{ background: t.color }} />
+                {editing ? (
+                  <>
+                    <input value={editName} onChange={e => setEditName(e.target.value)} className="flex-1 border rounded px-1 py-0.5 text-sm" />
+                    <input value={editColor} onChange={e => setEditColor(e.target.value)} className="w-20 border rounded px-1 py-0.5 text-xs font-mono" placeholder="#hex" />
+                    <button
+                      onClick={() => { onUpdate(t.id, { name: editName, color: editColor || null }); setEditingId(null); }}
+                      className="text-xs text-blue-600"
+                      title="Save"
+                    ><Check className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => setEditingId(null)} className="text-xs text-gray-500"><X className="w-3.5 h-3.5" /></button>
+                  </>
+                ) : (
+                  <>
+                    <span className="flex-1">{t.name}</span>
+                    <button
+                      onClick={() => { setEditingId(t.id); setEditName(t.name); setEditColor(t.color || ''); }}
+                      className="text-gray-500 hover:text-gray-900"
+                      title="Rename / recolor"
+                    ><Pencil className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => onDelete(t.id)} className="text-red-600 hover:text-red-800" title="Delete">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
 };
 
-export default TransactionsView;
+// =================================================================
+// TagPicker — popover used by the selection bar's "Tag…" button
+// =================================================================
+
+// eslint-disable-next-line react/display-name
+const TagPicker = ({ allTags, onPick, onCreate, onClose }) => {
+  const [filter, setFilter] = useState('');
+  const filtered = useMemo(() =>
+    allTags.filter(t => t.name.toLowerCase().includes(filter.toLowerCase())),
+    [allTags, filter]
+  );
+  const exact = filtered.find(t => t.name.toLowerCase() === filter.trim().toLowerCase());
+  const canCreate = filter.trim() && !exact;
+
+  return (
+    <>
+      <div className="fixed inset-0 z-30" onClick={onClose} />
+      <div className="absolute z-40 mt-1 bg-white border rounded shadow-lg w-64 p-2">
+        <input
+          autoFocus
+          value={filter}
+          onChange={e => setFilter(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && canCreate) onCreate(filter.trim());
+            if (e.key === 'Escape') onClose();
+          }}
+          placeholder="Filter or create…"
+          className="w-full border rounded px-2 py-1 text-sm mb-2"
+        />
+        <div className="max-h-56 overflow-auto">
+          {filtered.length === 0 && !canCreate && (
+            <div className="px-2 py-1 text-xs text-gray-500 italic">No tags.</div>
+          )}
+          {filtered.map(t => (
+            <button
+              key={t.id}
+              onClick={() => onPick(t.id)}
+              className="w-full flex items-center gap-2 px-2 py-1 text-sm hover:bg-gray-100 rounded text-left"
+            >
+              <span className="inline-block w-2.5 h-2.5 rounded" style={{ background: t.color }} />
+              <span>{t.name}</span>
+            </button>
+          ))}
+          {canCreate && (
+            <button
+              onClick={() => onCreate(filter.trim())}
+              className="w-full flex items-center gap-2 px-2 py-1 text-sm hover:bg-emerald-50 rounded text-left text-emerald-700 font-semibold"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Create "{filter.trim()}"
+            </button>
+          )}
+        </div>
+      </div>
+    </>
+  );
+};
+
+export {
+  fmtCurrency, fmtQty, fmtDate, fmtExpiry, fmtOptionSymbol, normalizeSymbol,
+  POSITION_COLORS, colorForPosition, computeSummary,
+  UnifiedGrid, buildViewTree, computeBucketRollup,
+  PositionEditorModal, TagManagerModal, TagPicker,
+};
