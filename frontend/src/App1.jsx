@@ -26,6 +26,10 @@ import AccountTransactionsView from './components/schwab/AccountTransactionsView
 import AccountAttentionView from './components/schwab/AccountAttentionView';
 import AccountOverview from './components/schwab/AccountOverview';
 
+// Strategy Views
+import StrategiesHub from './components/strategies/StrategiesHub';
+import StrategyDetailView from './components/strategies/StrategyDetailView';
+
 // Collaboration Views
 import CollaborationDashboard from './components/collaboration/CollaborationDashboard';
 
@@ -35,6 +39,7 @@ import { CalendarProvider } from './contexts/CalendarContext';
 import { CommentsProvider } from './contexts/CommentsContext';
 import { AccountsProvider } from './contexts/AccountsContext';
 import { FriendsProvider } from './contexts/FriendsContext';
+import { NavStackProvider } from './contexts/NavStackContext';
 
 // Notification Components
 import SyncNotification from './components/common/SyncNotification';
@@ -53,6 +58,7 @@ function App() {
             {/* Protected routes */}
             <Route path="/*" element={
               <RequireAuth>
+                <NavStackProvider>
                 <FriendsProvider>
                   <PortfolioProvider>
                     {/* 
@@ -105,13 +111,9 @@ function App() {
                                   {/* Collaboration routes */}
                                   <Route path="/collaboration" element={<CollaborationDashboard />} />
 
-                                  {/* Group drill-ins — to be rebuilt as tag/group browsers on the classification spine */}
-                                  <Route path="/strategies/*" element={
-                                    <ComingSoon
-                                      title="Group Drill-ins"
-                                      description="This area will be rebuilt as group/tag browsers on the new classification spine — for risk audits and planning per group."
-                                    />
-                                  } />
+                                  {/* Strategies — hub of strategy classes, driven by Group.strategy_class */}
+                                  <Route path="/strategies" element={<StrategiesHub />} />
+                                  <Route path="/strategies/:key" element={<StrategyDetailView />} />
 
                                   {/* Analysis — pending rebuild */}
                                   <Route path="/analysis/portfolio" element={
@@ -146,6 +148,7 @@ function App() {
                     </AccountsProvider>
                   </PortfolioProvider>
                 </FriendsProvider>
+                </NavStackProvider>
               </RequireAuth>
             } />
           </Routes>

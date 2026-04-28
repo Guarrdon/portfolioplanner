@@ -3,7 +3,7 @@ from sqlalchemy import Column, String, DateTime, ForeignKey, Text, UniqueConstra
 from datetime import datetime
 import uuid
 
-from app.core.database import Base, GUID
+from app.core.database import Base, GUID, StringArray
 
 
 class Tag(Base):
@@ -25,6 +25,12 @@ class Tag(Base):
     name = Column(String, nullable=False)
     note = Column(Text, nullable=True)
     color = Column(String, nullable=True)  # hex like "#aabbcc", randomized at create time
+
+    # User-assigned strategy classes — a Group can belong to zero or more of
+    # the 11 strategy areas (long_stock, covered_calls, dividends, …). Stored
+    # as a JSON array in SQLite / native array in PostgreSQL via StringArray.
+    # See app.core.strategy_classes for the canonical list.
+    strategy_classes = Column(StringArray, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

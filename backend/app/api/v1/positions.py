@@ -102,7 +102,25 @@ def get_actual_positions(
     accounts = db.query(UserSchwabAccount).filter(
         UserSchwabAccount.user_id == test_user_id
     ).all()
-    
+
+    # Underlying spot prices for moneyness/decision-support in the UI.
+    # Cached at 15-min TTL via underlying_quotes; only refetches stale rows.
+    underlying_quotes = {}
+    underlyings = sorted({(p.underlying or "").upper() for p in positions if p.underlying})
+    if underlyings:
+        try:
+            from app.services.underlying_quotes import get_or_refresh_quotes
+            from app.services.schwab_service import get_schwab_client
+            import logging
+            logger = logging.getLogger(__name__)
+            try:
+                client = get_schwab_client(test_user_id, db)
+                underlying_quotes = get_or_refresh_quotes(test_user_id, db, underlyings, client)
+            except Exception as exc:
+                logger.warning("underlying spot fetch failed for positions list: %s", exc)
+        except Exception:
+            pass
+
     return PositionListResponse(
         total=len(positions),
         positions=positions,
@@ -114,7 +132,8 @@ def get_actual_positions(
             "liquidation_value": acc.liquidation_value,
             "buying_power": acc.buying_power,
             "buying_power_options": acc.buying_power_options
-        } for acc in accounts]
+        } for acc in accounts],
+        underlying_quotes=underlying_quotes,
     )
 
 

@@ -102,14 +102,14 @@ const Navigation = () => {
       ]
     },
     {
-      group: 'Group Drill-ins',
+      group: 'Strategies',
       items: [
         {
-          name: 'Group Drill-ins',
+          name: 'Strategies',
           path: '/strategies',
           icon: Layers,
-          description: 'Risk audits & planning per group (coming soon)',
-          color: 'gray'
+          description: 'Per-strategy KPI screens — verticals, dividends, hedges, etc.',
+          color: 'indigo'
         }
       ]
     },

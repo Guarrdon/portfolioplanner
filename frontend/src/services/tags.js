@@ -8,8 +8,10 @@ export const fetchTags = async () => {
   return response.data;
 };
 
-export const createTag = async ({ name, note = null, color = null }) => {
-  const response = await api.post('/tags', { name, note, color });
+export const createTag = async ({ name, note = null, color = null, strategyClasses = null }) => {
+  const response = await api.post('/tags', {
+    name, note, color, strategy_classes: strategyClasses,
+  });
   return response.data;
 };
 
@@ -34,4 +36,22 @@ export const removeTagMember = async (tagId, { memberType, memberId }) => {
   await api.delete(
     `/tags/${encodeURIComponent(tagId)}/members/${encodeURIComponent(memberType)}/${encodeURIComponent(memberId)}`
   );
+};
+
+/**
+ * Fetch all positions tagged with a given strategy_class, with the
+ * transactions and live prices needed to compute rollups.
+ */
+export const fetchStrategyPositions = async (strategyClass) => {
+  const response = await api.get(`/tags/strategy/${encodeURIComponent(strategyClass)}`);
+  return response.data;
+};
+
+/**
+ * Fetch live-first Long Stock holdings — one row per active Schwab stock
+ * position tagged into a long_stock Group, with chain history attached.
+ */
+export const fetchLongStockHoldings = async () => {
+  const response = await api.get('/tags/strategy/long_stock/holdings');
+  return response.data;
 };

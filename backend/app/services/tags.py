@@ -26,14 +26,34 @@ def list_tags(db: Session, user_id: str) -> List[Tag]:
     return db.query(Tag).filter(Tag.user_id == user_id).order_by(Tag.name.asc()).all()
 
 
+def list_tag_member_counts(db: Session, user_id: str) -> Dict[str, int]:
+    """Map tag_id (str) → total member count, in one grouped query."""
+    from sqlalchemy import func
+    rows = (
+        db.query(TagMembership.tag_id, func.count(TagMembership.id))
+        .join(Tag, Tag.id == TagMembership.tag_id)
+        .filter(Tag.user_id == user_id)
+        .group_by(TagMembership.tag_id)
+        .all()
+    )
+    return {str(tag_id): cnt for (tag_id, cnt) in rows}
+
+
 def create_tag(
     db: Session,
     user_id: str,
     name: str,
     note: Optional[str] = None,
     color: Optional[str] = None,
+    strategy_classes: Optional[List[str]] = None,
 ) -> Tag:
-    tag = Tag(user_id=user_id, name=name, note=note, color=color or _pick_color())
+    from app.core.strategy_classes import normalize_strategy_classes
+    sc = normalize_strategy_classes(strategy_classes) if strategy_classes is not None else []
+    tag = Tag(
+        user_id=user_id, name=name, note=note,
+        color=color or _pick_color(),
+        strategy_classes=sc if sc else None,
+    )
     db.add(tag)
     try:
         db.commit()
@@ -54,6 +74,7 @@ def update_tag(
     name=_UNSET,
     note=_UNSET,
     color=_UNSET,
+    strategy_classes=_UNSET,
 ) -> Optional[Tag]:
     tag = db.query(Tag).filter(Tag.user_id == user_id, Tag.id == tag_id).first()
     if tag is None:
@@ -64,6 +85,10 @@ def update_tag(
         tag.note = note or None
     if color is not _UNSET:
         tag.color = color or None
+    if strategy_classes is not _UNSET:
+        from app.core.strategy_classes import normalize_strategy_classes
+        sc = normalize_strategy_classes(strategy_classes)
+        tag.strategy_classes = sc if sc else None
     db.commit()
     db.refresh(tag)
     return tag

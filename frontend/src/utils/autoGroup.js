@@ -5,13 +5,19 @@
  * tags layered on top.
  *
  * Primary tag (first match wins):
- *   1. Cash Mgmt     — underlying ∈ {SGOV, JAAA, FLOT, PULS}
- *   2. Futures       — any leg looks like a future / future option
- *   3. Box Spreads   — position_type = box_spread
- *   4. Big Options   — position_type = bought_*
+ *   1. Cash Mgmt      — underlying ∈ {SGOV, JAAA, FLOT, PULS}
+ *   2. Futures        — any leg looks like a future / future option
+ *   3. Box Spreads    — position_type = box_spread
+ *   4. Big Options    — position_type = bought_*
  *   5. Vertical Strat — position_type = sold_vertical_*
- *   6. Single Strat  — position_type = sold_put / sold_call / rolled_options
- *   7. Covered Stock — position_type = stock / assigned_stock
+ *   6. Covered Calls  — position is part of a covered-call structure
+ *                       (underlying has both open long stock AND an open
+ *                       short call). This applies to BOTH the stock chain
+ *                       and the short-call chain on that underlying.
+ *   7. Single Strat   — position_type = sold_put / sold_call / rolled_options
+ *                       on an underlying without covering long stock
+ *   8. Long Stock     — position_type = stock / assigned_stock on an
+ *                       underlying without short calls
  *   — (no primary tag; leaves item untagged for manual review)
  *
  * Additional tags (always layered on the primary):
@@ -30,7 +36,8 @@ export const TAG_NAMES = {
   bigOptions: 'Big Options',
   vertical: 'Vertical Strat',
   single: 'Single Strat',
-  covered: 'Covered Stock',
+  coveredCalls: 'Covered Call',
+  longStock: 'Long Stock',
   closed: 'closed',
 };
 
@@ -59,16 +66,45 @@ const txUnderlying = (tx) => {
   return '';
 };
 
+// Walk a chain looking for any short-call opening (or rolled-call leg). True
+// if at any point the chain wrote a call against premium received.
+const chainHasShortCallLeg = (txs) => {
+  for (const tx of (txs || [])) {
+    for (const leg of (tx.legs || [])) {
+      const at = (leg.asset_type || '').toUpperCase();
+      if (at !== 'OPTION') continue;
+      const ot = (leg.option_type || '').toLowerCase();
+      if (ot !== 'call') continue;
+      const eff = (leg.position_effect || '').toUpperCase();
+      const amt = parseFloat(leg.amount) || 0;
+      // SOLD_TO_OPEN: opening with negative quantity (collected premium).
+      if (eff === 'OPENING' && amt < 0) return true;
+      // For chains without explicit position_effect, fall back on amt sign:
+      // a negative-amt call at all is a short call somewhere in the chain.
+      if (!eff && amt < 0) return true;
+    }
+  }
+  return false;
+};
+
+const isStockType = (pt) => pt === 'stock' || pt === 'assigned_stock';
+
 /**
  * Decide the primary tag for a "group item" (either a classified position or a
  * single loose transaction). Returns the tag name string, or null to leave
  * untagged. Open/closed status is no longer part of primary-tag selection —
  * `closed` and the year tag are emitted separately as additional tags.
+ *
+ * `coveredCallUnderlyings`: Set of uppercase underlying tickers for which the
+ * portfolio currently has BOTH open long stock AND an open short call. Used
+ * to disambiguate stock-only "Long Stock" from "Covered Calls" structures.
  */
-export const tagForItem = (item) => {
+export const tagForItem = (item, coveredCallUnderlyings = new Set()) => {
   const { underlying, position_type, txs = [] } = item;
+  const u = (underlying || '').toUpperCase();
+  const isCovered = u && coveredCallUnderlyings.has(u);
 
-  if (CASH_MGMT_TICKERS.has((underlying || '').toUpperCase())) return TAG_NAMES.cash;
+  if (CASH_MGMT_TICKERS.has(u)) return TAG_NAMES.cash;
   if (txs.some(txHasFutures)) return TAG_NAMES.futures;
   if (position_type === 'box_spread') return TAG_NAMES.box;
 
@@ -81,13 +117,20 @@ export const tagForItem = (item) => {
     case 'sold_vertical_put':
     case 'sold_vertical_call':
       return TAG_NAMES.vertical;
-    case 'sold_put':
     case 'sold_call':
+      // A short call on a covered underlying is the call leg of a covered
+      // call. Otherwise it's an uncovered short call (Single Strat).
+      return isCovered ? TAG_NAMES.coveredCalls : TAG_NAMES.single;
     case 'rolled_options':
+      // Rolls lose call/put info at the chain level; if the chain had any
+      // short-call leg AND covers stock, treat it as a covered call.
+      if (isCovered && chainHasShortCallLeg(txs)) return TAG_NAMES.coveredCalls;
+      return TAG_NAMES.single;
+    case 'sold_put':
       return TAG_NAMES.single;
     case 'stock':
     case 'assigned_stock':
-      return TAG_NAMES.covered;
+      return isCovered ? TAG_NAMES.coveredCalls : TAG_NAMES.longStock;
     default:
       return null;
   }
@@ -128,6 +171,30 @@ export const buildAutoGroupAssignments = ({
   const alreadyTagged = (type, id, name) =>
     memberHasTagName.get(`${type}|${id}`)?.has(name.toLowerCase());
 
+  // ---- Pre-pass: identify covered-call underlyings ----
+  // A covered-call structure exists at the underlying level when there's
+  // BOTH open long stock and an open short call on the same underlying. We
+  // walk every classified chain once to bucket per-underlying.
+  const openStockUnderlyings = new Set();
+  const openShortCallUnderlyings = new Set();
+
+  for (const [pid, meta] of Object.entries(positionsMeta || {})) {
+    const txs = txsByPosition.get(pid) || [];
+    if (txs.length === 0) continue;
+    const underlying = (txs.map(txUnderlying).find(Boolean) || '').toUpperCase();
+    if (!underlying) continue;
+    if (!inferIsOpen(txs)) continue;  // closed chains don't count
+
+    const pt = meta.position_type;
+    if (isStockType(pt)) openStockUnderlyings.add(underlying);
+    if (chainHasShortCallLeg(txs)) openShortCallUnderlyings.add(underlying);
+  }
+
+  const coveredCallUnderlyings = new Set();
+  for (const u of openStockUnderlyings) {
+    if (openShortCallUnderlyings.has(u)) coveredCallUnderlyings.add(u);
+  }
+
   // Classified positions
   for (const [pid, meta] of Object.entries(positionsMeta || {})) {
     const txs = txsByPosition.get(pid) || [];
@@ -144,8 +211,11 @@ export const buildAutoGroupAssignments = ({
       lastDate,
       txs,
     };
-    const reason = { underlying, position_type: item.position_type, isOpen, lastDate };
-    const tag = tagForItem(item);
+    const reason = {
+      underlying, position_type: item.position_type, isOpen, lastDate,
+      covered: coveredCallUnderlyings.has((underlying || '').toUpperCase()),
+    };
+    const tag = tagForItem(item, coveredCallUnderlyings);
     if (tag && !alreadyTagged('transaction_position', pid, tag)) {
       proposals.push({ targetType: 'transaction_position', targetId: pid, tagName: tag, reason });
     }

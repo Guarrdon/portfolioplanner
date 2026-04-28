@@ -17,7 +17,7 @@ import React, { useMemo, useState } from 'react';
 import { useParams, useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft, RefreshCw, EyeOff, Eye, StickyNote, Pencil, X, Plus, Trash2,
+  RefreshCw, EyeOff, Eye, StickyNote, Pencil, X, Plus, Trash2,
   ChevronDown, ChevronRight, Search, Sparkles, Tag as TagIcon, Layers, Check,
 } from 'lucide-react';
 import {
@@ -38,6 +38,7 @@ import {
 import { fetchActualPositions } from '../../services/schwab';
 import { buildClassifications, positionTypeLabel } from '../../utils/autoClassify';
 import { compareTxsForDisplay } from '../../utils/positionMetrics';
+import BackChip from '../common/BackChip';
 
 // ---------- formatters ----------
 
@@ -588,9 +589,7 @@ const TransactionsView = () => {
     <div className="h-screen flex flex-col bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b shadow-sm px-4 py-2 flex items-center gap-3">
-        <Link to="/schwab/positions" className="text-gray-500 hover:text-gray-800" title="Back to positions">
-          <ArrowLeft className="w-4 h-4" />
-        </Link>
+        <BackChip fallbackLabel="Positions" fallbackPath="/schwab/positions" />
         <h1 className="text-base font-bold text-gray-900">{underlying} Transactions</h1>
 
         <select

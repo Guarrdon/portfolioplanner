@@ -133,11 +133,23 @@ class AccountInfo(BaseModel):
         from_attributes = True
 
 
+class UnderlyingQuote(BaseModel):
+    """Spot price snapshot for an underlying ticker."""
+    last_price: Optional[float] = None
+    bid: Optional[float] = None
+    ask: Optional[float] = None
+    fetched_at: Optional[str] = None
+
+
 class PositionListResponse(BaseModel):
     """Schema for list of positions"""
     total: int
     positions: List[PositionResponse]
     accounts: Optional[List[AccountInfo]] = []
+    underlying_quotes: Optional[dict[str, UnderlyingQuote]] = Field(
+        default_factory=dict,
+        description="Spot price by underlying ticker, populated for actual positions",
+    )
 
 
 class PositionShareCreate(BaseModel):
