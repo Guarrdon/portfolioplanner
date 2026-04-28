@@ -115,7 +115,7 @@ const sumNet = (txs) => txs.reduce((s, t) => s + (parseFloat(t.net_amount) || 0)
 
 const AccountTransactionsView = () => {
   const { accountHash } = useParams();
-  const [days, setDays] = useState(90);
+  const [days, setDays] = useState(365);
   const [view, setView] = useState('raw');  // 'raw' | 'classified' | 'grouped'
   const [classifyPreview, setClassifyPreview] = useState(null);  // proposed chains from Auto Classify
   const [classifying, setClassifying] = useState(false);  // live fetch + classify in flight
