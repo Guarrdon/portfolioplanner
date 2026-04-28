@@ -30,7 +30,7 @@ import PortfolioAnalytics from './components/analysis/PortfolioAnalytics';
 import SettingsView from './components/settings/SettingsView';
 
 // Schwab Views
-import SchwabPositionsView from './components/schwab/SchwabPositionsView';
+import SchwabPositionsLanding from './components/schwab/SchwabPositionsLanding';
 import TransactionsView from './components/schwab/TransactionsView';
 import AccountTransactionsView from './components/schwab/AccountTransactionsView';
 import AccountAttentionView from './components/schwab/AccountAttentionView';
@@ -86,7 +86,7 @@ function App() {
                                   <Route path="/calendar" element={<CalendarView />} />
                                   
                                   {/* Schwab routes */}
-                                  <Route path="/schwab/positions" element={<SchwabPositionsView />} />
+                                  <Route path="/schwab/positions" element={<SchwabPositionsLanding />} />
                                   <Route path="/schwab/transactions/account/:accountHash" element={<AccountTransactionsView />} />
                                   <Route path="/schwab/transactions/:underlying" element={<TransactionsView />} />
                                   <Route path="/schwab/attention" element={<AccountAttentionView />} />
