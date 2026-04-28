@@ -13,9 +13,6 @@ import LoginForm from './components/auth/LoginForm';
 import Header from './components/common/Header';
 import Navigation from './components/common/Navigation';
 
-// Main Views
-import PortfolioView from './components/portfolio/PortfolioView';
-
 // Stub placeholder (used for routes pending rebuild on the new spine)
 import ComingSoon from './components/common/ComingSoon';
 
@@ -23,7 +20,7 @@ import ComingSoon from './components/common/ComingSoon';
 import SettingsView from './components/settings/SettingsView';
 
 // Schwab Views
-import SchwabPositionsLanding from './components/schwab/SchwabPositionsLanding';
+import AccountPicker from './components/schwab/AccountPicker';
 import TransactionsView from './components/schwab/TransactionsView';
 import AccountTransactionsView from './components/schwab/AccountTransactionsView';
 import AccountAttentionView from './components/schwab/AccountAttentionView';
@@ -75,13 +72,32 @@ function App() {
                               <Header />
                               <main className="flex-1 overflow-auto bg-gray-50 p-6">
                                 <Routes>
-                                  {/* Main routes */}
-                                  <Route path="/" element={<PortfolioView />} />
+                                  {/* Dashboard — pending rebuild on the new spine */}
+                                  <Route path="/" element={
+                                    <ComingSoon
+                                      title="Dashboard"
+                                      description="Dashboard in progress — will be rebuilt on the new classification/grouping spine."
+                                    />
+                                  } />
 
                                   {/* Schwab routes */}
-                                  <Route path="/schwab/account" element={<AccountOverview />} />
+                                  <Route path="/schwab/account" element={
+                                    <AccountPicker
+                                      title="Accounts"
+                                      description="Pick a Schwab account to drill into its overview."
+                                      buildTargetPath={(hash) => `/schwab/account/${hash}`}
+                                      autoRedirectIfRemembered={false}
+                                    />
+                                  } />
                                   <Route path="/schwab/account/:accountHash" element={<AccountOverview />} />
-                                  <Route path="/schwab/positions" element={<SchwabPositionsLanding />} />
+                                  <Route path="/schwab/positions" element={
+                                    <AccountPicker
+                                      title="Schwab Positions"
+                                      description="Pick a Schwab account to view its positions, transactions, and groups."
+                                      buildTargetPath={(hash) => `/schwab/transactions/account/${hash}`}
+                                      autoRedirectIfRemembered={true}
+                                    />
+                                  } />
                                   <Route path="/schwab/transactions/account/:accountHash" element={<AccountTransactionsView />} />
                                   <Route path="/schwab/transactions/:underlying" element={<TransactionsView />} />
                                   <Route path="/schwab/attention" element={<AccountAttentionView />} />

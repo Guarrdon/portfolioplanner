@@ -4,12 +4,31 @@ import { useQuery } from '@tanstack/react-query';
 import { Building2, ChevronRight } from 'lucide-react';
 import { fetchActualPositions } from '../../services/schwab';
 
-const LAST_ACCOUNT_KEY = 'schwab.lastSelectedAccountHash';
+export const LAST_ACCOUNT_KEY = 'schwab.lastSelectedAccountHash';
 
 const formatCurrency = (n) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n || 0);
+  new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  }).format(n || 0);
 
-export default function SchwabPositionsLanding() {
+/**
+ * Reusable picker for Schwab accounts. Used for both the Account menu landing
+ * (lists accounts → drill into AccountOverview) and Schwab Positions
+ * (auto-jump to last-selected → AccountTransactionsView).
+ *
+ * Props:
+ *   title, description       — header copy
+ *   buildTargetPath(hash)    — where to navigate when an account is picked
+ *   autoRedirectIfRemembered — if true, mounting redirects to last-selected
+ */
+export default function AccountPicker({
+  title = 'Select an account',
+  description = 'Pick a Schwab account to drill in.',
+  buildTargetPath,
+  autoRedirectIfRemembered = false,
+}) {
   const navigate = useNavigate();
 
   const { data, isLoading, isError, error } = useQuery({
@@ -29,18 +48,16 @@ export default function SchwabPositionsLanding() {
     [accounts, positions]
   );
 
-  // Auto-route to remembered account if it still exists.
   useEffect(() => {
+    if (!autoRedirectIfRemembered) return;
     if (!accounts.length) return;
     const remembered = localStorage.getItem(LAST_ACCOUNT_KEY);
     if (remembered && accounts.some((a) => a.account_hash === remembered)) {
-      navigate(`/schwab/transactions/account/${remembered}`, { replace: true });
+      navigate(buildTargetPath(remembered), { replace: true });
     }
-  }, [accounts, navigate]);
+  }, [autoRedirectIfRemembered, accounts, navigate, buildTargetPath]);
 
-  if (isLoading) {
-    return <div className="p-6 text-gray-500">Loading accounts…</div>;
-  }
+  if (isLoading) return <div className="p-6 text-gray-500">Loading accounts…</div>;
 
   if (isError) {
     return (
@@ -63,15 +80,15 @@ export default function SchwabPositionsLanding() {
   }
 
   if (accounts.length === 1) {
-    return <Navigate to={`/schwab/transactions/account/${accounts[0].account_hash}`} replace />;
+    const hash = accounts[0].account_hash;
+    localStorage.setItem(LAST_ACCOUNT_KEY, hash);
+    return <Navigate to={buildTargetPath(hash)} replace />;
   }
 
   return (
     <div className="p-6">
-      <h2 className="text-xl font-semibold text-gray-900 mb-1">Select an account</h2>
-      <p className="text-sm text-gray-600 mb-6">
-        Pick a Schwab account to view its positions, transactions, and groups.
-      </p>
+      <h2 className="text-xl font-semibold text-gray-900 mb-1">{title}</h2>
+      <p className="text-sm text-gray-600 mb-6">{description}</p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl">
         {accounts.map((acc) => {
           const count = positionCountByAccount[acc.account_hash] || 0;
@@ -81,7 +98,7 @@ export default function SchwabPositionsLanding() {
               type="button"
               onClick={() => {
                 localStorage.setItem(LAST_ACCOUNT_KEY, acc.account_hash);
-                navigate(`/schwab/transactions/account/${acc.account_hash}`);
+                navigate(buildTargetPath(acc.account_hash));
               }}
               className="text-left bg-white border border-gray-200 rounded-lg p-5 hover:border-indigo-400 hover:shadow-sm transition flex items-start justify-between"
             >

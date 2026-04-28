@@ -1,29 +1,58 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, LayoutDashboard, Calendar } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { LayoutDashboard, Building2 } from 'lucide-react';
 import ProfileMenu from './ProfileMenu';
+import { fetchActualPositions } from '../../services/schwab';
+import { LAST_ACCOUNT_KEY } from '../schwab/AccountPicker';
+
+function SelectedAccountBadge() {
+  const remembered =
+    typeof window !== 'undefined' ? localStorage.getItem(LAST_ACCOUNT_KEY) : null;
+
+  const { data } = useQuery({
+    queryKey: ['schwab-accounts-landing'],
+    queryFn: () => fetchActualPositions(),
+  });
+  const accounts = data?.accounts || [];
+  const selected = remembered ? accounts.find((a) => a.account_hash === remembered) : null;
+
+  return (
+    <Link
+      to="/schwab/account"
+      className="inline-flex items-center space-x-2 px-3 py-1.5 rounded-md text-sm border border-gray-200 text-gray-700 hover:border-indigo-400 hover:text-gray-900"
+      title="Switch account"
+    >
+      <Building2 className="h-4 w-4 text-indigo-500" />
+      <span className="font-medium">
+        {selected ? `Account ${selected.account_number}` : 'All Accounts'}
+      </span>
+    </Link>
+  );
+}
 
 const Header = () => {
   const location = useLocation();
 
   const getPageTitle = () => {
-    switch (location.pathname) {
-      case '/':
-        return 'Portfolio Overview';
-      case '/calendar':
-        return 'Calendar View';
-      case '/settings':
-        return 'Settings';
-      default:
-        return 'Portfolio Planner';
-    }
+    if (location.pathname === '/') return 'Dashboard';
+    if (location.pathname.startsWith('/schwab/account')) return 'Account';
+    if (location.pathname.startsWith('/schwab/positions')) return 'Schwab Positions';
+    if (location.pathname.startsWith('/schwab/transactions')) return 'Schwab Positions';
+    if (location.pathname.startsWith('/schwab/attention')) return 'Account Attention';
+    if (location.pathname.startsWith('/collaboration')) return 'Collaboration Hub';
+    if (location.pathname.startsWith('/strategies')) return 'Group Drill-ins';
+    if (location.pathname.startsWith('/analysis')) return 'Portfolio Analytics';
+    if (location.pathname.startsWith('/calendar')) return 'Calendar';
+    if (location.pathname.startsWith('/settings')) return 'Settings';
+    return 'Portfolio Planner';
   };
 
   return (
     <header className="bg-white shadow-sm">
       <div className="mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
-          {/* Left section with logo and title */}
+          {/* Left: logo + product name */}
           <div className="flex items-center">
             <Link to="/" className="flex items-center space-x-3">
               <LayoutDashboard className="h-8 w-8 text-blue-600" />
@@ -31,98 +60,18 @@ const Header = () => {
             </Link>
           </div>
 
-          {/* Center section with page title */}
+          {/* Center: page title */}
           <div className="hidden md:block">
-            <h1 className="text-lg font-semibold text-gray-700">
-              {getPageTitle()}
-            </h1>
+            <h1 className="text-lg font-semibold text-gray-700">{getPageTitle()}</h1>
           </div>
 
-          {/* Right section with actions */}
+          {/* Right: account badge + profile */}
           <div className="flex items-center space-x-4">
-            {/* Mobile menu button */}
-            <div className="md:hidden">
-              <button
-                type="button"
-                className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
-                aria-controls="mobile-menu"
-                aria-expanded="false"
-              >
-                <span className="sr-only">Open main menu</span>
-                <Menu className="h-6 w-6" />
-              </button>
-            </div>
-
-            {/* Desktop navigation */}
-            <nav className="hidden md:flex items-center space-x-4">
-              <Link
-                to="/"
-                className={`px-3 py-2 rounded-md text-sm font-medium ${
-                  location.pathname === '/'
-                    ? 'bg-gray-100 text-gray-900'
-                    : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
-                }`}
-              >
-                <span className="flex items-center space-x-1">
-                  <LayoutDashboard className="h-4 w-4" />
-                  <span>Portfolio</span>
-                </span>
-              </Link>
-
-              <Link
-                to="/calendar"
-                className={`px-3 py-2 rounded-md text-sm font-medium ${
-                  location.pathname === '/calendar'
-                    ? 'bg-gray-100 text-gray-900'
-                    : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
-                }`}
-              >
-                <span className="flex items-center space-x-1">
-                  <Calendar className="h-4 w-4" />
-                  <span>Calendar</span>
-                </span>
-              </Link>
-
-              {/* Profile Menu */}
-              <ProfileMenu />
-            </nav>
+            <SelectedAccountBadge />
+            <ProfileMenu />
           </div>
         </div>
       </div>
-
-      {/* Mobile menu, show/hide based on menu state */}
-      <div className="md:hidden" id="mobile-menu">
-        <div className="px-2 pt-2 pb-3 space-y-1">
-          <Link
-            to="/"
-            className={`block px-3 py-2 rounded-md text-base font-medium ${
-              location.pathname === '/'
-                ? 'bg-gray-100 text-gray-900'
-                : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
-            }`}
-          >
-            <span className="flex items-center space-x-2">
-              <LayoutDashboard className="h-5 w-5" />
-              <span>Portfolio</span>
-            </span>
-          </Link>
-
-          <Link
-            to="/calendar"
-            className={`block px-3 py-2 rounded-md text-base font-medium ${
-              location.pathname === '/calendar'
-                ? 'bg-gray-100 text-gray-900'
-                : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
-            }`}
-          >
-            <span className="flex items-center space-x-2">
-              <Calendar className="h-5 w-5" />
-              <span>Calendar</span>
-            </span>
-          </Link>
-        </div>
-      </div>
-
     </header>
   );
 };

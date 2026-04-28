@@ -4,8 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Building2, Layers, AlertCircle, ArrowRight } from 'lucide-react';
 import { fetchActualPositions } from '../../services/schwab';
 import { fetchPositionFlags } from '../../services/positionFlags';
-
-const LAST_ACCOUNT_KEY = 'schwab.lastSelectedAccountHash';
+import { LAST_ACCOUNT_KEY } from './AccountPicker';
 
 const formatCurrency = (n, fractionDigits = 0) =>
   new Intl.NumberFormat('en-US', {
