@@ -72,10 +72,17 @@ const Navigation = () => {
           color: 'blue'
         },
         {
+          name: 'Account',
+          path: '/schwab/account',
+          icon: Building2,
+          description: 'High-level account overview',
+          color: 'indigo'
+        },
+        {
           name: 'Schwab Positions',
           path: '/schwab/positions',
-          icon: Building2,
-          description: 'Actual positions from Schwab',
+          icon: Layers,
+          description: 'Positions, transactions, classification & groups',
           color: 'indigo'
         },
         {

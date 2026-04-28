@@ -27,6 +27,7 @@ import SchwabPositionsLanding from './components/schwab/SchwabPositionsLanding';
 import TransactionsView from './components/schwab/TransactionsView';
 import AccountTransactionsView from './components/schwab/AccountTransactionsView';
 import AccountAttentionView from './components/schwab/AccountAttentionView';
+import AccountOverview from './components/schwab/AccountOverview';
 
 // Collaboration Views
 import CollaborationDashboard from './components/collaboration/CollaborationDashboard';
@@ -78,6 +79,8 @@ function App() {
                                   <Route path="/" element={<PortfolioView />} />
 
                                   {/* Schwab routes */}
+                                  <Route path="/schwab/account" element={<AccountOverview />} />
+                                  <Route path="/schwab/account/:accountHash" element={<AccountOverview />} />
                                   <Route path="/schwab/positions" element={<SchwabPositionsLanding />} />
                                   <Route path="/schwab/transactions/account/:accountHash" element={<AccountTransactionsView />} />
                                   <Route path="/schwab/transactions/:underlying" element={<TransactionsView />} />
