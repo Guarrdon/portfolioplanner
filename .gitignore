@@ -23,3 +23,9 @@ ref/LoP-s-Premium-Tracker/
 
 # Local data directory
 .data/
+
+# Local databases & backups
+*.db
+*.sqlite3
+*.db.bak.*
+*.bak
