@@ -1,13 +1,11 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, LayoutDashboard, Calendar, PlusCircle } from 'lucide-react';
-import StrategySelector from './StrategySelector';
+import { Menu, LayoutDashboard, Calendar } from 'lucide-react';
 import ProfileMenu from './ProfileMenu';
 
 const Header = () => {
   const location = useLocation();
-  const [showStrategySelector, setShowStrategySelector] = useState(false);
-  
+
   const getPageTitle = () => {
     switch (location.pathname) {
       case '/':
@@ -42,18 +40,6 @@ const Header = () => {
 
           {/* Right section with actions */}
           <div className="flex items-center space-x-4">
-            {/* Only show New Position button when not on strategy pages */}
-            {!location.pathname.startsWith('/strategies/') && (
-              <button
-                type="button"
-                onClick={() => setShowStrategySelector(true)}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-              >
-                <PlusCircle className="h-5 w-5 mr-2" />
-                <span>New Position</span>
-              </button>
-            )}
-
             {/* Mobile menu button */}
             <div className="md:hidden">
               <button
@@ -137,11 +123,6 @@ const Header = () => {
         </div>
       </div>
 
-      {/* Strategy Selector Modal */}
-      <StrategySelector 
-        isOpen={showStrategySelector}
-        onClose={() => setShowStrategySelector(false)}
-      />
     </header>
   );
 };
