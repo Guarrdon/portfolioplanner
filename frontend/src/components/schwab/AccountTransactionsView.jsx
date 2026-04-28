@@ -714,10 +714,17 @@ const AccountTransactionsView = () => {
         </label>
 
         <button
-          onClick={() => { refetch(); refetchLive(); }}
+          onClick={async () => {
+            // Explicit refresh — bypass server cache by passing refresh=true
+            // so _ensure_account_cache pulls the trailing window from Schwab
+            // even when last_fetched_at is recent.
+            await fetchTransactionsByAccount(accountHash, { days, refresh: true });
+            refetch();
+            refetchLive();
+          }}
           disabled={isFetching || isFetchingLive}
           className="px-2 py-1 text-xs bg-gray-100 rounded hover:bg-gray-200 disabled:opacity-50"
-          title="Re-fetch transactions and live open positions"
+          title="Re-pull from Schwab (bypasses server cache)"
         >
           <RefreshCw className={`w-3 h-3 ${(isFetching || isFetchingLive) ? 'animate-spin' : ''}`} />
         </button>
