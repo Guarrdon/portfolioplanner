@@ -15,18 +15,11 @@ import Navigation from './components/common/Navigation';
 
 // Main Views
 import PortfolioView from './components/portfolio/PortfolioView';
-import CalendarView from './components/calendar/CalendarView';
 
-// Strategy Views
-import CoveredCallsView from './components/strategies/CoveredCallsView';
-import PutSpreadsView from './components/strategies/PutSpreadsView';
-import BigOptionsView from './components/strategies/BigOptionsView';
-import DividendsView from './components/strategies/DividendsView';
-import BOXSpreadsView from './components/strategies/BoxSpreadsView';
-import MiscView from './components/strategies/MiscView';
+// Stub placeholder (used for routes pending rebuild on the new spine)
+import ComingSoon from './components/common/ComingSoon';
 
-// Analysis Views
-import PortfolioAnalytics from './components/analysis/PortfolioAnalytics';
+// Settings
 import SettingsView from './components/settings/SettingsView';
 
 // Schwab Views
@@ -83,8 +76,7 @@ function App() {
                                 <Routes>
                                   {/* Main routes */}
                                   <Route path="/" element={<PortfolioView />} />
-                                  <Route path="/calendar" element={<CalendarView />} />
-                                  
+
                                   {/* Schwab routes */}
                                   <Route path="/schwab/positions" element={<SchwabPositionsLanding />} />
                                   <Route path="/schwab/transactions/account/:accountHash" element={<AccountTransactionsView />} />
@@ -94,16 +86,27 @@ function App() {
                                   {/* Collaboration routes */}
                                   <Route path="/collaboration" element={<CollaborationDashboard />} />
 
-                                  {/* Strategy routes */}
-                                  <Route path="/strategies/covered-calls" element={<CoveredCallsView />} />
-                                  <Route path="/strategies/put-spreads" element={<PutSpreadsView />} />
-                                  <Route path="/strategies/big-options" element={<BigOptionsView />} />
-                                  <Route path="/strategies/dividends" element={<DividendsView />} />
-                                  <Route path="/strategies/box-spreads" element={<BOXSpreadsView />} />
-                                  <Route path="/strategies/misc" element={<MiscView />} />
+                                  {/* Group drill-ins — to be rebuilt as tag/group browsers on the classification spine */}
+                                  <Route path="/strategies/*" element={
+                                    <ComingSoon
+                                      title="Group Drill-ins"
+                                      description="This area will be rebuilt as group/tag browsers on the new classification spine — for risk audits and planning per group."
+                                    />
+                                  } />
 
-                                  {/* Analysis routes */}
-                                  <Route path="/analysis/portfolio" element={<PortfolioAnalytics />} />
+                                  {/* Analysis — pending rebuild */}
+                                  <Route path="/analysis/portfolio" element={
+                                    <ComingSoon
+                                      title="Portfolio Analytics"
+                                      description="Group-level P&L, exposure, BP usage, realized vs unrealized — to be rebuilt on the new spine."
+                                    />
+                                  } />
+                                  <Route path="/calendar" element={
+                                    <ComingSoon
+                                      title="Calendar"
+                                      description="Time-axis view of Account Attention — flagged positions and expirations laid out on a calendar. Pending rebuild."
+                                    />
+                                  } />
 
                                   {/* Settings route */}
                                   <Route path="/settings/*" element={<SettingsView />} />

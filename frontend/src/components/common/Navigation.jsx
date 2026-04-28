@@ -1,13 +1,8 @@
 import React, { useMemo } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import {
-  Briefcase,
-  PhoneCall,
+  Layers,
   PieChart,
-  DollarSign,
-  Currency,
-  Package,
-  BarChart2,
   Calendar,
   ChevronRight,
   Building2,
@@ -100,48 +95,13 @@ const Navigation = () => {
       ]
     },
     {
-      group: 'Strategies',
+      group: 'Group Drill-ins',
       items: [
         {
-          name: 'Covered Calls',
-          path: '/strategies/covered-calls',
-          icon: PhoneCall,
-          description: 'View and manage covered call positions',
-          color: 'blue'
-        },
-        {
-          name: 'Put Spreads',
-          path: '/strategies/put-spreads',
-          icon: BarChart2,
-          description: 'Track put spread strategies',
-          color: 'green'
-        },
-        {
-          name: 'Big Options',
-          path: '/strategies/big-options',
-          icon: Package,
-          description: 'Monitor significant option positions',
-          color: 'purple'
-        },
-        {
-          name: 'Dividend Positions',
-          path: '/strategies/dividends',
-          icon: DollarSign,
-          description: 'Track dividend-focused investments',
-          color: 'emerald'
-        },
-        {
-          name: 'Margin Spreads',
-          path: '/strategies/box-spreads',
-          icon: Currency,
-          description: 'Track synthetic loan positions like BOX,...',
-          color: 'amber'
-        },
-        {
-          name: 'Misc Positions',
-          path: '/strategies/misc',
-          icon: Briefcase,
-          description: 'Other investment positions',
+          name: 'Group Drill-ins',
+          path: '/strategies',
+          icon: Layers,
+          description: 'Risk audits & planning per group (coming soon)',
           color: 'gray'
         }
       ]
