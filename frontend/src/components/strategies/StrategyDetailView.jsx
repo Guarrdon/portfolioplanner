@@ -22,12 +22,14 @@ import { getStrategy, STRATEGY_LIST } from '../../strategies/registry';
 import { useRememberPage } from '../../contexts/NavStackContext';
 import VerticalsPanel from './panels/VerticalsPanel';
 import LongStockPanel from './panels/LongStockPanel';
+import CoveredCallsPanel from './panels/CoveredCallsPanel';
 
 // Map strategy keys to their KPI panel components. Strategies without an
 // entry get a placeholder. Panels receive `tags` (the Groups in that class).
 const PANEL_BY_KEY = {
   verticals: VerticalsPanel,
   long_stock: LongStockPanel,
+  covered_calls: CoveredCallsPanel,
 };
 
 const UncategorizedHeader = ({ groupCount }) => (
@@ -89,7 +91,7 @@ const StrategyDetailView = () => {
   const Panel = strategy ? PANEL_BY_KEY[strategy.key] : null;
 
   return (
-    <div className="p-4 max-w-6xl mx-auto">
+    <div className="px-2 py-4">
       <div className="mb-3">
         <BackChip fallbackLabel="Strategies" fallbackPath="/strategies" />
       </div>

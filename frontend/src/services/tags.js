@@ -55,3 +55,12 @@ export const fetchLongStockHoldings = async () => {
   const response = await api.get('/tags/strategy/long_stock/holdings');
   return response.data;
 };
+
+/**
+ * Fetch live-first Covered Calls holdings — one row per short-call leg
+ * paired with its underlying long stock holding.
+ */
+export const fetchCoveredCallsHoldings = async () => {
+  const response = await api.get('/tags/strategy/covered_calls/holdings');
+  return response.data;
+};

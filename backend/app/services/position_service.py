@@ -281,24 +281,57 @@ def sync_schwab_positions(
         Position.flavor == "actual"
     ).all()
     
-    # Create TWO separate lookups for matching:
-    # 1. Manual (locked) positions - match by signature
-    # 2. Auto-managed (unlocked) positions - match by (symbol, account, strategy)
+    # Lookups for matching:
+    # 1. Manual (locked) positions — by signature (already 1:1)
+    # 2. Auto-managed (unlocked) positions — by signature (1:1 per leg shape).
+    #    Multiple positions on the same underlying+strategy are common
+    #    (e.g. several open single_option contracts on AAPL). The legacy
+    #    (symbol, account, strategy_type) key collapsed them and produced
+    #    duplicate Position rows on each sync.
+    # 3. Legacy fallback — for existing positions that don't yet carry a
+    #    signature: match by (symbol, account, strategy_type) but track
+    #    them as a LIST so multiple positions with that key match in turn.
     manual_locked_by_signature = {
         p.schwab_position_signature: p
         for p in existing_positions
         if p.is_manual_strategy and p.schwab_position_signature
     }
-    
-    auto_managed_by_key = {
-        (p.symbol, p.account_id, p.strategy_type): p
-        for p in existing_positions
-        if not p.is_manual_strategy
-    }
-    
+
+    auto_managed_by_signature: dict = {}
+    auto_duplicates: list = []  # extra rows sharing a signature → mark closed
+    for p in existing_positions:
+        if p.is_manual_strategy:
+            continue
+        sig = p.schwab_position_signature
+        if not sig:
+            continue
+        prev = auto_managed_by_signature.get(sig)
+        if prev is None:
+            auto_managed_by_signature[sig] = p
+        else:
+            # Two active rows with the same signature: keep the most recent
+            # and queue the older one for closure.
+            keep, drop = (
+                (p, prev)
+                if (p.last_synced or datetime.min) > (prev.last_synced or datetime.min)
+                else (prev, p)
+            )
+            auto_managed_by_signature[sig] = keep
+            auto_duplicates.append(drop)
+
+    auto_managed_by_legacy_key: dict = {}
+    for p in existing_positions:
+        if p.is_manual_strategy or p.schwab_position_signature:
+            continue
+        k = (p.symbol, p.account_id, p.strategy_type)
+        auto_managed_by_legacy_key.setdefault(k, []).append(p)
+
     logger.info(f"=== SYNC START: {len(existing_positions)} existing positions ===")
     logger.info(f"  🔒 Manual locked: {len(manual_locked_by_signature)}")
-    logger.info(f"  🔓 Auto-managed: {len(auto_managed_by_key)}")
+    logger.info(f"  🔓 Auto-managed (signature): {len(auto_managed_by_signature)}")
+    logger.info(f"  🔓 Auto-managed (legacy, no sig): {sum(len(v) for v in auto_managed_by_legacy_key.values())}")
+    if auto_duplicates:
+        logger.warning(f"  ⚠️  {len(auto_duplicates)} duplicate auto-managed rows queued for closure (sharing a signature)")
     
     # Process synced positions
     synced_positions = []
@@ -406,10 +439,15 @@ def sync_schwab_positions(
             del manual_locked_by_signature[position_signature]
         
         else:
-            # 🔓 AUTO-MANAGED: Check if position exists with same auto-detected strategy
-            auto_key = (underlying, account_hash, strategy_type)
-            existing_pos = auto_managed_by_key.get(auto_key)
-            
+            # 🔓 AUTO-MANAGED: signature is the unique identity. Fall back
+            # to legacy (symbol, account, strategy) only for pre-signature rows.
+            existing_pos = auto_managed_by_signature.pop(position_signature, None)
+            if existing_pos is None:
+                legacy_key = (underlying, account_hash, strategy_type)
+                legacy_list = auto_managed_by_legacy_key.get(legacy_key)
+                if legacy_list:
+                    existing_pos = legacy_list.pop(0)
+
             if existing_pos:
                 # Update existing auto-managed position
                 logger.info(
@@ -448,8 +486,7 @@ def sync_schwab_positions(
                     db.add(leg)
                 
                 synced_positions.append(existing_pos)
-                del auto_managed_by_key[auto_key]
-            
+
             else:
                 # Create new position with auto-detected strategy
                 logger.info(
@@ -501,8 +538,15 @@ def sync_schwab_positions(
                 
                 synced_positions.append(position)
     
-    # Mark positions that no longer exist as closed
-    all_remaining = list(manual_locked_by_signature.values()) + list(auto_managed_by_key.values())
+    # Mark positions that no longer exist as closed. Remaining =
+    # whatever didn't match an incoming Schwab position. Includes any
+    # legacy duplicate rows we explicitly queued for closure.
+    all_remaining = (
+        list(manual_locked_by_signature.values())
+        + list(auto_managed_by_signature.values())
+        + [p for plist in auto_managed_by_legacy_key.values() for p in plist]
+        + auto_duplicates
+    )
     for remaining_pos in all_remaining:
         remaining_pos.status = "closed"
         remaining_pos.exit_date = datetime.now().date()

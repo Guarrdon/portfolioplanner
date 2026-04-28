@@ -17,11 +17,11 @@
  * Concentration thresholds: 10% of portfolio = warn, 20% = strong-warn.
  */
 import React, { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   ChevronRight, AlertTriangle, CheckCircle2, HelpCircle, Info,
-  ChevronUp, ChevronDown,
+  ChevronUp, ChevronDown, RefreshCw,
 } from 'lucide-react';
 import { fetchLongStockHoldings } from '../../../services/tags';
 
@@ -130,12 +130,18 @@ const SortableTh = ({ label, sortKey, currentKey, currentDir, onSort, align = 'l
 
 const LongStockPanel = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [sortKey, setSortKey] = useState('mv');
   const [sortDir, setSortDir] = useState('desc');
 
-  const { data, isLoading, error } = useQuery({
+  // Cache-only: backend reads from synced Position table. staleTime
+  // Infinity means switching between strategy panels doesn't refetch.
+  // Manual Refresh button below invalidates when the user wants fresh.
+  const { data, isLoading, error, isFetching } = useQuery({
     queryKey: ['long-stock-holdings'],
     queryFn: fetchLongStockHoldings,
+    staleTime: Infinity,
+    gcTime: Infinity,
   });
 
   const tagById = useMemo(() => {
@@ -271,6 +277,10 @@ const LongStockPanel = () => {
       .sort((a, b) => b.mv - a.mv);
   }, [enriched, tagById]);
 
+  const onRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['long-stock-holdings'] });
+  };
+
   const onSort = (key) => {
     if (sortKey === key) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -297,6 +307,24 @@ const LongStockPanel = () => {
 
   return (
     <section className="mt-4 bg-white border border-gray-200 rounded">
+      {/* Freshness bar */}
+      <div className="px-3 py-1.5 border-b border-gray-200 flex items-center justify-between text-[11px] text-gray-500">
+        <span>
+          {data?.last_synced
+            ? <>Synced <SyncedAgo iso={data.last_synced} /> · cached</>
+            : 'No sync timestamp'}
+        </span>
+        <button
+          onClick={onRefresh}
+          disabled={isFetching}
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+          title="Reload from backend cache"
+        >
+          <RefreshCw className={`w-3 h-3 ${isFetching ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
+      </div>
+
       {/* Top stats */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 px-3 py-2 border-b border-gray-200 text-xs">
         <Stat label="Holdings" value={totals.count} />
@@ -516,6 +544,18 @@ const LongStockPanel = () => {
       </div>
     </section>
   );
+};
+
+const SyncedAgo = ({ iso }) => {
+  const t = new Date(iso).getTime();
+  const ms = Date.now() - t;
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return <>just now</>;
+  if (m < 60) return <>{m}m ago</>;
+  const h = Math.floor(m / 60);
+  if (h < 24) return <>{h}h ago</>;
+  const d = Math.floor(h / 24);
+  return <>{d}d ago</>;
 };
 
 const Stat = ({ label, value, hint }) => (

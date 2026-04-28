@@ -12,6 +12,7 @@ from app.schemas.tag import (
     TagMembershipResponse,
     StrategyPositionsResponse,
     LongStockHoldingsResponse,
+    CoveredCallsHoldingsResponse,
 )
 from app.services import tags as tags_service
 from app.services import strategy_positions as strategy_positions_service
@@ -115,6 +116,17 @@ def get_long_stock_holdings(db: Session = Depends(get_db)):
     position (per account) tagged into a long_stock Group, with chain
     history attached as overlay and reconciliation status computed."""
     return strategy_positions_service.fetch_long_stock_holdings(
+        user_id=_TEST_USER_ID,
+        db=db,
+    )
+
+
+@router.get("/strategy/covered_calls/holdings", response_model=CoveredCallsHoldingsResponse)
+def get_covered_calls_holdings(db: Session = Depends(get_db)):
+    """Covered Calls holdings, live-first. One row per short-call leg
+    paired with its underlying long stock; laddered calls each get their
+    own row sharing stock context."""
+    return strategy_positions_service.fetch_covered_calls_holdings(
         user_id=_TEST_USER_ID,
         db=db,
     )

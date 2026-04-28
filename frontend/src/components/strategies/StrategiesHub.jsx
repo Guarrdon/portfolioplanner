@@ -241,7 +241,7 @@ const StrategiesHub = () => {
   const classifiedTags = tags.filter((t) => (t.strategy_classes || []).length > 0).length;
 
   return (
-    <div className="p-4 max-w-6xl mx-auto">
+    <div className="px-2 py-4">
       <div className="mb-4">
         <h1 className="text-xl font-semibold text-gray-900">Strategies</h1>
         <p className="text-xs text-gray-500">

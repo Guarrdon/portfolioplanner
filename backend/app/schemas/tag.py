@@ -125,3 +125,51 @@ class LongStockHoldingsResponse(BaseModel):
     tags: List[StrategyTagInfo] = Field(default_factory=list)
     holdings: List[LongStockHolding] = Field(default_factory=list)
     portfolio_liquidation_value: float = 0.0
+    last_synced: Optional[str] = None
+
+
+class CoveredCallHolding(BaseModel):
+    """One short-call leg paired with its underlying long stock holding.
+    Multiple laddered calls produce multiple rows sharing stock context."""
+    underlying: str
+    account_hash: Optional[str] = None
+    account_number: Optional[str] = None
+    account_type: Optional[str] = None
+
+    stock_shares: float
+    stock_avg_cost: float = 0.0
+    stock_current_price: float = 0.0
+    stock_market_value: float = 0.0
+    stock_cost_basis: float = 0.0
+    stock_unrealized_pnl: float = 0.0
+    stock_current_day_pnl: Optional[float] = None
+
+    call_symbol: Optional[str] = None
+    call_strike: Optional[float] = None
+    call_expiration: Optional[str] = None
+    call_dte: Optional[int] = None
+    call_quantity: float = 0.0
+    call_open_price: float = 0.0
+    call_current_price: float = 0.0
+    premium_received: float = 0.0
+    close_cost: float = 0.0
+    call_unrealized_pnl: float = 0.0
+    capture_pct: Optional[float] = None
+    otm_pct: Optional[float] = None
+    mode: Optional[str] = None  # Income | Accumulation | Protection | ATM | ?
+    call_delta: Optional[float] = None
+    call_current_day_pnl: Optional[float] = None
+
+    coverage_ratio: Optional[float] = None
+    row_total_pnl: Optional[float] = None
+
+    tag_ids: List[str] = Field(default_factory=list)
+    reconciliation: StrategyReconciliation
+
+
+class CoveredCallsHoldingsResponse(BaseModel):
+    strategy_class: str = "covered_calls"
+    tags: List[StrategyTagInfo] = Field(default_factory=list)
+    holdings: List[CoveredCallHolding] = Field(default_factory=list)
+    portfolio_liquidation_value: float = 0.0
+    last_synced: Optional[str] = None
