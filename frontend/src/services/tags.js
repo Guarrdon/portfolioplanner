@@ -93,3 +93,13 @@ export const fetchBigOptionsHoldings = async () => {
   const response = await api.get('/tags/strategy/big_options/holdings');
   return response.data;
 };
+
+/**
+ * Fetch group-driven Box Spreads holdings — 4-leg balanced boxes acting
+ * as synthetic loans. Includes FRED 3-mo T-bill benchmark and
+ * account-exposure aggregates (face value settling 30d / 90d / all).
+ */
+export const fetchBoxSpreadsHoldings = async () => {
+  const response = await api.get('/tags/strategy/box_spreads/holdings');
+  return response.data;
+};

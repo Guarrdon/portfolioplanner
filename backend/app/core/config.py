@@ -35,7 +35,13 @@ class Settings(BaseSettings):
     # Schwab API
     USE_MOCK_SCHWAB_DATA: bool = True
     SCHWAB_CALLBACK_URL: str = "http://localhost:8000/api/v1/schwab/callback"
-    
+
+    # FRED API (St. Louis Fed) — used by the Box Spreads panel for the
+    # 3-month T-bill benchmark. Free key from fredaccount.stlouisfed.org.
+    # Empty default keeps the box panel working in degraded mode (no
+    # benchmark comparison) when the key isn't configured.
+    FRED_API_KEY: str = ""
+
     # Logging
     LOG_LEVEL: str = "INFO"
     

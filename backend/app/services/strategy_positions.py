@@ -37,6 +37,7 @@ from app.models.user import UserSchwabAccount
 from app.services.schwab_service import get_schwab_client, fetch_account_data
 from app.services.schwab_transactions import _normalize_transaction
 from app.services.earnings_calendar import get_next_catalyst
+from app.services.benchmark_rates import get_latest_rate_with_meta
 from app.core.strategy_classes import is_valid_strategy_class
 
 
@@ -2398,5 +2399,465 @@ def fetch_big_options_holdings(
             "target_usd": _BIG_OPT_TARGET_USD,
             "soft_cap_usd": _BIG_OPT_SOFT_CAP_USD,
             "soft_cap_port_pct": _BIG_OPT_SOFT_CAP_PORT_PCT,
+        },
+    }
+
+
+# ----------------------------------------------------------------------------
+# Box Spreads — synthetic loans built from 4-leg balanced option boxes.
+#
+# A box at expiration is always worth (high_strike - low_strike) × 100 ×
+# contracts regardless of the underlying. Long box = synthetic LEND (you
+# pay debit at open, receive face at expiration → earn implied yield).
+# Short box = synthetic BORROW (you receive credit at open, owe face at
+# expiration → pay implied rate). Most retail use is the SHORT box on SPX
+# as a cheap margin-financing alternative.
+# ----------------------------------------------------------------------------
+
+# "Below benchmark" threshold: long-box yield must lag the FRED rate by
+# more than this margin to earn the warning chip. Tight enough to flag
+# real underperformance, loose enough not to fire on a stale-by-25-bps
+# benchmark cache.
+_BOX_BELOW_BENCH_BPS = 50  # 0.50%
+
+# Tenor for "settling soon" status — short boxes resolving inside this
+# window deserve the user's attention because cash needs to be in place.
+_BOX_SETTLING_SOON_DAYS = 30
+
+
+def _classify_box_status(*, dte: Optional[int]) -> str:
+    if dte is None:
+        return "?"
+    if dte <= _BOX_SETTLING_SOON_DAYS:
+        return "Settling soon"
+    return "Patient"
+
+
+def fetch_box_spreads_holdings(
+    user_id: str,
+    db: Session,
+) -> Dict[str, Any]:
+    """Group-driven Box Spreads view.
+
+    A chain qualifies if it has exactly 4 option legs at one expiration
+    that form a balanced box:
+      - 1 long call + 1 short call (different strikes)
+      - 1 long put + 1 short put (different strikes)
+      - call_long.strike == put_short.strike (the "low" strike pair)
+      - call_short.strike == put_long.strike (the "high" strike pair)
+      - equal contract counts on all four legs
+
+    Direction:
+      Long box  = long-call at low + short-call at high + long-put at high
+                  + short-put at low. Net debit at open. Earns yield.
+      Short box = opposite signs. Net credit at open. Pays implied rate
+                  (cheap synthetic borrow against portfolio margin).
+
+    Anything else (3-leg, mismatched strikes, mixed expirations, unequal
+    contracts) → counted as `excluded_complex` for the footer.
+    """
+    strategy_class = "box_spreads"
+
+    user_tags = db.query(Tag).filter(Tag.user_id == user_id).all()
+    tags = [
+        t for t in user_tags
+        if t.strategy_classes and strategy_class in t.strategy_classes
+    ]
+
+    tag_id_set = {t.id for t in tags}
+    memberships: List[TagMembership] = []
+    if tag_id_set:
+        memberships = db.query(TagMembership).filter(
+            TagMembership.tag_id.in_(list(tag_id_set)),
+            TagMembership.member_type == "transaction_position",
+        ).all()
+    pos_ids = sorted({m.member_id for m in memberships})
+    tag_ids_by_pid: Dict[str, List[str]] = {}
+    for m in memberships:
+        tag_ids_by_pid.setdefault(m.member_id, []).append(str(m.tag_id))
+
+    txids_by_pid: Dict[str, List[str]] = {}
+    all_tx_ids: set = set()
+    if pos_ids:
+        annotations = db.query(TransactionAnnotation).filter(
+            TransactionAnnotation.user_id == user_id,
+            TransactionAnnotation.transaction_position_id.in_(pos_ids),
+        ).all()
+        for a in annotations:
+            if not a.transaction_position_id or not a.schwab_transaction_id:
+                continue
+            txids_by_pid.setdefault(a.transaction_position_id, []).append(a.schwab_transaction_id)
+            all_tx_ids.add(a.schwab_transaction_id)
+
+    payload_by_id: Dict[str, Dict[str, Any]] = {}
+    if all_tx_ids:
+        cached = db.query(SchwabTransactionCache).filter(
+            SchwabTransactionCache.user_id == user_id,
+            SchwabTransactionCache.schwab_transaction_id.in_(list(all_tx_ids)),
+        ).all()
+        payload_by_id = {r.schwab_transaction_id: r.raw_payload for r in cached}
+
+    pos_rows: List[TransactionPosition] = []
+    if pos_ids:
+        pos_rows = db.query(TransactionPosition).filter(
+            TransactionPosition.user_id == user_id,
+            TransactionPosition.id.in_(pos_ids),
+        ).all()
+    pos_by_id = {p.id: p for p in pos_rows}
+
+    snap = _bucket_synced_positions(user_id, db)
+    last_synced = snap["most_recent_sync"]
+    portfolio_lv = _portfolio_liquidation_value(user_id, db)
+    _, live_option_by_sym = _build_live_lookups(snap["buckets"])
+
+    # Benchmark rate (3-month T-bill from FRED, 24h cached).
+    bench_meta = None
+    bench_pct: Optional[float] = None
+    try:
+        bench_meta = get_latest_rate_with_meta(db)
+        if bench_meta:
+            bench_pct = bench_meta.get("rate_pct")
+    except Exception as exc:
+        logger = __import__("logging").getLogger(__name__)
+        logger.warning("benchmark fetch failed (non-fatal): %s", exc)
+
+    today = datetime.utcnow().date()
+    holdings: List[Dict[str, Any]] = []
+    excluded_complex = 0
+
+    # Panel-level account-exposure aggregates.
+    long_face_total = 0.0   # cash you'll RECEIVE at expiration (long boxes)
+    short_face_total = 0.0  # cash you'll OWE at expiration (short boxes)
+    long_cash_now = 0.0     # debit paid (negative cash flow today)
+    short_cash_now = 0.0    # credit received today
+    margin_total = 0.0
+    short_face_30d = 0.0
+    short_face_90d = 0.0
+    # Per-expiration concentration: short-box face value clustered by date.
+    short_by_exp: Dict[str, float] = {}
+
+    for pid in pos_ids:
+        p = pos_by_id.get(pid)
+        if p is None:
+            continue
+        recs: List[Dict[str, Any]] = []
+        for tx_id in txids_by_pid.get(pid, []):
+            payload = payload_by_id.get(tx_id)
+            if payload is None:
+                continue
+            rec = _normalize_transaction(payload, None, "")
+            if rec:
+                recs.append(rec)
+        if not recs:
+            continue
+        recs.sort(key=lambda r: r.get("date") or "")
+
+        summary = _chain_legs_summary(recs)
+
+        # Reject any chain that touches stock — boxes are option-only.
+        if any(abs(s.get("qty", 0)) > 1e-9 for s in summary["stock"].values()):
+            excluded_complex += 1
+            continue
+
+        open_legs = [o for o in summary["options"].values() if abs(o["qty"]) > 1e-9]
+        if len(open_legs) != 4:
+            if open_legs:
+                excluded_complex += 1
+            continue
+
+        # All same expiration?
+        exps = {l.get("expiration") for l in open_legs}
+        if len(exps) != 1:
+            excluded_complex += 1
+            continue
+
+        # Equal contract counts on all 4 legs?
+        qtys = [abs(float(l["qty"])) for l in open_legs]
+        if max(qtys) - min(qtys) > 1e-9:
+            excluded_complex += 1
+            continue
+        contracts = qtys[0]
+
+        calls = [l for l in open_legs if l.get("option_type") == "call"]
+        puts = [l for l in open_legs if l.get("option_type") == "put"]
+        if len(calls) != 2 or len(puts) != 2:
+            excluded_complex += 1
+            continue
+
+        # One long + one short on each side.
+        long_calls = [l for l in calls if l["qty"] > 0]
+        short_calls = [l for l in calls if l["qty"] < 0]
+        long_puts = [l for l in puts if l["qty"] > 0]
+        short_puts = [l for l in puts if l["qty"] < 0]
+        if not (len(long_calls) == 1 and len(short_calls) == 1
+                and len(long_puts) == 1 and len(short_puts) == 1):
+            excluded_complex += 1
+            continue
+
+        try:
+            lc_strike = float(long_calls[0]["strike"])
+            sc_strike = float(short_calls[0]["strike"])
+            lp_strike = float(long_puts[0]["strike"])
+            sp_strike = float(short_puts[0]["strike"])
+        except (TypeError, ValueError, KeyError):
+            excluded_complex += 1
+            continue
+
+        # Strike-pair check: one strike anchors long-call + short-put,
+        # the other anchors short-call + long-put.
+        # Two valid configurations:
+        #   LONG box:  lc_strike == sp_strike (low) AND sc_strike == lp_strike (high)
+        #              with lc_strike < sc_strike
+        #   SHORT box: same strike pairings, but signed opposite. The pairings
+        #              hold either way; direction comes from which strike has
+        #              the long call vs short call.
+        if abs(lc_strike - sp_strike) > 1e-9 or abs(sc_strike - lp_strike) > 1e-9:
+            # Try the opposite pairing in case the user opened legs in a
+            # non-standard order: lc==lp (high) and sc==sp (low) is a SHORT box.
+            if abs(lc_strike - lp_strike) > 1e-9 or abs(sc_strike - sp_strike) > 1e-9:
+                excluded_complex += 1
+                continue
+
+        # Determine direction by comparing the long-call strike vs short-call.
+        # Long box: long the cheaper call (lower strike), short the pricier.
+        # Short box: long the pricier call (higher strike), short the cheaper.
+        if lc_strike < sc_strike:
+            direction = "long"  # synthetic lend
+            low_strike, high_strike = lc_strike, sc_strike
+        elif lc_strike > sc_strike:
+            direction = "short"  # synthetic borrow
+            low_strike, high_strike = sc_strike, lc_strike
+        else:
+            excluded_complex += 1
+            continue
+
+        # Verify the alternate pair pricing matches (sanity check that the
+        # box is actually balanced).
+        # For LONG box: long_call(low) + short_call(high) + long_put(high) + short_put(low)
+        # For SHORT box: long_call(high) + short_call(low) + long_put(low) + short_put(high)
+        if direction == "long":
+            valid = (
+                abs(lc_strike - low_strike) < 1e-9
+                and abs(sc_strike - high_strike) < 1e-9
+                and abs(lp_strike - high_strike) < 1e-9
+                and abs(sp_strike - low_strike) < 1e-9
+            )
+        else:
+            valid = (
+                abs(lc_strike - high_strike) < 1e-9
+                and abs(sc_strike - low_strike) < 1e-9
+                and abs(lp_strike - low_strike) < 1e-9
+                and abs(sp_strike - high_strike) < 1e-9
+            )
+        if not valid:
+            excluded_complex += 1
+            continue
+
+        und = (open_legs[0].get("underlying") or "").upper().lstrip("$")
+        leg_symbols = {l["symbol"] for l in open_legs}
+
+        # Net cash flow at open across the 4 legs (signed). For a LONG box
+        # this is negative (debit paid); for a SHORT box it's positive
+        # (credit received).
+        net_at_open = _net_at_open_for_legs(recs, leg_symbols)
+
+        face_value = (high_strike - low_strike) * 100 * contracts
+
+        # Open principal = absolute opening cash flow. The implied rate
+        # is computed against this.
+        open_principal = abs(net_at_open) if net_at_open else 0.0
+
+        # Days held + DTE.
+        exp = open_legs[0].get("expiration")
+        exp_iso = exp.isoformat() if hasattr(exp, "isoformat") else (str(exp) if exp else None)
+        dte: Optional[int] = None
+        if exp_iso:
+            try:
+                exp_date = datetime.fromisoformat(str(exp_iso)[:10]).date()
+                dte = (exp_date - today).days
+            except Exception:
+                dte = None
+
+        opening_date = _earliest_opening_date(recs, leg_symbols)
+        days_held = None
+        total_term_days = None
+        if opening_date:
+            try:
+                od = datetime.fromisoformat(str(opening_date)[:10]).date()
+                days_held = (today - od).days
+                if exp_iso:
+                    ed = datetime.fromisoformat(str(exp_iso)[:10]).date()
+                    total_term_days = (ed - od).days
+            except Exception:
+                pass
+
+        # Annualized implied rate. For both directions:
+        #   yield_or_cost = (face - principal) / principal × (365 / total_term_days)
+        # where principal is what changed hands at open.
+        implied_rate_pct: Optional[float] = None
+        if open_principal > 0 and total_term_days and total_term_days > 0 and face_value > open_principal:
+            implied_rate_pct = (
+                (face_value - open_principal) / open_principal
+                * (365 / total_term_days) * 100
+            )
+
+        # Δ vs benchmark — only meaningful with a fresh FRED rate.
+        delta_vs_bench_pct = None
+        if implied_rate_pct is not None and bench_pct is not None:
+            delta_vs_bench_pct = implied_rate_pct - bench_pct
+
+        # Current mark-to-market: cash to close all four legs right now.
+        # Sum of leg.current_price × 100 × signed-qty across the four. For
+        # a LONG box, MTM should be close to face × discount_factor and
+        # ≥ open_principal (you've earned yield as time passed).
+        current_value = 0.0
+        for ol in open_legs:
+            sym = ol.get("symbol")
+            live = live_option_by_sym.get(sym) or {}
+            try:
+                cur_price = float(live.get("current_price") or 0)
+            except (TypeError, ValueError):
+                cur_price = 0
+            qty = float(ol["qty"])
+            current_value += qty * cur_price * 100
+
+        # For LONG box: current_value = positive (asset, collect at close).
+        # For SHORT box: current_value = negative (liability, pay at close).
+        # net_at_open is signed by Schwab: positive = credit received at
+        # open, negative = debit paid. Both are signed cash-flow numbers,
+        # so total P&L is just their sum:
+        #   short box: +96k credit at open + (−97k mark) = −1k unrealized
+        #   long box:  −96k debit at open + (+96.6k mark) = +600 unrealized
+        # Subtracting one from the other (the original bug here) double-
+        # counted the open cash flow.
+        unrealized = net_at_open + current_value
+
+        # Daily carry: total dollars expected to accrue (long) or to be
+        # paid (short) per calendar day at the implied rate, over the
+        # full term.
+        daily_carry: Optional[float] = None
+        if total_term_days and total_term_days > 0:
+            total_carry = face_value - open_principal
+            daily_carry = total_carry / total_term_days
+            if direction == "short":
+                daily_carry = -daily_carry  # cost to user
+
+        # Margin / maintenance — read from the underlying Position rows
+        # if any of these legs map to a synced position. With portfolio
+        # margin SPX boxes are typically near-zero, so this can be
+        # informational but rarely binding.
+        margin_for_row = 0.0  # TODO: aggregate via PositionLeg → Position when a PM-binding scenario shows up
+
+        # Status chip + below-benchmark flag.
+        status = _classify_box_status(dte=dte)
+        below_benchmark = False
+        if (direction == "long" and implied_rate_pct is not None
+                and bench_pct is not None
+                and implied_rate_pct < (bench_pct - _BOX_BELOW_BENCH_BPS / 100)):
+            below_benchmark = True
+
+        pct_port = (
+            (face_value / portfolio_lv * 100)
+            if portfolio_lv > 0 else None
+        )
+
+        # Recon — at least one leg seen in the live snapshot?
+        any_live = any(live_option_by_sym.get(l.get("symbol")) for l in open_legs)
+        recon = (
+            {"state": "live", "summary": "all 4 legs synced"}
+            if any_live
+            else {"state": "mismatch", "summary": "no live leg data"}
+        )
+
+        # Roll into account-exposure aggregates.
+        if direction == "long":
+            long_face_total += face_value
+            long_cash_now += net_at_open  # negative (paid)
+        else:
+            short_face_total += face_value
+            short_cash_now += net_at_open  # positive (received)
+            if exp_iso:
+                short_by_exp[str(exp_iso)[:10]] = short_by_exp.get(str(exp_iso)[:10], 0) + face_value
+            if dte is not None:
+                if dte <= 30:
+                    short_face_30d += face_value
+                if dte <= 90:
+                    short_face_90d += face_value
+
+        margin_total += margin_for_row
+
+        type_chip = "Long Box" if direction == "long" else "Short Box"
+        row_type = "long_box" if direction == "long" else "short_box"
+        strikes_label = f"{low_strike:g} / {high_strike:g}"
+
+        holdings.append({
+            "underlying": und,
+            "account_hash": "",
+            "account_number": None,
+            "type": type_chip,
+            "row_type": row_type,
+            "direction": direction,  # 'long' | 'short'
+            "strikes_label": strikes_label,
+            "low_strike": low_strike,
+            "high_strike": high_strike,
+            "expiration": str(exp_iso)[:10] if exp_iso else None,
+            "dte": dte,
+            "days_held": days_held,
+            "total_term_days": total_term_days,
+            "contracts": contracts,
+            "face_value": face_value,
+            "net_at_open": net_at_open,
+            "open_principal": open_principal,
+            "current_value": current_value,
+            "unrealized_pnl": unrealized,
+            "row_total_pnl": unrealized,
+            "implied_rate_pct": implied_rate_pct,
+            "delta_vs_benchmark_pct": delta_vs_bench_pct,
+            "daily_carry": daily_carry,
+            "margin": margin_for_row,
+            "pct_port": pct_port,
+            "status": status,
+            "below_benchmark": below_benchmark,
+            "tag_ids": tag_ids_by_pid.get(pid, []),
+            "reconciliation": recon,
+            "chain_id": p.id,
+            "chain_name": p.name,
+        })
+
+    # Concentration: any expiration date with >1 short box clustering.
+    short_concentration = sorted(
+        [{"expiration": d, "face_value": v}
+         for d, v in short_by_exp.items() if v > 0],
+        key=lambda x: x["expiration"],
+    )
+
+    return {
+        "strategy_class": strategy_class,
+        "tags": [
+            {
+                "id": str(t.id), "name": t.name, "color": t.color, "note": t.note,
+                "strategy_classes": list(t.strategy_classes or []),
+            }
+            for t in tags
+        ],
+        "holdings": holdings,
+        "portfolio_liquidation_value": portfolio_lv,
+        "last_synced": last_synced.isoformat() if last_synced else None,
+        "excluded_complex_count": excluded_complex,
+        "benchmark": bench_meta,  # {series_id, rate_pct, rate_date, fetched_at} | None
+        "exposure": {
+            "long_face_total": long_face_total,
+            "short_face_total": short_face_total,
+            "long_cash_at_open": long_cash_now,
+            "short_cash_at_open": short_cash_now,
+            "net_face": long_face_total - short_face_total,
+            "short_face_30d": short_face_30d,
+            "short_face_90d": short_face_90d,
+            "short_face_pct_port": (
+                (short_face_total / portfolio_lv * 100)
+                if portfolio_lv > 0 else None
+            ),
+            "margin_total": margin_total,
+            "short_concentration": short_concentration,
         },
     }

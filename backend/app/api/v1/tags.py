@@ -16,6 +16,7 @@ from app.schemas.tag import (
     VerticalsHoldingsResponse,
     SingleLegHoldingsResponse,
     BigOptionsHoldingsResponse,
+    BoxSpreadsHoldingsResponse,
 )
 from app.services import tags as tags_service
 from app.services import strategy_positions as strategy_positions_service
@@ -165,6 +166,19 @@ def get_big_options_holdings(db: Session = Depends(get_db)):
     earnings/catalyst proximity, trim history, concentration warnings,
     hit-rate stats over closed chains."""
     return strategy_positions_service.fetch_big_options_holdings(
+        user_id=_TEST_USER_ID,
+        db=db,
+    )
+
+
+@router.get("/strategy/box_spreads/holdings", response_model=BoxSpreadsHoldingsResponse)
+def get_box_spreads_holdings(db: Session = Depends(get_db)):
+    """Box Spreads holdings, group-driven. 4-leg balanced boxes acting
+    as synthetic loans. Long boxes earn implied yield; short boxes pay
+    an implied rate (typical SPX margin financing). Includes FRED 3-mo
+    T-bill benchmark for yield comparison and account-exposure
+    aggregates (face value settling 30d / 90d / all)."""
+    return strategy_positions_service.fetch_box_spreads_holdings(
         user_id=_TEST_USER_ID,
         db=db,
     )

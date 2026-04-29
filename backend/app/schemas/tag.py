@@ -394,3 +394,78 @@ class BigOptionsHoldingsResponse(BaseModel):
     concentration_thresholds: BigOptionsConcentrationThresholds = Field(
         default_factory=BigOptionsConcentrationThresholds
     )
+
+
+class BoxSpreadHolding(BaseModel):
+    """One box-spread row: a 4-leg balanced box at one expiration."""
+    underlying: str
+    account_hash: Optional[str] = None
+    account_number: Optional[str] = None
+    type: str  # Long Box | Short Box
+    row_type: str  # long_box | short_box
+    direction: str  # long | short
+    strikes_label: str
+    low_strike: float
+    high_strike: float
+    expiration: Optional[str] = None
+    dte: Optional[int] = None
+    days_held: Optional[int] = None
+    total_term_days: Optional[int] = None
+    contracts: float
+
+    face_value: float
+    net_at_open: float
+    open_principal: float
+    current_value: float
+    unrealized_pnl: float
+    row_total_pnl: float
+
+    implied_rate_pct: Optional[float] = None
+    delta_vs_benchmark_pct: Optional[float] = None
+    daily_carry: Optional[float] = None
+    margin: float = 0.0
+    pct_port: Optional[float] = None
+
+    status: str  # Settling soon | Patient | ?
+    below_benchmark: bool = False
+
+    tag_ids: List[str] = Field(default_factory=list)
+    reconciliation: StrategyReconciliation
+    chain_id: str
+    chain_name: Optional[str] = None
+
+
+class BoxSpreadsBenchmark(BaseModel):
+    series_id: str
+    rate_pct: Optional[float] = None
+    rate_date: Optional[str] = None
+    fetched_at: Optional[str] = None
+
+
+class BoxSpreadsExpirationConcentration(BaseModel):
+    expiration: str
+    face_value: float
+
+
+class BoxSpreadsExposure(BaseModel):
+    long_face_total: float = 0.0
+    short_face_total: float = 0.0
+    long_cash_at_open: float = 0.0
+    short_cash_at_open: float = 0.0
+    net_face: float = 0.0
+    short_face_30d: float = 0.0
+    short_face_90d: float = 0.0
+    short_face_pct_port: Optional[float] = None
+    margin_total: float = 0.0
+    short_concentration: List[BoxSpreadsExpirationConcentration] = Field(default_factory=list)
+
+
+class BoxSpreadsHoldingsResponse(BaseModel):
+    strategy_class: str = "box_spreads"
+    tags: List[StrategyTagInfo] = Field(default_factory=list)
+    holdings: List[BoxSpreadHolding] = Field(default_factory=list)
+    portfolio_liquidation_value: float = 0.0
+    last_synced: Optional[str] = None
+    excluded_complex_count: int = 0
+    benchmark: Optional[BoxSpreadsBenchmark] = None
+    exposure: BoxSpreadsExposure = Field(default_factory=BoxSpreadsExposure)

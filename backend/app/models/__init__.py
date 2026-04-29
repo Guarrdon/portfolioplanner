@@ -8,6 +8,7 @@ from app.models.position_flag import PositionFlag
 from app.models.transaction_cache import SchwabTransactionCache, SchwabTransactionCacheState
 from app.models.quote_cache import UnderlyingQuoteCache
 from app.models.catalyst import EarningsCache, UserCatalyst
+from app.models.benchmark_rate import BenchmarkRateCache
 
 __all__ = [
     "User",
@@ -25,4 +26,5 @@ __all__ = [
     "UnderlyingQuoteCache",
     "EarningsCache",
     "UserCatalyst",
+    "BenchmarkRateCache",
 ]
