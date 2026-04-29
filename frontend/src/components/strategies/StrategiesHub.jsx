@@ -253,7 +253,12 @@ const StrategiesHub = () => {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      {/* Responsive tile grid: each tile gets at least ~340px before the
+          grid will pack a second column. Result on a typical desktop:
+          1 col on phones, 2 on small tablets, 3 on standard laptops,
+          4–5 on wider monitors. Auto-fit means it just keeps adding
+          columns as width allows — no breakpoint guessing. */}
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(340px,1fr))] gap-3">
         {STRATEGY_LIST.map((s) => (
           <StrategyTile
             key={s.key}
@@ -264,30 +269,18 @@ const StrategiesHub = () => {
             mutating={tagMutation.isPending}
           />
         ))}
-
-        {tagsByStrategy.get('_uncategorized').length > 0 && (
-          <Link
-            to="/strategies/_uncategorized"
-            className="group relative bg-white border border-dashed border-gray-300 rounded p-3 hover:shadow-sm transition-shadow flex items-start gap-3"
-          >
-            <div className="w-1 self-stretch rounded bg-gray-300 flex-shrink-0" />
-            <div className="p-2 rounded bg-gray-100 flex-shrink-0">
-              <TagIcon className="w-5 h-5 text-gray-500" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-gray-700">Uncategorized</span>
-                <span className="text-xs text-gray-500 tabular-nums">
-                  {tagsByStrategy.get('_uncategorized').length} group
-                  {tagsByStrategy.get('_uncategorized').length === 1 ? '' : 's'}
-                </span>
-              </div>
-              <p className="mt-0.5 text-xs text-gray-500">Groups not assigned to any strategy yet.</p>
-            </div>
-            <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0 mt-1 group-hover:text-gray-600" />
-          </Link>
-        )}
       </div>
+
+      {tagsByStrategy.get('_uncategorized').length > 0 && (
+        <p className="mt-3 text-[11px] text-gray-500">
+          {tagsByStrategy.get('_uncategorized').length} uncategorized group
+          {tagsByStrategy.get('_uncategorized').length === 1 ? '' : 's'} —{' '}
+          <Link to="/strategies/_uncategorized" className="text-sky-700 hover:underline">
+            review &amp; assign
+          </Link>
+          .
+        </p>
+      )}
     </div>
   );
 };
