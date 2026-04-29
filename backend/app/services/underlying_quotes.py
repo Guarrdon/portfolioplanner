@@ -147,6 +147,37 @@ def fetch_quotes_chunked(client, symbols: Iterable[str]) -> Dict[str, dict]:
     return out
 
 
+def read_cached_quotes(
+    user_id: str,
+    db: Session,
+    symbols: Iterable[str],
+) -> Dict[str, dict]:
+    """Cache-only read — never hits Schwab. Returns whatever's in
+    UnderlyingQuoteCache for the requested symbols. Stale entries are still
+    returned with their `fetched_at`; callers can decide whether to act on
+    them. Symbols not in cache are simply omitted."""
+    wanted = [s.strip().upper() for s in symbols if s and s.strip()]
+    if not wanted:
+        return {}
+    rows = (
+        db.query(UnderlyingQuoteCache)
+        .filter(UnderlyingQuoteCache.user_id == user_id)
+        .filter(UnderlyingQuoteCache.symbol.in_(wanted))
+        .all()
+    )
+    out: Dict[str, dict] = {}
+    for r in rows:
+        if r.last_price is None:
+            continue
+        out[r.symbol] = {
+            "last_price": r.last_price,
+            "bid": r.bid,
+            "ask": r.ask,
+            "fetched_at": r.fetched_at.isoformat() if r.fetched_at else None,
+        }
+    return out
+
+
 def get_or_refresh_quotes(
     user_id: str,
     db: Session,

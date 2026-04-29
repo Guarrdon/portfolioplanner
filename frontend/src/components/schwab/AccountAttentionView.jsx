@@ -411,9 +411,16 @@ const AccountAttentionView = () => {
   });
 
   const positionsQueryKey = ['schwab-attention-positions'];
+  // Cache-only: backend serves cached spot quotes with no live Schwab fetch
+  // and we don't refetch on focus/mount. Refresh happens via the global
+  // sync button (which invalidates this key) or this view's own button.
   const { data: posData, isLoading: posLoading, error: posError, refetch, isFetching } = useQuery({
     queryKey: positionsQueryKey,
     queryFn: () => fetchActualPositions({ status: 'active' }),
+    staleTime: Infinity,
+    gcTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
 
   const flagsQueryKey = ['position-flags'];

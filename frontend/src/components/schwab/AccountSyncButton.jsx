@@ -113,6 +113,8 @@ const AccountSyncButton = ({ accountHash, lastSynced, onSynced }) => {
       queryClient.invalidateQueries({ queryKey: ['verticals-holdings'] });
       queryClient.invalidateQueries({ queryKey: ['single-leg-holdings'] });
       queryClient.invalidateQueries({ queryKey: ['big-options-holdings'] });
+      queryClient.invalidateQueries({ queryKey: ['dividends-holdings'] });
+      queryClient.invalidateQueries({ queryKey: ['schwab-attention-positions'] });
       queryClient.invalidateQueries({ queryKey: ['transactions', 'by-account', accountHash] });
 
       if (onSynced) onSynced();
