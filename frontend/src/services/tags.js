@@ -64,3 +64,32 @@ export const fetchCoveredCallsHoldings = async () => {
   const response = await api.get('/tags/strategy/covered_calls/holdings');
   return response.data;
 };
+
+/**
+ * Fetch group-driven Verticals holdings — one row per tagged
+ * transaction_position whose open legs form a 2-leg balanced spread.
+ */
+export const fetchVerticalsHoldings = async () => {
+  const response = await api.get('/tags/strategy/verticals/holdings');
+  return response.data;
+};
+
+/**
+ * Fetch group-driven Single-Leg short-premium holdings — sold puts,
+ * sold calls, short straddles, short strangles. Excludes long premium
+ * and any chain with a long leg.
+ */
+export const fetchSingleLegHoldings = async () => {
+  const response = await api.get('/tags/strategy/single_leg/holdings');
+  return response.data;
+};
+
+/**
+ * Fetch group-driven Big Options long-premium holdings — long calls,
+ * long puts, long straddles, long strangles. Lottery-style plays;
+ * payload includes catalyst proximity, trim history, hit-rate stats.
+ */
+export const fetchBigOptionsHoldings = async () => {
+  const response = await api.get('/tags/strategy/big_options/holdings');
+  return response.data;
+};

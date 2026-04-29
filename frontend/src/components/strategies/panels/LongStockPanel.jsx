@@ -91,6 +91,27 @@ const RECON_BADGE = {
   },
 };
 
+// Legend lives next to the chips. Only non-obvious items.
+const LEGEND_BADGES = [
+  { name: 'LT', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    desc: 'Long-term: held ≥365 days. Sell qualifies for long-term capital gains rates.' },
+  { name: 'ST', cls: 'bg-amber-50 text-amber-700 border-amber-200',
+    desc: 'Short-term: held <365 days. Sell taxed as ordinary income.' },
+  { name: 'Live', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    desc: 'Reconciled: synced share count matches the chain history derived from transaction tags.' },
+  { name: 'Pre-window', cls: 'bg-sky-50 text-sky-700 border-sky-200',
+    desc: 'The original buy is older than our 730-day transaction cache. Cost basis is taken from Schwab’s synced average; chain-derived realized P&L is partial.' },
+  { name: 'Gap', cls: 'bg-amber-50 text-amber-700 border-amber-200',
+    desc: 'Synced shares disagree with what the tagged chain implies. Usually means an unclassified buy/sell needs to be added to the Group.' },
+  { name: 'No chain', cls: 'bg-gray-50 text-gray-500 border-gray-200',
+    desc: 'Position is tagged but no transactions are classified into it yet — only Schwab’s live snapshot is contributing.' },
+];
+const LEGEND_COLUMNS = [
+  { name: 'Held days', desc: 'Days since the earliest classified buy in this chain. Rolls into LT/ST status at 365.' },
+  { name: 'Realized %', desc: 'Realized P&L from prior trims of this chain, expressed against cost basis. Distinct from unrealized which marks the current open shares to market.' },
+  { name: 'Today', desc: 'Schwab-reported intraday P&L on the position. Net of any same-day buys/sells.' },
+];
+
 const ReconBadge = ({ recon }) => {
   if (!recon || !recon.state) return <span className="text-gray-300">—</span>;
   const cfg = RECON_BADGE[recon.state] || RECON_BADGE.no_chain;
@@ -133,6 +154,7 @@ const LongStockPanel = () => {
   const queryClient = useQueryClient();
   const [sortKey, setSortKey] = useState('mv');
   const [sortDir, setSortDir] = useState('desc');
+  const [legendOpen, setLegendOpen] = useState(false);
 
   // Cache-only: backend reads from synced Position table. staleTime
   // Infinity means switching between strategy panels doesn't refetch.
@@ -314,16 +336,57 @@ const LongStockPanel = () => {
             ? <>Synced <SyncedAgo iso={data.last_synced} /> · cached</>
             : 'No sync timestamp'}
         </span>
-        <button
-          onClick={onRefresh}
-          disabled={isFetching}
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-gray-600 hover:bg-gray-100 disabled:opacity-40"
-          title="Reload from backend cache"
-        >
-          <RefreshCw className={`w-3 h-3 ${isFetching ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setLegendOpen((o) => !o)}
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded hover:bg-gray-100 ${
+              legendOpen ? 'text-sky-700 bg-sky-50' : 'text-gray-600'
+            }`}
+            title="What do these chips and columns mean?"
+          >
+            <HelpCircle className="w-3 h-3" />
+            Legend
+          </button>
+          <button
+            onClick={onRefresh}
+            disabled={isFetching}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+            title="Reload from backend cache"
+          >
+            <RefreshCw className={`w-3 h-3 ${isFetching ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </div>
+
+      {legendOpen && (
+        <div className="px-3 py-2 border-b border-gray-200 bg-gray-50 text-[11px]">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-1.5">Tax & reconciliation badges</div>
+              <ul className="space-y-1.5">
+                {LEGEND_BADGES.map((b) => (
+                  <li key={b.name} className="flex items-start gap-2">
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded border whitespace-nowrap flex-shrink-0 ${b.cls}`}>{b.name}</span>
+                    <span className="text-gray-700">{b.desc}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-1.5">Columns explained</div>
+              <ul className="space-y-1.5">
+                {LEGEND_COLUMNS.map((c) => (
+                  <li key={c.name}>
+                    <span className="font-medium text-gray-900">{c.name}</span>
+                    <span className="text-gray-700"> — {c.desc}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Top stats */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 px-3 py-2 border-b border-gray-200 text-xs">

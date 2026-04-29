@@ -13,6 +13,9 @@ from app.schemas.tag import (
     StrategyPositionsResponse,
     LongStockHoldingsResponse,
     CoveredCallsHoldingsResponse,
+    VerticalsHoldingsResponse,
+    SingleLegHoldingsResponse,
+    BigOptionsHoldingsResponse,
 )
 from app.services import tags as tags_service
 from app.services import strategy_positions as strategy_positions_service
@@ -127,6 +130,41 @@ def get_covered_calls_holdings(db: Session = Depends(get_db)):
     paired with its underlying long stock; laddered calls each get their
     own row sharing stock context."""
     return strategy_positions_service.fetch_covered_calls_holdings(
+        user_id=_TEST_USER_ID,
+        db=db,
+    )
+
+
+@router.get("/strategy/verticals/holdings", response_model=VerticalsHoldingsResponse)
+def get_verticals_holdings(db: Session = Depends(get_db)):
+    """Verticals holdings, group-driven. One row per tagged
+    transaction_position whose currently-open legs form a balanced
+    same-type/same-expiration two-leg spread."""
+    return strategy_positions_service.fetch_verticals_holdings(
+        user_id=_TEST_USER_ID,
+        db=db,
+    )
+
+
+@router.get("/strategy/single_leg/holdings", response_model=SingleLegHoldingsResponse)
+def get_single_leg_holdings(db: Session = Depends(get_db)):
+    """Single-Leg short-premium holdings, group-driven. One row per tagged
+    transaction_position whose currently-open legs are 1-2 short option
+    legs (no longs, no stock). Covers sold puts, sold calls, short
+    straddles, and short strangles."""
+    return strategy_positions_service.fetch_single_leg_holdings(
+        user_id=_TEST_USER_ID,
+        db=db,
+    )
+
+
+@router.get("/strategy/big_options/holdings", response_model=BigOptionsHoldingsResponse)
+def get_big_options_holdings(db: Session = Depends(get_db)):
+    """Big Options long-premium holdings, group-driven. Lottery-style
+    plays: long calls, long puts, long straddles, long strangles. Includes
+    earnings/catalyst proximity, trim history, concentration warnings,
+    hit-rate stats over closed chains."""
+    return strategy_positions_service.fetch_big_options_holdings(
         user_id=_TEST_USER_ID,
         db=db,
     )

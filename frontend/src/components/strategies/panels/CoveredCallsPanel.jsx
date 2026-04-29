@@ -85,6 +85,32 @@ const MODE_BADGE = {
   '?':          { cls: 'bg-gray-50 text-gray-500 border-gray-200' },
 };
 
+// Legend lives next to the chip color maps. Only non-obvious items.
+const LEGEND_BADGES = [
+  { name: 'Income', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    desc: 'OTM call, ≤60 DTE. You’re harvesting time premium and don’t mind keeping the shares.' },
+  { name: 'Accumulation', cls: 'bg-sky-50 text-sky-700 border-sky-200',
+    desc: 'OTM call, >60 DTE. Low-Δ overlay; you’re willing to hold the stock through the call’s life.' },
+  { name: 'Protection', cls: 'bg-purple-50 text-purple-700 border-purple-200',
+    desc: 'ITM call. Mostly intrinsic — acts as downside protection on the long stock.' },
+  { name: 'ATM', cls: 'bg-amber-50 text-amber-700 border-amber-200',
+    desc: 'Strike within ±2% of spot. Mode is ambiguous without delta — could be either income or assignment risk.' },
+  { name: 'Roll', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    desc: '≥75% of premium captured AND ≥14 DTE. Classic close/roll trigger — bank the credit, sell new time.' },
+  { name: 'Covered', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    desc: 'Shares ≥ short calls × 100. The call is fully backed by stock you own.' },
+  { name: 'Over-covered', cls: 'bg-sky-50 text-sky-700 border-sky-200',
+    desc: 'You own more shares than the calls cover. The unsold shares sit naked of any call overlay.' },
+  { name: 'Naked', cls: 'bg-red-50 text-red-700 border-red-200',
+    desc: 'Short calls without enough underlying shares to cover them. Margin/assignment risk.' },
+];
+const LEGEND_COLUMNS = [
+  { name: 'Captured', desc: 'Premium received − cost to close, expressed in $ and % of original credit. The slice already earned.' },
+  { name: 'OTM%', desc: '(strike − spot) / spot. Positive = OTM, negative = ITM. The buffer between current price and the strike.' },
+  { name: '$/day decay', desc: 'Cost-to-close ÷ DTE. Forward-looking expected daily theta capture on the short call.' },
+  { name: 'Risk: Safe → Likely', desc: 'PoP from short-call |Δ| (1 − |Δ| ≈ chance call expires worthless). Falls back to OTM% bands when greeks aren’t synced.' },
+];
+
 const RECON_BADGE = {
   covered:       { icon: CheckCircle2, cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', label: 'Covered' },
   over_covered:  { icon: Info, cls: 'bg-sky-50 text-sky-700 border-sky-200', label: 'Over-covered' },
@@ -129,6 +155,7 @@ const CoveredCallsPanel = () => {
   const queryClient = useQueryClient();
   const [sortKey, setSortKey] = useState('dte');
   const [sortDir, setSortDir] = useState('asc');
+  const [legendOpen, setLegendOpen] = useState(false);
 
   const { data, isLoading, error, isFetching } = useQuery({
     queryKey: ['covered-calls-holdings'],
@@ -367,16 +394,57 @@ const CoveredCallsPanel = () => {
             ? <>Synced <SyncedAgo iso={data.last_synced} /> · cached</>
             : 'No sync timestamp'}
         </span>
-        <button
-          onClick={onRefresh}
-          disabled={isFetching}
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-gray-600 hover:bg-gray-100 disabled:opacity-40"
-          title="Reload from backend cache"
-        >
-          <RefreshCw className={`w-3 h-3 ${isFetching ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setLegendOpen((o) => !o)}
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded hover:bg-gray-100 ${
+              legendOpen ? 'text-sky-700 bg-sky-50' : 'text-gray-600'
+            }`}
+            title="What do these chips and columns mean?"
+          >
+            <HelpCircle className="w-3 h-3" />
+            Legend
+          </button>
+          <button
+            onClick={onRefresh}
+            disabled={isFetching}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-gray-600 hover:bg-gray-100 disabled:opacity-40"
+            title="Reload from backend cache"
+          >
+            <RefreshCw className={`w-3 h-3 ${isFetching ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </div>
+
+      {legendOpen && (
+        <div className="px-3 py-2 border-b border-gray-200 bg-gray-50 text-[11px]">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-1.5">Mode, signal & coverage badges</div>
+              <ul className="space-y-1.5">
+                {LEGEND_BADGES.map((b) => (
+                  <li key={b.name} className="flex items-start gap-2">
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded border whitespace-nowrap flex-shrink-0 ${b.cls}`}>{b.name}</span>
+                    <span className="text-gray-700">{b.desc}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-1.5">Columns explained</div>
+              <ul className="space-y-1.5">
+                {LEGEND_COLUMNS.map((c) => (
+                  <li key={c.name}>
+                    <span className="font-medium text-gray-900">{c.name}</span>
+                    <span className="text-gray-700"> — {c.desc}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 px-3 py-2 border-b border-gray-200 text-xs">
         <Stat label="Setups" value={totals.setups} hint={`${totals.legs} call leg${totals.legs === 1 ? '' : 's'}`} />

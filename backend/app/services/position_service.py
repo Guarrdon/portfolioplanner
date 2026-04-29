@@ -11,8 +11,10 @@ from datetime import datetime
 from app.models.position import Position, PositionLeg, PositionShare
 from app.models.user import UserSchwabAccount
 from app.schemas.position import PositionCreate, PositionUpdate
-from app.services.schwab_service import fetch_account_data, group_positions_by_strategy
+from app.services.schwab_service import fetch_account_data, get_schwab_client, group_positions_by_strategy
 from app.services.position_signature import generate_position_signature, signatures_match
+from app.services.option_quotes import fetch_option_quotes_chunked, stamp_greeks_on_legs
+from app.services.earnings_calendar import refresh_earnings_for_symbols
 import logging
 
 logger = logging.getLogger(__name__)
@@ -552,7 +554,52 @@ def sync_schwab_positions(
         remaining_pos.exit_date = datetime.now().date()
         lock_status = "🔒" if remaining_pos.is_manual_strategy else "🔓"
         logger.info(f"  ❌ CLOSED: {remaining_pos.symbol} | {remaining_pos.strategy_type} {lock_status}")
-    
+
+    # Greeks + IV pass: one batch call against the same Schwab session so
+    # the delta/iv we stamp shares a snapshot timestamp with the prices
+    # already on the legs. We flush so newly-created leg rows are visible
+    # to the patch loop, then commit once at the end.
+    db.flush()
+    option_legs: List[PositionLeg] = []
+    for pos in synced_positions:
+        for leg in pos.legs:
+            if leg.asset_type == "option" and leg.symbol:
+                option_legs.append(leg)
+
+    if option_legs:
+        try:
+            client = get_schwab_client(str(user_id), db)
+            symbols = [leg.symbol for leg in option_legs]
+            quotes = fetch_option_quotes_chunked(client, symbols)
+            patched = stamp_greeks_on_legs(option_legs, quotes)
+            logger.info(
+                f"  📐 Greeks/IV: patched {patched}/{len(option_legs)} option legs"
+            )
+        except Exception as exc:
+            # Never let a quote failure roll back a position sync — prices
+            # are already correct, greeks just stay at their previous values.
+            logger.warning(f"  ⚠️  Greeks fetch failed (non-fatal): {exc}")
+
+    # Earnings refresh — only for option-bearing underlyings (catalysts
+    # only matter when there's an option DTE to compare against). 12h TTL
+    # in the service avoids hammering Yahoo on rapid-fire syncs. Failures
+    # are non-fatal: panel falls back to whatever was last cached.
+    option_underlyings = sorted({
+        (pos.underlying or "").upper()
+        for pos in synced_positions
+        if any(l.asset_type == "option" for l in pos.legs)
+        and pos.underlying
+    })
+    if option_underlyings:
+        try:
+            refreshed = refresh_earnings_for_symbols(db, option_underlyings)
+            with_dates = sum(1 for v in refreshed.values() if v is not None)
+            logger.info(
+                f"  📅 Earnings: {with_dates}/{len(refreshed)} symbols have upcoming dates"
+            )
+        except Exception as exc:
+            logger.warning(f"  ⚠️  Earnings refresh failed (non-fatal): {exc}")
+
     db.commit()
     
     # Refresh all synced positions

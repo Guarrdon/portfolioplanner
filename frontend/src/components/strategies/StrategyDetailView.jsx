@@ -23,6 +23,8 @@ import { useRememberPage } from '../../contexts/NavStackContext';
 import VerticalsPanel from './panels/VerticalsPanel';
 import LongStockPanel from './panels/LongStockPanel';
 import CoveredCallsPanel from './panels/CoveredCallsPanel';
+import SingleLegPanel from './panels/SingleLegPanel';
+import BigOptionsPanel from './panels/BigOptionsPanel';
 
 // Map strategy keys to their KPI panel components. Strategies without an
 // entry get a placeholder. Panels receive `tags` (the Groups in that class).
@@ -30,6 +32,8 @@ const PANEL_BY_KEY = {
   verticals: VerticalsPanel,
   long_stock: LongStockPanel,
   covered_calls: CoveredCallsPanel,
+  single_leg: SingleLegPanel,
+  big_options: BigOptionsPanel,
 };
 
 const UncategorizedHeader = ({ groupCount }) => (

@@ -131,7 +131,8 @@ def get_actual_positions(
             "cash_balance": acc.cash_balance,
             "liquidation_value": acc.liquidation_value,
             "buying_power": acc.buying_power,
-            "buying_power_options": acc.buying_power_options
+            "buying_power_options": acc.buying_power_options,
+            "last_synced": acc.last_synced.isoformat() if acc.last_synced else None,
         } for acc in accounts],
         underlying_quotes=underlying_quotes,
     )

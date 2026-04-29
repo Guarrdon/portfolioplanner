@@ -7,6 +7,7 @@ from app.models.tag import Tag, TagMembership
 from app.models.position_flag import PositionFlag
 from app.models.transaction_cache import SchwabTransactionCache, SchwabTransactionCacheState
 from app.models.quote_cache import UnderlyingQuoteCache
+from app.models.catalyst import EarningsCache, UserCatalyst
 
 __all__ = [
     "User",
@@ -22,4 +23,6 @@ __all__ = [
     "SchwabTransactionCache",
     "SchwabTransactionCacheState",
     "UnderlyingQuoteCache",
+    "EarningsCache",
+    "UserCatalyst",
 ]

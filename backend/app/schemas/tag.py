@@ -173,3 +173,224 @@ class CoveredCallsHoldingsResponse(BaseModel):
     holdings: List[CoveredCallHolding] = Field(default_factory=list)
     portfolio_liquidation_value: float = 0.0
     last_synced: Optional[str] = None
+
+
+class VerticalHolding(BaseModel):
+    """One vertical-spread row: two same-type, same-expiration option legs
+    (one short, one long) attached to a tagged transaction_position chain."""
+    underlying: str
+    account_hash: Optional[str] = None
+    account_number: Optional[str] = None
+    type: str  # Credit Put | Credit Call | Debit Put | Debit Call
+    is_credit: bool
+    option_type: str  # put | call
+    strikes_label: str
+    short_strike: float
+    long_strike: float
+    expiration: Optional[str] = None
+    dte: Optional[int] = None
+    contracts: float
+    net_at_open: float
+    current_value: float
+    unrealized_pnl: float
+    capture_pct: Optional[float] = None
+    max_profit: float
+    max_loss: float
+    width: float
+    short_otm_pct: Optional[float] = None
+    short_delta: Optional[float] = None
+    risk_label: str
+    risk_pop_pct: Optional[float] = None
+    action: str
+    spot: float = 0.0
+    day_pnl: Optional[float] = None
+    dollars_per_day: Optional[float] = None
+    row_total_pnl: float
+    tag_ids: List[str] = Field(default_factory=list)
+    reconciliation: StrategyReconciliation
+    chain_id: str
+    chain_name: Optional[str] = None
+
+
+class VerticalsHoldingsResponse(BaseModel):
+    strategy_class: str = "verticals"
+    tags: List[StrategyTagInfo] = Field(default_factory=list)
+    holdings: List[VerticalHolding] = Field(default_factory=list)
+    portfolio_liquidation_value: float = 0.0
+    last_synced: Optional[str] = None
+    excluded_complex_count: int = 0
+
+
+class SingleLegLegView(BaseModel):
+    """Per-leg snapshot inside a single-leg row — the panel uses this to
+    render two-leg straddle/strangle rows expanded."""
+    symbol: str
+    option_type: str  # put | call
+    strike: float
+    otm_pct: Optional[float] = None
+    delta: Optional[float] = None
+    iv: Optional[float] = None
+    theta: Optional[float] = None
+    current_price: float = 0.0
+
+
+class SingleLegHolding(BaseModel):
+    """One short-premium row: a short put, short call, short straddle, or
+    short strangle. Two-leg rows (straddle/strangle) carry both strikes."""
+    underlying: str
+    account_hash: Optional[str] = None
+    account_number: Optional[str] = None
+    type: str  # Short Put | Short Call | Short Straddle | Short Strangle
+    row_type: str  # short_put | short_call | short_straddle | short_strangle
+    strikes_label: str
+    short_strikes: List[float] = Field(default_factory=list)
+    expiration: Optional[str] = None
+    dte: Optional[int] = None
+    contracts: float
+
+    premium_received: float
+    close_cost: float
+    intrinsic_remaining: float
+    extrinsic_remaining: float
+    extrinsic_pct_of_premium: Optional[float] = None
+    capture_pct: Optional[float] = None
+    unrealized_pnl: float
+    row_total_pnl: float
+
+    max_loss: Optional[float] = None  # None = undefined / unbounded
+    capital_at_risk: Optional[float] = None
+    annualized_return_pct: Optional[float] = None
+
+    breakeven_lower: Optional[float] = None
+    breakeven_upper: Optional[float] = None
+    distance_from_be_pct: Optional[float] = None
+
+    spot: float = 0.0
+    worst_otm_pct: Optional[float] = None
+    worst_delta: Optional[float] = None
+    any_leg_itm: bool = False
+
+    dollars_per_day: Optional[float] = None
+    day_pnl: Optional[float] = None
+
+    legs: List[SingleLegLegView] = Field(default_factory=list)
+
+    risk_label: str
+    risk_pop_pct: Optional[float] = None
+    action: str  # Hold | Take it | Review | Assignment risk
+
+    tag_ids: List[str] = Field(default_factory=list)
+    reconciliation: StrategyReconciliation
+    chain_id: str
+    chain_name: Optional[str] = None
+
+
+class SingleLegHoldingsResponse(BaseModel):
+    strategy_class: str = "single_leg"
+    tags: List[StrategyTagInfo] = Field(default_factory=list)
+    holdings: List[SingleLegHolding] = Field(default_factory=list)
+    portfolio_liquidation_value: float = 0.0
+    last_synced: Optional[str] = None
+    excluded_complex_count: int = 0
+
+
+class BigOptionsLegView(BaseModel):
+    """Per-leg snapshot inside a Big Options row."""
+    symbol: str
+    option_type: str  # call | put
+    strike: float
+    expiration: Optional[str] = None
+    dte: Optional[int] = None
+    contracts: float
+    original_contracts: float
+    cost_paid: float
+    current_price: float = 0.0
+    current_value: float = 0.0
+    atm_dist_pct: Optional[float] = None
+    otm_pct: Optional[float] = None
+    is_itm: bool = False
+    delta: Optional[float] = None
+    iv: Optional[float] = None
+    theta: Optional[float] = None
+
+
+class BigOptionsCatalyst(BaseModel):
+    """Earnings or user-defined catalyst falling in the row's window."""
+    date: str
+    label: str
+    source: str  # earnings | manual
+
+
+class BigOptionsHolding(BaseModel):
+    """One Big Options row: long-premium chain (call/put/straddle/strangle/multi)."""
+    underlying: str
+    account_hash: Optional[str] = None
+    account_number: Optional[str] = None
+    type: str  # Long Call | Long Put | Long Straddle | Long Strangle | Long Multi
+    row_type: str
+    strikes_label: str
+    expiration: Optional[str] = None
+    min_dte: Optional[int] = None
+    contracts: float
+    original_contracts: float
+    trimmed_pct: Optional[float] = None
+    spot: float = 0.0
+
+    cost_paid: float
+    current_value: float
+    partials_realized: float = 0.0
+    unrealized_pnl: float
+    row_total_pnl: float
+    multiple: Optional[float] = None
+
+    intrinsic_remaining: float = 0.0
+    time_premium_left: float = 0.0
+    theta_per_day: Optional[float] = None
+    theta_next_7d: Optional[float] = None
+    days_held: Optional[int] = None
+    min_atm_dist_pct: Optional[float] = None
+    worst_leg_otm_pct: Optional[float] = None
+    distance_to_itm_pct: Optional[float] = None
+    any_leg_itm: bool = False
+
+    pct_port: Optional[float] = None
+    oversized: Optional[str] = None  # None | 'soft' | 'hard'
+
+    status: str  # Sweet spot | Patient | Decay zone | Theta cliff | ?
+    catalyst: Optional[BigOptionsCatalyst] = None
+
+    legs: List[BigOptionsLegView] = Field(default_factory=list)
+    tag_ids: List[str] = Field(default_factory=list)
+    reconciliation: StrategyReconciliation
+    chain_id: str
+    chain_name: Optional[str] = None
+
+
+class BigOptionsClosedStats(BaseModel):
+    """Aggregate stats over closed (fully-exited) Big Options chains."""
+    closed_count: int = 0
+    winners: int = 0
+    losers: int = 0
+    hit_rate_pct: Optional[float] = None
+    avg_win: Optional[float] = None
+    avg_loss: Optional[float] = None
+    total_realized: float = 0.0
+
+
+class BigOptionsConcentrationThresholds(BaseModel):
+    target_usd: float = 2000.0
+    soft_cap_usd: float = 5000.0
+    soft_cap_port_pct: float = 1.0
+
+
+class BigOptionsHoldingsResponse(BaseModel):
+    strategy_class: str = "big_options"
+    tags: List[StrategyTagInfo] = Field(default_factory=list)
+    holdings: List[BigOptionsHolding] = Field(default_factory=list)
+    portfolio_liquidation_value: float = 0.0
+    last_synced: Optional[str] = None
+    excluded_complex_count: int = 0
+    stats: BigOptionsClosedStats = Field(default_factory=BigOptionsClosedStats)
+    concentration_thresholds: BigOptionsConcentrationThresholds = Field(
+        default_factory=BigOptionsConcentrationThresholds
+    )

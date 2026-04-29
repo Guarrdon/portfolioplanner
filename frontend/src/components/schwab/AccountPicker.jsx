@@ -3,6 +3,7 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Building2, ChevronRight } from 'lucide-react';
 import { fetchActualPositions } from '../../services/schwab';
+import { useNavStack } from '../../contexts/NavStackContext';
 
 export const LAST_ACCOUNT_KEY = 'schwab.lastSelectedAccountHash';
 
@@ -30,6 +31,7 @@ export default function AccountPicker({
   autoRedirectIfRemembered = false,
 }) {
   const navigate = useNavigate();
+  const { stack } = useNavStack();
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['schwab-accounts-landing'],
@@ -52,10 +54,16 @@ export default function AccountPicker({
     if (!autoRedirectIfRemembered) return;
     if (!accounts.length) return;
     const remembered = localStorage.getItem(LAST_ACCOUNT_KEY);
-    if (remembered && accounts.some((a) => a.account_hash === remembered)) {
-      navigate(buildTargetPath(remembered), { replace: true });
-    }
-  }, [autoRedirectIfRemembered, accounts, navigate, buildTargetPath]);
+    if (!remembered || !accounts.some((a) => a.account_hash === remembered)) return;
+    const target = buildTargetPath(remembered);
+    // Skip the redirect if the user just came from the target — otherwise
+    // hitting "back" from there bounces right back here and re-redirects,
+    // which manifests as a screen flash that goes nowhere. The NavStack
+    // already has the target as a prior entry in that case.
+    const cameFromTarget = stack.some((e) => e.path === target);
+    if (cameFromTarget) return;
+    navigate(target, { replace: true });
+  }, [autoRedirectIfRemembered, accounts, navigate, buildTargetPath, stack]);
 
   if (isLoading) return <div className="p-6 text-gray-500">Loading accounts…</div>;
 

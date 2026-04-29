@@ -16,9 +16,10 @@
  * Route: /schwab/transactions/account/:accountHash
  */
 import React, { useMemo, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, RefreshCw, Sparkles, Check, X, Tag as TagIcon, Layers, List, ChevronDown, ChevronRight, Plus, Trash2, Search } from 'lucide-react';
+import { RefreshCw, Sparkles, Check, X, Tag as TagIcon, Layers, List, ChevronDown, ChevronRight, Plus, Trash2, Search } from 'lucide-react';
+import BackChip from '../common/BackChip';
 import {
   fetchTransactionsByAccount,
   fetchOpenPositionsForUnderlying,
@@ -657,9 +658,7 @@ const AccountTransactionsView = () => {
     <div className="h-screen flex flex-col bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b shadow-sm px-4 py-2 flex items-center gap-3">
-        <Link to="/schwab/positions" className="text-gray-500 hover:text-gray-800" title="Back">
-          <ArrowLeft className="w-4 h-4" />
-        </Link>
+        <BackChip />
         <h1 className="text-base font-bold text-gray-900">
           Account {data?.account_number || `…${(accountHash || '').slice(-4)}`}
         </h1>

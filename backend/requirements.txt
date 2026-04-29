@@ -24,6 +24,11 @@ schwab-py==1.1.0
 requests==2.31.0
 toml==0.10.2
 
+# Earnings calendar (Yahoo Finance) — read-only, no API key required.
+# Pinned because yfinance occasionally breaks when Yahoo changes endpoints;
+# we want explicit upgrades, not surprise breakage.
+yfinance==1.3.0
+
 # Utilities
 python-dateutil==2.8.2
 

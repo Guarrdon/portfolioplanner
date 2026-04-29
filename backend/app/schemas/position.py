@@ -128,7 +128,8 @@ class AccountInfo(BaseModel):
     liquidation_value: Optional[float] = 0.0
     buying_power: Optional[float] = 0.0  # Stock buying power
     buying_power_options: Optional[float] = 0.0  # Options buying power
-    
+    last_synced: Optional[str] = None  # ISO timestamp of most recent positions sync
+
     class Config:
         from_attributes = True
 

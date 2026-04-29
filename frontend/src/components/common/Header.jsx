@@ -3,20 +3,27 @@ import { Link, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { LayoutDashboard, Building2 } from 'lucide-react';
 import ProfileMenu from './ProfileMenu';
+import AccountSyncButton from '../schwab/AccountSyncButton';
 import { fetchActualPositions } from '../../services/schwab';
 import { LAST_ACCOUNT_KEY } from '../schwab/AccountPicker';
 
-function SelectedAccountBadge() {
+// Both children read the same React Query data via the same key, so this
+// is one network call shared across the badge, the sync button, and any
+// page that also asks for `schwab-accounts-landing`.
+function useSelectedAccount() {
   const remembered =
     typeof window !== 'undefined' ? localStorage.getItem(LAST_ACCOUNT_KEY) : null;
-
   const { data } = useQuery({
     queryKey: ['schwab-accounts-landing'],
     queryFn: () => fetchActualPositions(),
   });
   const accounts = data?.accounts || [];
   const selected = remembered ? accounts.find((a) => a.account_hash === remembered) : null;
+  return selected;
+}
 
+function SelectedAccountBadge() {
+  const selected = useSelectedAccount();
   return (
     <Link
       to="/schwab/account"
@@ -28,6 +35,19 @@ function SelectedAccountBadge() {
         {selected ? `Account ${selected.account_number}` : 'All Accounts'}
       </span>
     </Link>
+  );
+}
+
+function HeaderSyncButton() {
+  const selected = useSelectedAccount();
+  // Render nothing when no account is remembered — there's nothing to
+  // sync until the user picks an account.
+  if (!selected?.account_hash) return null;
+  return (
+    <AccountSyncButton
+      accountHash={selected.account_hash}
+      lastSynced={selected.last_synced}
+    />
   );
 }
 
@@ -65,8 +85,9 @@ const Header = () => {
             <h1 className="text-lg font-semibold text-gray-700">{getPageTitle()}</h1>
           </div>
 
-          {/* Right: account badge + profile */}
+          {/* Right: sync · account badge · profile */}
           <div className="flex items-center space-x-4">
+            <HeaderSyncButton />
             <SelectedAccountBadge />
             <ProfileMenu />
           </div>

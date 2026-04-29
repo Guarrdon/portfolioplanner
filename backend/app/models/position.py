@@ -104,11 +104,13 @@ class PositionLeg(Base):
     premium = Column(Numeric(18, 2))
     current_price = Column(Numeric(18, 2))
     
-    # Greeks (for options, populated via separate API calls)
+    # Greeks + IV (for options, populated by option_quotes batch fetch
+    # immediately after a position sync — same snapshot timestamp as price).
     delta = Column(Numeric(10, 4))
     gamma = Column(Numeric(10, 4))
     theta = Column(Numeric(10, 4))
     vega = Column(Numeric(10, 4))
+    iv = Column(Numeric(10, 4))
     
     # For trade ideas
     target_premium = Column(Numeric(18, 2))
