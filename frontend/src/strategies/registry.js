@@ -99,3 +99,24 @@ export const STRATEGY_LIST = [
 export const STRATEGY_BY_KEY = Object.fromEntries(STRATEGY_LIST.map((s) => [s.key, s]));
 
 export const getStrategy = (key) => STRATEGY_BY_KEY[key] || null;
+
+// Position-level `strategy_type` (auto-detected from leg shape, singular —
+// see backend/app/core/strategy_types.py) → Group-level `strategy_class`
+// (plural, the 11 user-facing areas). Use this to bucket positions in
+// portfolio-wide charts so colors/labels/links match the strategies hub.
+//
+// `short_stock` rolls into `long_stock` (single Long Stock area in the hub).
+// Customs (wheel_strategy, iron_condor, calendar_spread, …) and unknowns
+// resolve to null — caller decides whether to bucket as "unclassified" or
+// drop them.
+const STRATEGY_TYPE_TO_CLASS = {
+  long_stock: 'long_stock',
+  short_stock: 'long_stock',
+  covered_call: 'covered_calls',
+  vertical_spread: 'verticals',
+  box_spread: 'box_spreads',
+  big_option: 'big_options',
+  single_option: 'single_leg',
+};
+
+export const strategyTypeToClass = (type) => STRATEGY_TYPE_TO_CLASS[type] || null;

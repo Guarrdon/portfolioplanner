@@ -30,6 +30,10 @@ import AccountOverview from './components/schwab/AccountOverview';
 import StrategiesHub from './components/strategies/StrategiesHub';
 import StrategyDetailView from './components/strategies/StrategyDetailView';
 
+// Dashboard & Analytics
+import Dashboard from './components/dashboard/Dashboard';
+import PortfolioAnalytics from './components/analytics/PortfolioAnalytics';
+
 // Collaboration Views
 import CollaborationDashboard from './components/collaboration/CollaborationDashboard';
 
@@ -78,13 +82,8 @@ function App() {
                               <Header />
                               <main className="flex-1 overflow-auto bg-gray-50 p-6">
                                 <Routes>
-                                  {/* Dashboard — pending rebuild on the new spine */}
-                                  <Route path="/" element={
-                                    <ComingSoon
-                                      title="Dashboard"
-                                      description="Dashboard in progress — will be rebuilt on the new classification/grouping spine."
-                                    />
-                                  } />
+                                  {/* Dashboard — snapshot landing page */}
+                                  <Route path="/" element={<Dashboard />} />
 
                                   {/* Schwab routes */}
                                   <Route path="/schwab/account" element={
@@ -115,13 +114,8 @@ function App() {
                                   <Route path="/strategies" element={<StrategiesHub />} />
                                   <Route path="/strategies/:key" element={<StrategyDetailView />} />
 
-                                  {/* Analysis — pending rebuild */}
-                                  <Route path="/analysis/portfolio" element={
-                                    <ComingSoon
-                                      title="Portfolio Analytics"
-                                      description="Group-level P&L, exposure, BP usage, realized vs unrealized — to be rebuilt on the new spine."
-                                    />
-                                  } />
+                                  {/* Analysis — snapshot workbench */}
+                                  <Route path="/analysis/portfolio" element={<PortfolioAnalytics />} />
                                   <Route path="/calendar" element={
                                     <ComingSoon
                                       title="Calendar"
