@@ -469,3 +469,173 @@ class BoxSpreadsHoldingsResponse(BaseModel):
     excluded_complex_count: int = 0
     benchmark: Optional[BoxSpreadsBenchmark] = None
     exposure: BoxSpreadsExposure = Field(default_factory=BoxSpreadsExposure)
+
+
+# ---- Cash Mgmt -----------------------------------------------------------
+
+class CashMgmtHolding(BaseModel):
+    """One deployed-cash row: an MMF / treasury-ETF / short-bond-ETF
+    position tagged into cash_mgmt, or a synthetic 'sweep' row for
+    uninvested account cash."""
+    symbol: str
+    name: Optional[str] = None
+    vehicle_type: str  # mmf | floating_rate_etf | treasury_etf | short_bond_etf | sweep | other
+    liquidity_tier: str  # T+0 | T+1 | hold
+    account_hash: Optional[str] = None
+    account_number: Optional[str] = None
+    quantity: Optional[float] = None
+    current_price: Optional[float] = None
+    market_value: float
+    cost_basis: float = 0.0
+    unrealized_pnl: float = 0.0
+    est_yield_pct: Optional[float] = None
+    yield_source: str  # fred_derived | static | unknown
+    annual_income: Optional[float] = None
+    tag_ids: List[str] = Field(default_factory=list)
+    is_synthetic: bool = False
+    pct_cash: Optional[float] = None
+    pct_port: Optional[float] = None
+
+
+class CashMgmtLiability(BaseModel):
+    """A short box-spread liability — borrow side of the carry trade."""
+    underlying: Optional[str] = None
+    expiration: Optional[str] = None
+    dte: Optional[int] = None
+    face_value: float
+    implied_rate_pct: Optional[float] = None
+    tag_ids: List[str] = Field(default_factory=list)
+    chain_id: Optional[str] = None
+    chain_name: Optional[str] = None
+
+
+class CashMgmtLadderBucket(BaseModel):
+    """One month's-worth of cash-flow events: cash freeing up vs box debt
+    settling. Cash side is mostly empty for liquid vehicles; debt side
+    drives the wall-of-maturities view."""
+    month: str
+    cash_freeing: float = 0.0
+    debt_settling: float = 0.0
+
+
+class CashMgmtBenchmarks(BaseModel):
+    rate_1mo: Optional[BoxSpreadsBenchmark] = None
+    rate_3mo: Optional[BoxSpreadsBenchmark] = None
+
+
+class CashMgmtAggregates(BaseModel):
+    total_cash: float = 0.0
+    weighted_cash_yield_pct: Optional[float] = None
+    annual_cash_income: float = 0.0
+    total_borrowed_face: float = 0.0
+    weighted_borrow_rate_pct: Optional[float] = None
+    annual_borrow_cost: float = 0.0
+    net_carry_dollars: float = 0.0
+    net_carry_bps: Optional[float] = None
+    borrowed_30d: float = 0.0
+    borrowed_90d: float = 0.0
+    cash_pct_port: Optional[float] = None
+    borrowed_pct_port: Optional[float] = None
+    max_concentration_pct: Optional[float] = None
+    max_concentration_symbol: Optional[str] = None
+
+
+class CashMgmtHoldingsResponse(BaseModel):
+    strategy_class: str = "cash_mgmt"
+    tags: List[StrategyTagInfo] = Field(default_factory=list)
+    holdings: List[CashMgmtHolding] = Field(default_factory=list)
+    liabilities: List[CashMgmtLiability] = Field(default_factory=list)
+    ladder: List[CashMgmtLadderBucket] = Field(default_factory=list)
+    portfolio_liquidation_value: float = 0.0
+    last_synced: Optional[str] = None
+    benchmarks: CashMgmtBenchmarks = Field(default_factory=CashMgmtBenchmarks)
+    aggregates: CashMgmtAggregates = Field(default_factory=CashMgmtAggregates)
+
+
+# ---------- Dividends ----------
+
+class DividendPayment(BaseModel):
+    symbol: str
+    account_hash: Optional[str] = None
+    date: Optional[str] = None
+    amount: float = 0.0
+    description: Optional[str] = None
+    qualified_dividend: Optional[bool] = None
+    schwab_transaction_id: Optional[str] = None
+
+
+class DividendHolding(BaseModel):
+    """One row per tagged underlying. TTM income comes from cached Schwab
+    DIVIDEND_OR_INTEREST transactions. `qualified` is user-set:
+      True  → qualified
+      False → non-qualified
+      None  → unset (panel surfaces "verify")
+    """
+    underlying: str
+    shares: float = 0.0
+    avg_cost: float = 0.0
+    cost_basis: float = 0.0
+    current_price: float = 0.0
+    market_value: float = 0.0
+    unrealized_pnl: float = 0.0
+    all_time_income: float = 0.0
+    net_return: float = 0.0
+    net_return_pct: Optional[float] = None
+    account_numbers: List[str] = Field(default_factory=list)
+    tag_ids: List[str] = Field(default_factory=list)
+    qualified: Optional[bool] = None
+    qualified_source: str = "unknown"  # 'user' | 'schwab' | 'unknown'
+    ttm_income: float = 0.0
+    ttm_qualified_income: float = 0.0
+    ttm_non_qualified_income: float = 0.0
+    ttm_unknown_income: float = 0.0
+    ttm_payment_count: int = 0
+    ttm_yield_pct: Optional[float] = None
+    avg_per_payout: Optional[float] = None
+    last_paid: Optional[str] = None
+    first_paid: Optional[str] = None
+    all_payment_count: int = 0
+    pct_port_mv: Optional[float] = None
+    pct_port_cost: Optional[float] = None
+    recent_payments: List[DividendPayment] = Field(default_factory=list)
+
+
+class DividendsAggregates(BaseModel):
+    ttm_income_total: float = 0.0
+    ttm_income_qualified: float = 0.0
+    ttm_income_non_qualified: float = 0.0
+    ttm_income_unclassified: float = 0.0
+    weighted_ttm_yield_pct: Optional[float] = None
+    holdings_count: int = 0
+    last_paid: Optional[str] = None
+    total_market_value: float = 0.0
+    total_cost_basis: float = 0.0
+    total_unrealized_pnl: float = 0.0
+    total_all_time_income: float = 0.0
+    total_net_return: float = 0.0
+    total_net_return_pct: Optional[float] = None
+    pct_port_mv: Optional[float] = None
+
+
+class DividendsHoldingsResponse(BaseModel):
+    strategy_class: str = "dividends"
+    tags: List[StrategyTagInfo] = Field(default_factory=list)
+    holdings: List[DividendHolding] = Field(default_factory=list)
+    portfolio_liquidation_value: float = 0.0
+    last_synced: Optional[str] = None
+    aggregates: DividendsAggregates = Field(default_factory=DividendsAggregates)
+
+
+class DividendClassificationUpdate(BaseModel):
+    """PUT body for /tags/strategy/dividends/classifications/{symbol}.
+    qualified=null clears the classification (returns the row to "verify").
+    """
+    qualified: Optional[bool] = None
+    note: Optional[str] = None
+
+
+class DividendClassificationResponse(BaseModel):
+    symbol: str
+    qualified: Optional[bool] = None
+    note: Optional[str] = None
+    updated_at: Optional[str] = None

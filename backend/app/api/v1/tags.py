@@ -17,9 +17,15 @@ from app.schemas.tag import (
     SingleLegHoldingsResponse,
     BigOptionsHoldingsResponse,
     BoxSpreadsHoldingsResponse,
+    CashMgmtHoldingsResponse,
+    DividendsHoldingsResponse,
+    DividendClassificationUpdate,
+    DividendClassificationResponse,
 )
 from app.services import tags as tags_service
 from app.services import strategy_positions as strategy_positions_service
+from app.models import DividendClassification
+from datetime import datetime
 
 router = APIRouter(prefix="/tags", tags=["tags"])
 
@@ -181,4 +187,85 @@ def get_box_spreads_holdings(db: Session = Depends(get_db)):
     return strategy_positions_service.fetch_box_spreads_holdings(
         user_id=_TEST_USER_ID,
         db=db,
+    )
+
+
+@router.get("/strategy/cash_mgmt/holdings", response_model=CashMgmtHoldingsResponse)
+def get_cash_mgmt_holdings(db: Session = Depends(get_db)):
+    """Cash Mgmt holdings — diversification across low-yield vehicles
+    (MMFs, treasury ETFs, short-bond ETFs, account sweep) plus the
+    cost-of-carry from box-spread short liabilities. Net carry is the
+    spread between deployed-cash yield and weighted borrow rate.
+    Yields are derived from FRED (DGS1MO + DGS3MO) per vehicle type."""
+    return strategy_positions_service.fetch_cash_mgmt_holdings(
+        user_id=_TEST_USER_ID,
+        db=db,
+    )
+
+
+@router.get("/strategy/dividends/holdings", response_model=DividendsHoldingsResponse)
+def get_dividends_holdings(db: Session = Depends(get_db)):
+    """Dividends holdings — past-first income view. One row per tagged
+    underlying. TTM income comes from cached Schwab DIVIDEND_OR_INTEREST
+    transactions whose payer matches a tagged ticker; we don't project
+    future payouts (no ex-div / rate data without an external source).
+    Per-symbol qualified flag is user-set via the classifications endpoint."""
+    return strategy_positions_service.fetch_dividends_holdings(
+        user_id=_TEST_USER_ID,
+        db=db,
+    )
+
+
+@router.put(
+    "/strategy/dividends/classifications/{symbol}",
+    response_model=DividendClassificationResponse,
+)
+def upsert_dividend_classification(
+    symbol: str,
+    body: DividendClassificationUpdate,
+    db: Session = Depends(get_db),
+):
+    """User-set qualified flag for a single ticker. Body's qualified=null
+    clears the row back to "unset" (panel surfaces "verify")."""
+    sym = (symbol or "").strip().upper()
+    if not sym:
+        raise HTTPException(status_code=400, detail="symbol required")
+
+    row = db.query(DividendClassification).filter(
+        DividendClassification.user_id == _TEST_USER_ID,
+        DividendClassification.symbol == sym,
+    ).first()
+
+    if body.qualified is None and body.note in (None, ""):
+        # Treat null/null as a clear: drop the row entirely so the absence
+        # is unambiguous and counts as "unset" everywhere.
+        if row:
+            db.delete(row)
+            db.commit()
+        return DividendClassificationResponse(
+            symbol=sym, qualified=None, note=None, updated_at=None,
+        )
+
+    if row is None:
+        row = DividendClassification(
+            user_id=_TEST_USER_ID,
+            symbol=sym,
+            qualified=bool(body.qualified) if body.qualified is not None else False,
+            note=body.note,
+        )
+        db.add(row)
+    else:
+        if body.qualified is not None:
+            row.qualified = bool(body.qualified)
+        if body.note is not None:
+            row.note = body.note or None
+        row.updated_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(row)
+    return DividendClassificationResponse(
+        symbol=row.symbol,
+        qualified=row.qualified,
+        note=row.note,
+        updated_at=row.updated_at.isoformat() if row.updated_at else None,
     )

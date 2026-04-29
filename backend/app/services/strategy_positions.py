@@ -19,7 +19,9 @@ Strategy panels are membership-driven, by design: the user decides what
 belongs in each strategy area by tagging Groups (Tags) — auto-detection
 from leg shape is intentionally NOT used here.
 """
-from datetime import datetime
+import re
+from datetime import datetime, timedelta
+from difflib import SequenceMatcher
 from typing import Dict, List, Any, Optional
 
 from sqlalchemy.orm import Session
@@ -32,6 +34,7 @@ from app.models import (
     SchwabTransactionCache,
     Position,
     PositionLeg,
+    DividendClassification,
 )
 from app.models.user import UserSchwabAccount
 from app.services.schwab_service import get_schwab_client, fetch_account_data
@@ -76,13 +79,16 @@ def _bucket_synced_positions(user_id: str, db: Session) -> Dict[str, Any]:
         .all()
     )
 
-    buckets: Dict[tuple, Dict[str, Any]] = {}
+    # Sync timestamps are surfaced per-account by the header sync button.
+    # The strategy panels don't need a global timestamp, so we don't compute
+    # one — the header is the single source of truth for "when did this
+    # account last sync." Buckets still carry per-account last_synced if
+    # any caller needs to attribute a row.
     most_recent_sync = None
 
-    for p in rows:
-        if p.last_synced and (most_recent_sync is None or p.last_synced > most_recent_sync):
-            most_recent_sync = p.last_synced
+    buckets: Dict[tuple, Dict[str, Any]] = {}
 
+    for p in rows:
         und = (p.underlying or "").upper()
         ah = p.account_id or ""
         if not und:
@@ -2859,5 +2865,1087 @@ def fetch_box_spreads_holdings(
             ),
             "margin_total": margin_total,
             "short_concentration": short_concentration,
+        },
+    }
+
+
+# ----------------------------------------------------------------------------
+# Cash Mgmt — excess-cash optimization across low-yield vehicles.
+#
+# Companion to Box Spreads: box-spread shorts SOURCE cash; cash-mgmt
+# vehicles DEPLOY cash. The page is a carry-trade dashboard:
+#
+#   net carry ≈ (weighted cash yield × cash) − (weighted box rate × debt)
+#
+# Vehicles are classified by symbol, with yields derived from FRED rates
+# (DGS1MO for MMF/floating-rate, DGS3MO for treasury / short-bond ETFs)
+# plus a per-vehicle spread, so the panel tracks the rate environment
+# automatically without baked-in numbers.
+# ----------------------------------------------------------------------------
+
+# Symbol → vehicle classification. Exhaustive within the universe of
+# cash-equivalents most retail accounts use; anything tagged but not in
+# these sets falls through to 'other' (yield unknown — user can override).
+_CASH_MMF_SYMBOLS = {
+    # Schwab proprietary money funds
+    "SWVXX", "SNAXX", "SNVXX", "SNSXX", "SNOXX", "SPRXX", "SWXXX", "SUTXX",
+    # Vanguard / Fidelity / others held at Schwab via FundAccess
+    "VMFXX", "VMRXX", "VUSXX", "FZFXX", "FDLXX", "SPAXX", "FZDXX",
+}
+_CASH_TREASURY_ETF = {
+    "SGOV", "BIL", "GBIL", "CLTL", "JBIL", "TBIL", "TFLO", "XBIL",
+}
+_CASH_FLOATING_RATE = {"USFR", "FLOT", "FLRN", "TFLO"}
+_CASH_SHORT_BOND_ETF = {
+    "JAAA", "PULS", "ICSH", "MINT", "NEAR", "JPST",
+    "BSV", "VGSH", "SHV", "SHY",
+}
+
+# Default sweep yield used when an account-cash row is included. Schwab's
+# default uninvested-cash sweep is famously low (~0.45% as of late
+# 2024–2026). Surfacing it on the panel makes the cost of NOT moving
+# money obvious.
+_SWEEP_DEFAULT_YIELD_PCT = 0.45
+
+
+def _classify_cash_vehicle(symbol: Optional[str]) -> Dict[str, str]:
+    """Map a symbol to (vehicle_type, liquidity_tier).
+
+    Liquidity tiers:
+      T+0   — same-day available (sweep, MMF)
+      T+1   — settles next business day (most ETFs)
+      hold  — bills / CDs held to maturity (caller should override)
+    """
+    s = (symbol or "").upper()
+    if not s:
+        return {"vehicle_type": "other", "liquidity_tier": "T+1"}
+    # Order matters: floating-rate set overlaps with treasury (e.g. USFR).
+    if s in _CASH_FLOATING_RATE:
+        return {"vehicle_type": "floating_rate_etf", "liquidity_tier": "T+1"}
+    if s in _CASH_MMF_SYMBOLS:
+        return {"vehicle_type": "mmf", "liquidity_tier": "T+0"}
+    if s in _CASH_TREASURY_ETF:
+        return {"vehicle_type": "treasury_etf", "liquidity_tier": "T+1"}
+    if s in _CASH_SHORT_BOND_ETF:
+        return {"vehicle_type": "short_bond_etf", "liquidity_tier": "T+1"}
+    return {"vehicle_type": "other", "liquidity_tier": "T+1"}
+
+
+def _vehicle_yield_pct(
+    vehicle_type: str,
+    rate_1mo: Optional[float],
+    rate_3mo: Optional[float],
+) -> Optional[float]:
+    """Estimate current SEC-yield-equivalent for a vehicle type given the
+    short-end of the Treasury curve. Numbers are approximations based on
+    typical spreads observed at Schwab; the user can override on a row
+    once we wire that.
+
+    Spreads are intentionally conservative: MMF -25 bps vs 1mo (post-fee
+    drag), treasury ETFs ~at 3mo, short-bond ETFs +30 bps for credit /
+    duration pickup, floating-rate at 1mo (resets monthly).
+    """
+    if vehicle_type == "mmf":
+        return None if rate_1mo is None else max(0.0, rate_1mo - 0.25)
+    if vehicle_type == "floating_rate_etf":
+        return rate_1mo
+    if vehicle_type == "treasury_etf":
+        return None if rate_3mo is None else max(0.0, rate_3mo - 0.05)
+    if vehicle_type == "short_bond_etf":
+        return None if rate_3mo is None else (rate_3mo + 0.30)
+    return None
+
+
+def fetch_cash_mgmt_holdings(
+    user_id: str,
+    db: Session,
+) -> Dict[str, Any]:
+    """Cash Mgmt view — diversification across low-yield vehicles plus
+    the cost-of-carry from box-spread short liabilities.
+
+    Composition:
+      • Each TransactionPosition tagged into a `cash_mgmt` Group whose
+        underlying matches a known cash vehicle becomes a row.
+      • Account sweep cash (UserSchwabAccount.cash_balance) auto-rolls up
+        into a 'sweep' row regardless of tagging — it's literal cash.
+      • Box-spread short liabilities are pulled from the same 4-leg
+        balanced-box detection used by the Box Spreads panel; cash mgmt
+        only cares about SHORT boxes (the borrow side).
+
+    Net carry is computed as:
+        annual_cash_income  =  Σ(market_value_i × est_yield_i)
+        annual_borrow_cost  =  Σ(face_i × implied_rate_i)
+        net_carry_dollars   =  annual_cash_income − annual_borrow_cost
+        net_carry_bps       =  (cash_yield_w − borrow_rate_w) × 100
+
+    Yields are derived from FRED (DGS1MO + DGS3MO) per vehicle, so the
+    panel reflects the current rate environment automatically.
+    """
+    strategy_class = "cash_mgmt"
+
+    # 1) Tags + tagged transaction_position ids (membership-driven, same
+    #    as every other strategy panel).
+    user_tags = db.query(Tag).filter(Tag.user_id == user_id).all()
+    tags = [
+        t for t in user_tags
+        if t.strategy_classes and strategy_class in t.strategy_classes
+    ]
+    tag_id_set = {t.id for t in tags}
+
+    memberships: List[TagMembership] = []
+    if tag_id_set:
+        memberships = db.query(TagMembership).filter(
+            TagMembership.tag_id.in_(list(tag_id_set)),
+            TagMembership.member_type == "transaction_position",
+        ).all()
+    pos_ids = sorted({m.member_id for m in memberships})
+    tag_ids_by_pid: Dict[str, List[str]] = {}
+    for m in memberships:
+        tag_ids_by_pid.setdefault(m.member_id, []).append(str(m.tag_id))
+
+    # 2) Tagged chains → underlying symbols. We use the chain's recorded
+    #    underlying (from any of its transactions) — same approach as
+    #    long-stock attaches chains to live holdings by symbol.
+    pos_rows: List[TransactionPosition] = []
+    if pos_ids:
+        pos_rows = db.query(TransactionPosition).filter(
+            TransactionPosition.user_id == user_id,
+            TransactionPosition.id.in_(pos_ids),
+        ).all()
+    pos_by_id = {p.id: p for p in pos_rows}
+
+    # Pull annotations + cached payloads to discover each chain's
+    # underlying. For a cash-mgmt row that's typically just the ETF
+    # ticker, but we walk legs the same way long-stock does.
+    txids_by_pid: Dict[str, List[str]] = {}
+    all_tx_ids: set = set()
+    if pos_ids:
+        annotations = db.query(TransactionAnnotation).filter(
+            TransactionAnnotation.user_id == user_id,
+            TransactionAnnotation.transaction_position_id.in_(pos_ids),
+        ).all()
+        for a in annotations:
+            if not a.transaction_position_id or not a.schwab_transaction_id:
+                continue
+            txids_by_pid.setdefault(a.transaction_position_id, []).append(a.schwab_transaction_id)
+            all_tx_ids.add(a.schwab_transaction_id)
+    payload_by_id: Dict[str, Dict[str, Any]] = {}
+    if all_tx_ids:
+        cached = db.query(SchwabTransactionCache).filter(
+            SchwabTransactionCache.user_id == user_id,
+            SchwabTransactionCache.schwab_transaction_id.in_(list(all_tx_ids)),
+        ).all()
+        payload_by_id = {r.schwab_transaction_id: r.raw_payload for r in cached}
+
+    # Per-chain: set of underlyings this chain references.
+    chain_underlyings: Dict[str, set] = {}
+    for pid in pos_ids:
+        recs: List[Dict[str, Any]] = []
+        for tx_id in txids_by_pid.get(pid, []):
+            payload = payload_by_id.get(tx_id)
+            if payload is None:
+                continue
+            rec = _normalize_transaction(payload, None, "")
+            if rec:
+                recs.append(rec)
+        chain_underlyings[pid] = _underlyings_touched_by_chain(recs)
+
+    # 3) Live source of truth: synced positions for tagged-chain symbols.
+    snap = _bucket_synced_positions(user_id, db)
+    buckets = snap["buckets"]
+    last_synced = snap["most_recent_sync"]
+    portfolio_lv = _portfolio_liquidation_value(user_id, db)
+
+    # Index live stock positions by underlying — cash vehicles are
+    # always stock-side (ETFs, MMFs treated as mutual funds). Aggregate
+    # across accounts so a single SGOV holding split across two
+    # accounts collapses to one logical row per (symbol, account).
+    # Keep per-account so the user sees which account has the cash.
+    holdings: List[Dict[str, Any]] = []
+
+    # Benchmarks: 1-mo (sweep / MMF / floating-rate) and 3-mo (bills /
+    # short-duration ETFs). Cached 24h via benchmark_rates.
+    bench_1mo = None
+    bench_3mo = None
+    try:
+        bench_1mo = get_latest_rate_with_meta(db, series_id="DGS1MO")
+    except Exception as exc:
+        logger = __import__("logging").getLogger(__name__)
+        logger.warning("DGS1MO fetch failed (non-fatal): %s", exc)
+    try:
+        bench_3mo = get_latest_rate_with_meta(db, series_id="DGS3MO")
+    except Exception as exc:
+        logger = __import__("logging").getLogger(__name__)
+        logger.warning("DGS3MO fetch failed (non-fatal): %s", exc)
+    rate_1mo = bench_1mo.get("rate_pct") if bench_1mo else None
+    rate_3mo = bench_3mo.get("rate_pct") if bench_3mo else None
+
+    # 4) Build vehicle rows. For each (symbol, account_hash) bucket
+    #    whose stock leg is tagged into a cash_mgmt chain, emit a row.
+    chain_tag_ids_by_underlying: Dict[str, List[str]] = {}
+    chain_count_by_underlying: Dict[str, int] = {}
+    for pid, unds in chain_underlyings.items():
+        for u in unds:
+            for tid in tag_ids_by_pid.get(pid, []):
+                chain_tag_ids_by_underlying.setdefault(u, [])
+                if tid not in chain_tag_ids_by_underlying[u]:
+                    chain_tag_ids_by_underlying[u].append(tid)
+            chain_count_by_underlying[u] = chain_count_by_underlying.get(u, 0) + 1
+
+    for (sym, ah), b in buckets.items():
+        s = b.get("stock")
+        if s is None or s["quantity"] <= 0:
+            continue
+        if sym not in chain_tag_ids_by_underlying:
+            continue  # not tagged into cash_mgmt
+
+        cls = _classify_cash_vehicle(sym)
+        vehicle_type = cls["vehicle_type"]
+        liquidity_tier = cls["liquidity_tier"]
+        est_yield_pct = _vehicle_yield_pct(vehicle_type, rate_1mo, rate_3mo)
+
+        market_value = float(s["market_value"])
+        cost_basis = float(s["cost_basis"])
+        unrealized = float(s["unrealized_pnl"])
+        annual_income = (
+            market_value * est_yield_pct / 100
+            if est_yield_pct is not None else None
+        )
+
+        holdings.append({
+            "symbol": sym,
+            "name": None,  # could be enriched later from a symbol-meta cache
+            "vehicle_type": vehicle_type,
+            "liquidity_tier": liquidity_tier,
+            "account_hash": ah,
+            "account_number": b.get("account_number"),
+            "quantity": float(s["quantity"]),
+            "current_price": float(s["current_price"]),
+            "market_value": market_value,
+            "cost_basis": cost_basis,
+            "unrealized_pnl": unrealized,
+            "est_yield_pct": est_yield_pct,
+            "yield_source": "fred_derived" if est_yield_pct is not None else "unknown",
+            "annual_income": annual_income,
+            "tag_ids": list(chain_tag_ids_by_underlying.get(sym, [])),
+            "is_synthetic": False,
+            "pct_cash": None,  # filled below
+            "pct_port": (
+                (market_value / portfolio_lv * 100)
+                if portfolio_lv > 0 else None
+            ),
+        })
+
+    # 5) Sweep cash: roll up account-level uninvested cash. Surfaced as a
+    #    synthetic row so the user can see what's NOT yet deployed (and
+    #    how much yield they're leaving on the table at sweep rates).
+    accounts = (
+        db.query(UserSchwabAccount)
+        .filter(
+            UserSchwabAccount.user_id == user_id,
+            UserSchwabAccount.sync_enabled == True,  # noqa: E712
+        )
+        .all()
+    )
+    total_sweep = 0.0
+    sweep_account_label = None
+    for a in accounts:
+        cb = float(a.cash_balance or 0)
+        if cb > 0:
+            total_sweep += cb
+            sweep_account_label = a.account_number  # best-effort label
+    if total_sweep > 0:
+        sweep_yield = _SWEEP_DEFAULT_YIELD_PCT
+        holdings.append({
+            "symbol": "CASH",
+            "name": "Schwab sweep (uninvested cash)",
+            "vehicle_type": "sweep",
+            "liquidity_tier": "T+0",
+            "account_hash": "",
+            "account_number": sweep_account_label,
+            "quantity": None,
+            "current_price": None,
+            "market_value": total_sweep,
+            "cost_basis": total_sweep,
+            "unrealized_pnl": 0.0,
+            "est_yield_pct": sweep_yield,
+            "yield_source": "static",
+            "annual_income": total_sweep * sweep_yield / 100,
+            "tag_ids": [],
+            "is_synthetic": True,
+            "pct_cash": None,
+            "pct_port": (
+                (total_sweep / portfolio_lv * 100)
+                if portfolio_lv > 0 else None
+            ),
+        })
+
+    # 6) Box-spread short liabilities. Pull straight from the box panel's
+    #    detector to avoid duplicating the 4-leg validation logic.
+    liabilities: List[Dict[str, Any]] = []
+    short_face_total = 0.0
+    short_face_30d = 0.0
+    short_face_90d = 0.0
+    weighted_borrow_num = 0.0  # Σ(face × rate)
+    weighted_borrow_den = 0.0  # Σ(face)
+    annual_borrow_cost = 0.0
+    try:
+        box_data = fetch_box_spreads_holdings(user_id=user_id, db=db)
+        for h in box_data.get("holdings") or []:
+            if h.get("direction") != "short":
+                continue
+            face = float(h.get("face_value") or 0)
+            rate = h.get("implied_rate_pct")
+            dte = h.get("dte")
+            short_face_total += face
+            if dte is not None:
+                if dte <= 30:
+                    short_face_30d += face
+                if dte <= 90:
+                    short_face_90d += face
+            if rate is not None and face > 0:
+                weighted_borrow_num += face * rate
+                weighted_borrow_den += face
+                annual_borrow_cost += face * rate / 100
+            liabilities.append({
+                "underlying": h.get("underlying"),
+                "expiration": h.get("expiration"),
+                "dte": dte,
+                "face_value": face,
+                "implied_rate_pct": rate,
+                "tag_ids": h.get("tag_ids") or [],
+                "chain_id": h.get("chain_id"),
+                "chain_name": h.get("chain_name"),
+            })
+    except Exception as exc:
+        logger = __import__("logging").getLogger(__name__)
+        logger.warning("box-spreads pass for cash-mgmt failed (non-fatal): %s", exc)
+
+    # 7) Aggregates + per-row pct_cash. Concentration is the largest
+    #    single deployed-cash vehicle as a share of total cash.
+    total_cash = sum(h["market_value"] for h in holdings)
+    weighted_cash_num = 0.0
+    weighted_cash_den = 0.0
+    annual_cash_income = 0.0
+    max_conc_pct = 0.0
+    max_conc_symbol = None
+    for h in holdings:
+        mv = float(h["market_value"] or 0)
+        h["pct_cash"] = (mv / total_cash * 100) if total_cash > 0 else None
+        if h["est_yield_pct"] is not None and mv > 0:
+            weighted_cash_num += mv * h["est_yield_pct"]
+            weighted_cash_den += mv
+            annual_cash_income += mv * h["est_yield_pct"] / 100
+        if total_cash > 0 and (mv / total_cash) > (max_conc_pct / 100):
+            max_conc_pct = mv / total_cash * 100
+            max_conc_symbol = h["symbol"]
+
+    weighted_cash_yield_pct = (
+        weighted_cash_num / weighted_cash_den
+        if weighted_cash_den > 0 else None
+    )
+    weighted_borrow_rate_pct = (
+        weighted_borrow_num / weighted_borrow_den
+        if weighted_borrow_den > 0 else None
+    )
+    net_carry_dollars = annual_cash_income - annual_borrow_cost
+
+    # net_carry_bps is the rate-spread between deployed yield and
+    # borrow cost — meaningful only if both sides exist.
+    net_carry_bps: Optional[float] = None
+    if weighted_cash_yield_pct is not None and weighted_borrow_rate_pct is not None:
+        net_carry_bps = (weighted_cash_yield_pct - weighted_borrow_rate_pct) * 100
+
+    # 8) Maturity ladder by month: cash that frees up (no maturity for
+    #    most vehicles, so we lump those into 'liquid') vs box-spread
+    #    debt that settles per month. Sorted by month asc.
+    ladder_by_month: Dict[str, Dict[str, float]] = {}
+    for liab in liabilities:
+        exp = liab.get("expiration")
+        if not exp:
+            continue
+        month = str(exp)[:7]  # YYYY-MM
+        d = ladder_by_month.setdefault(month, {"cash_freeing": 0.0, "debt_settling": 0.0})
+        d["debt_settling"] += float(liab.get("face_value") or 0)
+    ladder = sorted(
+        [{"month": k, **v} for k, v in ladder_by_month.items()],
+        key=lambda x: x["month"],
+    )
+
+    return {
+        "strategy_class": strategy_class,
+        "tags": [
+            {
+                "id": str(t.id), "name": t.name, "color": t.color, "note": t.note,
+                "strategy_classes": list(t.strategy_classes or []),
+            }
+            for t in tags
+        ],
+        "holdings": holdings,
+        "liabilities": liabilities,
+        "ladder": ladder,
+        "portfolio_liquidation_value": portfolio_lv,
+        "last_synced": last_synced.isoformat() if last_synced else None,
+        "benchmarks": {
+            "rate_1mo": bench_1mo,
+            "rate_3mo": bench_3mo,
+        },
+        "aggregates": {
+            "total_cash": total_cash,
+            "weighted_cash_yield_pct": weighted_cash_yield_pct,
+            "annual_cash_income": annual_cash_income,
+            "total_borrowed_face": short_face_total,
+            "weighted_borrow_rate_pct": weighted_borrow_rate_pct,
+            "annual_borrow_cost": annual_borrow_cost,
+            "net_carry_dollars": net_carry_dollars,
+            "net_carry_bps": net_carry_bps,
+            "borrowed_30d": short_face_30d,
+            "borrowed_90d": short_face_90d,
+            "cash_pct_port": (
+                (total_cash / portfolio_lv * 100)
+                if portfolio_lv > 0 else None
+            ),
+            "borrowed_pct_port": (
+                (short_face_total / portfolio_lv * 100)
+                if portfolio_lv > 0 else None
+            ),
+            "max_concentration_pct": max_conc_pct if max_conc_symbol else None,
+            "max_concentration_symbol": max_conc_symbol,
+        },
+    }
+
+
+# =============================================================================
+# Dividends — past-first income view
+# =============================================================================
+#
+# What we know vs. don't know:
+#   ✓ Past cash dividends: Schwab returns DIVIDEND_OR_INTEREST transactions in
+#     the same cache that powers transaction history. Filtering those by
+#     symbol gives us actual received income.
+#   ✗ Future ex-div dates and rates: not in our system without an external
+#     data source (yfinance, IEX, etc.). Intentionally out of scope here.
+#
+# Curation is tag-driven, like long_stock: the user explicitly tags Groups
+# with strategy_class='dividends'. Only the underlyings in those Groups
+# show up — random penny dividends on otherwise-unrelated holdings stay
+# invisible. The user does the curation; the panel reflects it.
+
+# Schwab files dividends as DIVIDEND_OR_INTEREST. The crucial thing we
+# learned from real cache data: Schwab puts only CURRENCY_USD in the
+# transferItems for these — the actual payer ticker is NOT in the
+# transferItems at all. The payer can only be identified by matching the
+# transaction's `description` (which is the company name in Schwab's
+# abbreviated form, e.g. "YIELDMAX MAGFT 7 FND OPTINCM ETF") against the
+# trade-side instrument descriptions for tickers we already know
+# (e.g. "YieldMax Magnificent 7 Fd Of Opt IncETFs"). The two abbreviation
+# styles don't overlap cleanly, so we score with a hybrid metric.
+_DIVIDEND_TYPE_HINTS = ("DIVIDEND", "DISTRIBUTION")
+_EQUITY_ASSET_TYPES = {"EQUITY", "STOCK", "ETF", "COLLECTIVE_INVESTMENT", "MUTUAL_FUND"}
+
+# Tokens that appear in many fund names and don't help disambiguate.
+_FUZZY_STOPWORDS = {
+    "ETF", "ETFS", "FUND", "FUNDS", "FD", "FDS", "INC", "CORP", "CO",
+    "CORPORATION", "LLC", "LP", "LTD", "LIMITED", "TR", "TRUST", "TRUSTS",
+    "II", "III", "IV", "OPT", "OPTS", "OPTION", "OPTIONS",
+    "INCOME", "INCOMES", "INCM", "INCETFS", "INCOMEETF", "DIVIDEND",
+    "DISTRIBUTION", "DISTR", "DISTRIBU", "WEEKLY", "MONTHLY", "QTRLY",
+    "QUARTERLY", "DAILY", "WKLY", "DLY", "OF", "AND", "THE", "TO",
+    "TIDAL", "TGT", "TARGET", "TRGT", "STRATEGY", "STRG", "STRTG",
+    "OPTN", "OPTINCM", "STR", "ETFS", "USA", "US",
+}
+
+
+def _normalize_text(s: str) -> str:
+    """Upper-case, collapse whitespace, leave alphanumerics."""
+    return re.sub(r"[^A-Z0-9 ]+", " ", (s or "").upper())
+
+
+def _significant_tokens(s: str) -> List[str]:
+    """Tokens >=3 chars, excluding common boilerplate."""
+    return [t for t in _normalize_text(s).split() if len(t) >= 3 and t not in _FUZZY_STOPWORDS]
+
+
+def _build_ticker_name_index(
+    user_id: str,
+    db: Session,
+    tickers: List[str],
+) -> Dict[str, List[str]]:
+    """Mine every cached transaction's transferItems for company-name
+    strings keyed by ticker. We need this because dividend payments don't
+    carry the ticker — only the abbreviated name in `description`. Trade
+    transactions carry both, so they serve as our name dictionary.
+
+    For OPTION instruments we strip the trailing "MM/DD/YYYY $strike Type"
+    so only the company part remains.
+    """
+    if not tickers:
+        return {}
+    ticker_set = {(t or "").upper() for t in tickers if t}
+    if not ticker_set:
+        return {}
+
+    rows = db.query(SchwabTransactionCache).filter(
+        SchwabTransactionCache.user_id == user_id,
+    ).all()
+
+    option_tail = re.compile(r"\s+\d{1,2}/\d{1,2}/\d{2,4}\s+\$.*$")
+
+    out: Dict[str, set] = {}
+    for r in rows:
+        payload = r.raw_payload or {}
+        for item in (payload.get("transferItems") or []):
+            inst = item.get("instrument") or {}
+            sym = (inst.get("symbol") or "").upper().lstrip("$")
+            usym = (inst.get("underlyingSymbol") or "").upper().lstrip("$")
+            desc = (inst.get("description") or "").strip()
+            at = (inst.get("assetType") or "").upper()
+
+            if not desc:
+                continue
+            if at == "OPTION":
+                desc = option_tail.sub("", desc).strip()
+                target = usym
+            else:
+                if at not in _EQUITY_ASSET_TYPES:
+                    continue
+                target = sym
+
+            if target and target in ticker_set and desc:
+                out.setdefault(target, set()).add(desc)
+
+    return {k: sorted(v) for k, v in out.items()}
+
+
+def _score_dividend_to_ticker(div_desc: str, name_strings: List[str]) -> float:
+    """Score how well a dividend description matches one ticker's known
+    company-name strings.
+
+    Combines two signals:
+      1. Significant-token overlap, weighted by token length (longer tokens
+         are more distinctive — "MAGFT" matters more than "ETF").
+      2. SequenceMatcher.ratio() on normalized full strings, as a
+         tiebreaker for cases where token sets are similar.
+    """
+    if not div_desc or not name_strings:
+        return 0.0
+    div_norm = _normalize_text(div_desc)
+    div_tokens = set(_significant_tokens(div_desc))
+    div_token_len = sum(len(t) for t in div_tokens) or 1
+
+    best = 0.0
+    for name in name_strings:
+        name_norm = _normalize_text(name)
+        name_tokens = set(_significant_tokens(name))
+        if not name_tokens:
+            continue
+        shared = div_tokens & name_tokens
+        token_score = (
+            sum(len(t) for t in shared)
+            / max(div_token_len, sum(len(t) for t in name_tokens))
+        )
+        # Prefix overlap (3-char): catches cases like MAGFT vs MAGNIFICENT.
+        # Only counts pairs where neither side is in the larger overlap set.
+        prefix_bonus = 0
+        for dt in div_tokens - shared:
+            for nt in name_tokens - shared:
+                if len(dt) >= 3 and len(nt) >= 3 and dt[:3] == nt[:3]:
+                    prefix_bonus += 1
+                    break
+        ratio = SequenceMatcher(None, div_norm, name_norm).ratio()
+        score = token_score + (prefix_bonus * 0.05) + (ratio * 0.25)
+        if score > best:
+            best = score
+    return best
+
+
+def _identify_dividend_payer(
+    payload: Dict[str, Any],
+    ticker_name_index: Optional[Dict[str, List[str]]] = None,
+) -> Optional[str]:
+    """Return the ticker that paid this dividend / distribution, or None.
+
+    Order:
+      1. transferItems → equity instrument symbol (rare for dividends but
+         possible for some account types).
+      2. transferItems → any non-cash instrument symbol.
+      3. Fuzzy-match the transaction `description` against
+         ticker_name_index, keeping the best match above a minimum score.
+    """
+    if not payload or not isinstance(payload, dict):
+        return None
+
+    tx_type = (payload.get("type") or "").upper()
+    description = payload.get("description") or ""
+    type_says_income = any(h in tx_type for h in _DIVIDEND_TYPE_HINTS)
+    desc_up = description.upper()
+    desc_says_income = any(h in desc_up for h in _DIVIDEND_TYPE_HINTS)
+
+    # We'll trust DIVIDEND_OR_INTEREST type as long as the description is
+    # not flagged as interest. Schwab uses one shared type for both, but
+    # interest payments have descriptions that say so.
+    looks_like_interest = (
+        "INT " in desc_up or "INTEREST" in desc_up
+        or "SCHWAB1" in desc_up or "MMDA" in desc_up
+        or desc_up.endswith(" INT")
+    )
+    if not (type_says_income or desc_says_income):
+        return None
+    if looks_like_interest:
+        return None
+
+    # 1 & 2) transferItems
+    fallback_any = None
+    for item in payload.get("transferItems") or []:
+        inst = item.get("instrument") or {}
+        at = (inst.get("assetType") or "").upper()
+        sym = (inst.get("symbol") or "").upper().lstrip("$")
+        if not sym or sym == "CURRENCY_USD" or at == "CURRENCY":
+            continue
+        if at in _EQUITY_ASSET_TYPES:
+            return sym
+        if at not in {"CASH_EQUIVALENT"} and fallback_any is None:
+            fallback_any = sym
+    if fallback_any:
+        return fallback_any
+
+    # 3) Fuzzy match against tagged tickers' known names. To avoid false
+    # positives like "PROSHARES BITCOIN ETF" matching to a tagged
+    # "NEOS BITCOIN HI INC" purely on the shared word BITCOIN, we require
+    # the first significant token of the dividend description to also be
+    # the first significant token of at least one of the candidate's
+    # known names. This is a strict signal: Schwab's dividend description
+    # consistently leads with the issuer/series name (NEOS, YIELDMAX,
+    # DEFIANCE, PFIZER, etc.).
+    if ticker_name_index and description:
+        div_first = _first_significant_token(description)
+        if div_first:
+            best_ticker = None
+            best_score = 0.0
+            for ticker, names in ticker_name_index.items():
+                # Filter: at least one known name must start with the same
+                # significant token as the dividend description.
+                if not any(_first_significant_token(n) == div_first for n in names):
+                    continue
+                s = _score_dividend_to_ticker(description, names)
+                if s > best_score:
+                    best_score = s
+                    best_ticker = ticker
+            if best_ticker and best_score >= 0.20:
+                return best_ticker
+
+    return None
+
+
+def _first_significant_token(s: str) -> Optional[str]:
+    toks = _significant_tokens(s)
+    return toks[0] if toks else None
+
+
+def _dividend_payments_for_user(
+    user_id: str,
+    db: Session,
+    since: Optional[datetime] = None,
+    candidate_symbols: Optional[List[str]] = None,
+) -> List[Dict[str, Any]]:
+    """Return dividend / distribution payments from cached Schwab
+    transactions. Each entry: {symbol, account_hash, date, amount,
+    description, qualified_dividend, schwab_transaction_id}.
+
+    `candidate_symbols` is the user's tagged-ticker universe. We build a
+    name index from that universe's trade transactions and use it for
+    fuzzy matching, since dividend payloads carry only company names.
+    """
+    name_index = _build_ticker_name_index(user_id, db, candidate_symbols or [])
+
+    q = db.query(SchwabTransactionCache).filter(
+        SchwabTransactionCache.user_id == user_id,
+    )
+    if since is not None:
+        q = q.filter(SchwabTransactionCache.trade_date >= since)
+    rows = q.all()
+
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        payload = r.raw_payload or {}
+        sym = _identify_dividend_payer(payload, ticker_name_index=name_index)
+        if not sym:
+            continue
+        net = payload.get("netAmount")
+        try:
+            amount = float(net) if net is not None else 0.0
+        except (TypeError, ValueError):
+            amount = 0.0
+        if abs(amount) < 0.005:
+            continue
+        # Schwab tells us per-payment whether it qualifies for LTCG rates.
+        # This is authoritative — far better than our heuristic guess.
+        qualified_raw = payload.get("qualifiedDividend")
+        if isinstance(qualified_raw, bool):
+            qualified = qualified_raw
+        else:
+            qualified = None
+        out.append({
+            "symbol": sym,
+            "account_hash": r.account_hash,
+            "date": r.trade_date.isoformat() if r.trade_date else None,
+            "amount": amount,
+            "description": payload.get("description"),
+            "qualified_dividend": qualified,
+            "schwab_transaction_id": r.schwab_transaction_id,
+        })
+    out.sort(key=lambda x: x.get("date") or "")
+    return out
+
+
+def fetch_dividends_holdings(
+    user_id: str,
+    db: Session,
+) -> Dict[str, Any]:
+    """Past-first Dividends view.
+
+    Curation: tags with strategy_class='dividends' name the universe of
+    holdings the user counts as a dividend strategy. Random small dividends
+    on unrelated long-stock positions are intentionally excluded — the
+    user tags only what's material.
+
+    Income: actual cash received over the trailing 365d, summed from
+    Schwab DIVIDEND_OR_INTEREST cache rows whose payer matches a tagged
+    underlying. We don't project future payouts (we don't have ex-div /
+    rate data without an external source).
+
+    Tax bucket: per-symbol qualified flag from DividendClassification (user
+    sets it manually). Strategy-level totals split qualified vs not so the
+    STCG drag is visible.
+    """
+    strategy_class = "dividends"
+    now = datetime.utcnow()
+    ttm_since = now - timedelta(days=365)
+
+    # 1) Tags carrying dividends strategy_class
+    user_tags = db.query(Tag).filter(Tag.user_id == user_id).all()
+    tags = [
+        t for t in user_tags
+        if t.strategy_classes and strategy_class in t.strategy_classes
+    ]
+    tag_id_set = {t.id for t in tags}
+
+    # 2) Memberships → tagged underlyings.
+    # The UI lets users tag at two levels: a whole chain
+    # (member_type='transaction_position') or an individual transaction
+    # (member_type='transaction'). We resolve underlyings for both.
+    memberships: List[TagMembership] = []
+    if tag_id_set:
+        memberships = db.query(TagMembership).filter(
+            TagMembership.tag_id.in_(list(tag_id_set)),
+        ).all()
+
+    tp_ids = sorted({m.member_id for m in memberships if m.member_type == "transaction_position"})
+    tx_ids_direct = sorted({m.member_id for m in memberships if m.member_type == "transaction"})
+
+    # Pull TP rows (still useful for surfacing the chain even if we resolve
+    # underlying through the cached payloads).
+    tp_rows: List[TransactionPosition] = []
+    if tp_ids:
+        tp_rows = db.query(TransactionPosition).filter(
+            TransactionPosition.user_id == user_id,
+            TransactionPosition.id.in_(tp_ids),
+        ).all()
+
+    # Pull annotations linking TPs → cached transactions.
+    ann_by_pid: Dict[str, List[str]] = {}
+    annotation_tx_ids: set = set()
+    if tp_ids:
+        annotations = db.query(TransactionAnnotation).filter(
+            TransactionAnnotation.user_id == user_id,
+            TransactionAnnotation.transaction_position_id.in_(tp_ids),
+        ).all()
+        for a in annotations:
+            if a.transaction_position_id and a.schwab_transaction_id:
+                ann_by_pid.setdefault(a.transaction_position_id, []).append(a.schwab_transaction_id)
+                annotation_tx_ids.add(a.schwab_transaction_id)
+
+    # Pull cached payloads for everything we need (TP annotations +
+    # directly-tagged transactions). One round-trip.
+    all_needed_tx_ids = annotation_tx_ids | set(tx_ids_direct)
+    payload_by_id: Dict[str, Dict[str, Any]] = {}
+    if all_needed_tx_ids:
+        cached = db.query(SchwabTransactionCache).filter(
+            SchwabTransactionCache.user_id == user_id,
+            SchwabTransactionCache.schwab_transaction_id.in_(list(all_needed_tx_ids)),
+        ).all()
+        payload_by_id = {r.schwab_transaction_id: r.raw_payload for r in cached}
+
+    # Helper: pull every plausible underlying from a normalized record. We
+    # prefer stock-asset legs (matches the dividends-payable universe), but
+    # fall back to any leg's underlying/symbol when the chain is options-only
+    # — the user tagged it for dividend reasons; trust the ticker.
+    def _underlyings_from_payload(payload: Dict[str, Any]) -> List[str]:
+        rec = _normalize_transaction(payload or {}, None, "")
+        if not rec:
+            return []
+        stock_uls: List[str] = []
+        any_uls: List[str] = []
+        for leg in rec.get("legs") or []:
+            u = (leg.get("underlying") or leg.get("symbol") or "").upper().lstrip("$")
+            if not u:
+                continue
+            at = (leg.get("asset_type") or "").upper()
+            # Skip cash legs — every transaction has them, they just
+            # represent the dollar movement, not a holding.
+            if at in {"CURRENCY", "CASH_EQUIVALENT"} or u == "CURRENCY_USD":
+                continue
+            if at in _STOCK_ASSET_TYPES:
+                if u not in stock_uls:
+                    stock_uls.append(u)
+            elif u not in any_uls:
+                any_uls.append(u)
+        return stock_uls or any_uls
+
+    # underlying → set(tag_ids)
+    tag_ids_by_underlying: Dict[str, set] = {}
+
+    # Resolve underlyings for transaction_position memberships by walking
+    # all annotated transactions on the chain (a chain can touch >1 ticker
+    # in unusual cases — we credit each tag to every underlying it touches).
+    tp_underlying_cache: Dict[str, List[str]] = {}
+    for pid in tp_ids:
+        unders: List[str] = []
+        for tx_id in ann_by_pid.get(pid, []):
+            for u in _underlyings_from_payload(payload_by_id.get(tx_id) or {}):
+                if u not in unders:
+                    unders.append(u)
+        tp_underlying_cache[pid] = unders
+
+    # Resolve underlyings for direct transaction memberships.
+    tx_underlying_cache: Dict[str, List[str]] = {}
+    for tx_id in tx_ids_direct:
+        unders = _underlyings_from_payload(payload_by_id.get(tx_id) or {})
+        tx_underlying_cache[tx_id] = unders
+
+    for m in memberships:
+        if m.member_type == "transaction_position":
+            for und in tp_underlying_cache.get(m.member_id, []):
+                tag_ids_by_underlying.setdefault(und, set()).add(m.tag_id)
+        elif m.member_type == "transaction":
+            for und in tx_underlying_cache.get(m.member_id, []):
+                tag_ids_by_underlying.setdefault(und, set()).add(m.tag_id)
+
+    tagged_underlyings = sorted(tag_ids_by_underlying.keys())
+
+    # 3) Live stock holdings (synced positions) — for shares / MV / current
+    # context per underlying.
+    snap = _bucket_synced_positions(user_id, db)
+    buckets = snap["buckets"]
+    last_synced = snap["most_recent_sync"]
+    portfolio_lv = _portfolio_liquidation_value(user_id, db)
+
+    # underlying → list[(account_hash, bucket)]
+    live_by_underlying: Dict[str, List[tuple]] = {}
+    for (sym, ah), b in buckets.items():
+        if not b.get("stock"):
+            continue
+        live_by_underlying.setdefault(sym, []).append((ah, b))
+
+    # 4) Dividend payments cache (for full history; TTM windowed below).
+    # Pull the full set so we can compute counts and "last paid" beyond the
+    # TTM window when the holding has been quiet recently. We pass the
+    # tagged-ticker list so the matcher can recover fund/ETF payments that
+    # only mention the symbol in the description (YMAG-style ETFs).
+    payments = _dividend_payments_for_user(
+        user_id, db, since=None, candidate_symbols=tagged_underlyings,
+    )
+
+    # symbol → list of payment records
+    payments_by_sym: Dict[str, List[Dict[str, Any]]] = {}
+    for p in payments:
+        payments_by_sym.setdefault(p["symbol"], []).append(p)
+
+    # 5) Classification flags
+    class_rows = db.query(DividendClassification).filter(
+        DividendClassification.user_id == user_id,
+    ).all()
+    qualified_by_sym: Dict[str, Optional[bool]] = {
+        r.symbol.upper(): r.qualified for r in class_rows
+    }
+
+    # 6) Build holdings rows. One row per underlying — we don't split per
+    # account here because dividend tax classification is per security, not
+    # per account.
+    holdings: List[Dict[str, Any]] = []
+    ttm_q_total = 0.0
+    ttm_nq_total = 0.0
+    ttm_unset_total = 0.0
+    ttm_grand = 0.0
+    last_paid_overall: Optional[str] = None
+
+    for sym in tagged_underlyings:
+        live_rows = live_by_underlying.get(sym, [])
+        # Sum across accounts so the user sees one row per ticker.
+        shares = sum((b.get("stock") or {}).get("quantity", 0.0) for _ah, b in live_rows)
+        market_value = sum((b.get("stock") or {}).get("market_value", 0.0) for _ah, b in live_rows)
+        cost_basis = sum((b.get("stock") or {}).get("cost_basis", 0.0) for _ah, b in live_rows)
+        avg_cost = (cost_basis / shares) if shares > 0 else 0.0
+        current_price = 0.0
+        if live_rows:
+            cps = [(b.get("stock") or {}).get("current_price", 0.0) for _ah, b in live_rows]
+            cps = [c for c in cps if c]
+            current_price = cps[0] if cps else 0.0
+        account_numbers = sorted({
+            (b.get("account_number") or "")
+            for _ah, b in live_rows
+            if b.get("account_number")
+        })
+
+        sym_payments = payments_by_sym.get(sym, [])
+        ttm_payments = [p for p in sym_payments if (p.get("date") or "") >= ttm_since.isoformat()]
+        ttm_income = sum(p["amount"] for p in ttm_payments)
+        ttm_count = len(ttm_payments)
+        # All-time income (across the full transaction-cache window — typically
+        # ~730 days). Used for the breakeven view: dividends-received vs
+        # NAV decay, since YieldMax-style funds often bleed principal even
+        # while paying out heavy distributions.
+        all_time_income = sum(p["amount"] for p in sym_payments)
+        last_paid = sym_payments[-1]["date"] if sym_payments else None
+        first_paid = sym_payments[0]["date"] if sym_payments else None
+        avg_per_payout = (ttm_income / ttm_count) if ttm_count else None
+        ttm_yield_pct = (
+            (ttm_income / market_value) * 100
+            if market_value and market_value > 0 else None
+        )
+
+        # Schwab marks each payment qualified=true|false. Sum each bucket so
+        # mixed-status securities (REITs that pay both, fund distributions
+        # that mix qualified/ROC) show their split honestly.
+        ttm_qualified_dollars = sum(
+            p["amount"] for p in ttm_payments if p.get("qualified_dividend") is True
+        )
+        ttm_non_qualified_dollars = sum(
+            p["amount"] for p in ttm_payments if p.get("qualified_dividend") is False
+        )
+        ttm_unknown_dollars = sum(
+            p["amount"] for p in ttm_payments if p.get("qualified_dividend") is None
+        )
+
+        # Roll-up qualified flag for the row:
+        #   user override (DividendClassification) wins
+        #   else: derive from Schwab's per-payment flags over the TTM window
+        #     - all qualified → True
+        #     - all non-qualified → False
+        #     - mixed or unknown-only → None
+        user_override = qualified_by_sym.get(sym)
+        if user_override is not None:
+            qualified = user_override
+        elif ttm_count == 0:
+            qualified = None
+        elif ttm_qualified_dollars > 0 and ttm_non_qualified_dollars == 0 and ttm_unknown_dollars == 0:
+            qualified = True
+        elif ttm_non_qualified_dollars > 0 and ttm_qualified_dollars == 0 and ttm_unknown_dollars == 0:
+            qualified = False
+        else:
+            qualified = None
+
+        if ttm_income > 0:
+            ttm_q_total += ttm_qualified_dollars
+            ttm_nq_total += ttm_non_qualified_dollars
+            ttm_unset_total += ttm_unknown_dollars
+            ttm_grand += ttm_income
+
+        if last_paid and (last_paid_overall is None or last_paid > last_paid_overall):
+            last_paid_overall = last_paid
+
+        # Breakeven math. unrealized = NAV change vs cost. net_return =
+        # cumulative cash dividends + unrealized = "are we ahead or
+        # behind on this position, all-in?"
+        unrealized_pnl = market_value - cost_basis if shares > 0 else 0.0
+        net_return = unrealized_pnl + all_time_income
+        net_return_pct = (
+            (net_return / cost_basis) * 100
+            if cost_basis and cost_basis > 0 else None
+        )
+
+        holdings.append({
+            "underlying": sym,
+            "shares": shares,
+            "avg_cost": avg_cost,
+            "cost_basis": cost_basis,
+            "current_price": current_price,
+            "market_value": market_value,
+            "unrealized_pnl": unrealized_pnl,
+            "all_time_income": all_time_income,
+            "net_return": net_return,
+            "net_return_pct": net_return_pct,
+            "account_numbers": account_numbers,
+            "tag_ids": sorted(str(t) for t in tag_ids_by_underlying.get(sym, set())),
+            "qualified": qualified,  # True | False | None
+            "qualified_source": "user" if user_override is not None else (
+                "schwab" if ttm_count > 0 else "unknown"
+            ),
+            "ttm_income": ttm_income,
+            "ttm_qualified_income": ttm_qualified_dollars,
+            "ttm_non_qualified_income": ttm_non_qualified_dollars,
+            "ttm_unknown_income": ttm_unknown_dollars,
+            "ttm_payment_count": ttm_count,
+            "ttm_yield_pct": ttm_yield_pct,
+            "avg_per_payout": avg_per_payout,
+            "last_paid": last_paid,
+            "first_paid": first_paid,
+            "all_payment_count": len(sym_payments),
+            "pct_port_mv": (
+                (market_value / portfolio_lv * 100) if portfolio_lv > 0 else None
+            ),
+            "pct_port_cost": (
+                (cost_basis / portfolio_lv * 100) if portfolio_lv > 0 else None
+            ),
+            # Truncated payments for sparkline / tooltip use. Keep recent
+            # ones; full history is reachable through the underlying's
+            # transactions view if the user wants it.
+            "recent_payments": sym_payments[-12:],
+        })
+
+    holdings.sort(key=lambda h: h["ttm_income"], reverse=True)
+
+    weighted_yield_pct = None
+    total_mv = sum(h["market_value"] for h in holdings)
+    total_cost = sum(h["cost_basis"] for h in holdings)
+    total_unrealized = sum(h["unrealized_pnl"] for h in holdings)
+    total_all_time_income = sum(h["all_time_income"] for h in holdings)
+    total_net_return = total_unrealized + total_all_time_income
+    total_net_return_pct = (
+        (total_net_return / total_cost) * 100
+        if total_cost and total_cost > 0 else None
+    )
+    if total_mv > 0:
+        weighted_yield_pct = (ttm_grand / total_mv) * 100
+
+    return {
+        "strategy_class": strategy_class,
+        "tags": [
+            {
+                "id": str(t.id), "name": t.name, "color": t.color, "note": t.note,
+                "strategy_classes": list(t.strategy_classes or []),
+            }
+            for t in tags
+        ],
+        "holdings": holdings,
+        "portfolio_liquidation_value": portfolio_lv,
+        "last_synced": last_synced.isoformat() if last_synced else None,
+        "aggregates": {
+            "ttm_income_total": ttm_grand,
+            "ttm_income_qualified": ttm_q_total,
+            "ttm_income_non_qualified": ttm_nq_total,
+            "ttm_income_unclassified": ttm_unset_total,
+            "weighted_ttm_yield_pct": weighted_yield_pct,
+            "holdings_count": len(holdings),
+            "last_paid": last_paid_overall,
+            "total_market_value": total_mv,
+            "total_cost_basis": total_cost,
+            "total_unrealized_pnl": total_unrealized,
+            "total_all_time_income": total_all_time_income,
+            "total_net_return": total_net_return,
+            "total_net_return_pct": total_net_return_pct,
+            "pct_port_mv": (
+                (total_mv / portfolio_lv * 100) if portfolio_lv > 0 else None
+            ),
         },
     }

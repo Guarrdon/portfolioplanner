@@ -9,6 +9,7 @@ from app.models.transaction_cache import SchwabTransactionCache, SchwabTransacti
 from app.models.quote_cache import UnderlyingQuoteCache
 from app.models.catalyst import EarningsCache, UserCatalyst
 from app.models.benchmark_rate import BenchmarkRateCache
+from app.models.dividend_classification import DividendClassification
 
 __all__ = [
     "User",
@@ -27,4 +28,5 @@ __all__ = [
     "EarningsCache",
     "UserCatalyst",
     "BenchmarkRateCache",
+    "DividendClassification",
 ]

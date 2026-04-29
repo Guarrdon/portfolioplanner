@@ -103,3 +103,38 @@ export const fetchBoxSpreadsHoldings = async () => {
   const response = await api.get('/tags/strategy/box_spreads/holdings');
   return response.data;
 };
+
+/**
+ * Fetch Cash Mgmt holdings — deployed-cash vehicles (MMFs, treasury
+ * ETFs, short-bond ETFs, account sweep) + box-spread short liabilities,
+ * with net-carry aggregates and FRED 1-mo / 3-mo benchmarks.
+ */
+export const fetchCashMgmtHoldings = async () => {
+  const response = await api.get('/tags/strategy/cash_mgmt/holdings');
+  return response.data;
+};
+
+/**
+ * Fetch Dividends holdings — past-first income view. Each row is a tagged
+ * underlying with TTM dividends received, count of payouts, and the user-
+ * set qualified flag (or "unset" → panel shows "verify").
+ */
+export const fetchDividendsHoldings = async () => {
+  const response = await api.get('/tags/strategy/dividends/holdings');
+  return response.data;
+};
+
+/**
+ * Upsert the user's qualified-vs-non-qualified flag for one ticker.
+ * Pass qualified=null with no note to clear the row.
+ */
+export const setDividendClassification = async (symbol, { qualified, note } = {}) => {
+  const body = {};
+  if (qualified !== undefined) body.qualified = qualified;
+  if (note !== undefined) body.note = note;
+  const response = await api.put(
+    `/tags/strategy/dividends/classifications/${encodeURIComponent(symbol)}`,
+    body,
+  );
+  return response.data;
+};

@@ -26,6 +26,8 @@ import CoveredCallsPanel from './panels/CoveredCallsPanel';
 import SingleLegPanel from './panels/SingleLegPanel';
 import BigOptionsPanel from './panels/BigOptionsPanel';
 import BoxSpreadsPanel from './panels/BoxSpreadsPanel';
+import CashMgmtPanel from './panels/CashMgmtPanel';
+import DividendsPanel from './panels/DividendsPanel';
 
 // Map strategy keys to their KPI panel components. Strategies without an
 // entry get a placeholder. Panels receive `tags` (the Groups in that class).
@@ -36,6 +38,8 @@ const PANEL_BY_KEY = {
   single_leg: SingleLegPanel,
   big_options: BigOptionsPanel,
   box_spreads: BoxSpreadsPanel,
+  cash_mgmt: CashMgmtPanel,
+  dividends: DividendsPanel,
 };
 
 const UncategorizedHeader = ({ groupCount }) => (
