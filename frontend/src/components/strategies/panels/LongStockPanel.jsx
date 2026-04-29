@@ -210,6 +210,7 @@ const LongStockPanel = () => {
         ltStatus,
         pctStrat: stratMv > 0 ? (h.market_value / stratMv) * 100 : null,
         pctPort: portfolioMv > 0 ? (h.market_value / portfolioMv) * 100 : null,
+        pctCostPort: portfolioMv > 0 ? ((h.cost_basis || 0) / portfolioMv) * 100 : null,
         dayPct,
       };
     });
@@ -241,6 +242,7 @@ const LongStockPanel = () => {
         case 'day': r = cmp(a, b, 'current_day_pnl'); break;
         case 'realized': r = cmp(a, b, 'realized_pnl'); break;
         case 'pct_port': r = cmp(a, b, 'pctPort'); break;
+        case 'pct_cost_port': r = cmp(a, b, 'pctCostPort'); break;
         case 'pct_strat': r = cmp(a, b, 'pctStrat'); break;
         case 'held': r = cmp(a, b, 'heldDays'); break;
         case 'lt': r = (a.ltStatus || '').localeCompare(b.ltStatus || '') * dir; break;
@@ -266,12 +268,13 @@ const LongStockPanel = () => {
     const denom = value - day;
     const dayPct = (dayKnown && denom !== 0) ? (day / Math.abs(denom)) * 100 : null;
     const pctOfPort = portfolioMv > 0 ? (value / portfolioMv) * 100 : null;
+    const pctCostOfPort = portfolioMv > 0 ? (cost / portfolioMv) * 100 : null;
     return {
       count: enriched.length,
       cost, value, pnl, pnlPct,
       day, dayPct, dayKnown,
       realized, realizedKnown,
-      pctOfPort,
+      pctOfPort, pctCostOfPort,
     };
   }, [enriched, portfolioMv]);
 
@@ -329,13 +332,9 @@ const LongStockPanel = () => {
 
   return (
     <section className="mt-4 bg-white border border-gray-200 rounded">
-      {/* Freshness bar */}
-      <div className="px-3 py-1.5 border-b border-gray-200 flex items-center justify-between text-[11px] text-gray-500">
-        <span>
-          {data?.last_synced
-            ? <>Synced <SyncedAgo iso={data.last_synced} /> · cached</>
-            : 'No sync timestamp'}
-        </span>
+      {/* Freshness bar — sync timestamp lives on the per-account button in
+          the header. This bar is just the panel's local controls. */}
+      <div className="px-3 py-1.5 border-b border-gray-200 flex items-center justify-end text-[11px] text-gray-500">
         <div className="flex items-center gap-1">
           <button
             onClick={() => setLegendOpen((o) => !o)}
@@ -419,9 +418,16 @@ const LongStockPanel = () => {
           label="% of portfolio"
           value={
             totals.pctOfPort != null ? (
-              <span className={concentrationClass(totals.pctOfPort)}>
-                {fmtPct(totals.pctOfPort)}
-              </span>
+              <>
+                <span className={concentrationClass(totals.pctOfPort)}>
+                  {fmtPct(totals.pctOfPort)}
+                </span>
+                {totals.pctCostOfPort != null && (
+                  <span className="ml-1 text-[11px] text-gray-500" title="Cost basis as % of portfolio — what you originally allocated">
+                    ({fmtPct(totals.pctCostOfPort)} cost)
+                  </span>
+                )}
+              </>
             ) : '—'
           }
           hint={portfolioMv ? `of ${fmtMoney(portfolioMv)} total liquidation` : 'no portfolio total'}
@@ -567,12 +573,18 @@ const LongStockPanel = () => {
                     </td>
                     <td className={`text-right px-2 py-1.5 ${concentrationClass(h.pctPort)}`}
                         title={
-                          h.pctPort != null && h.pctPort >= CONC_DANGER ? 'Heavy concentration (>20% of portfolio)'
-                            : h.pctPort != null && h.pctPort >= CONC_WARN ? 'Concentrated (>10% of portfolio)'
+                          h.pctPort != null && h.pctPort >= CONC_DANGER ? 'Heavy concentration (>20% of portfolio MV)'
+                            : h.pctPort != null && h.pctPort >= CONC_WARN ? 'Concentrated (>10% of portfolio MV)'
                               : '% of total portfolio'
                         }>
                       <div>{fmtPct(h.pctPort)}</div>
-                      <div className="text-[10px] text-gray-500">{fmtPct(h.pctStrat)} of strat</div>
+                      <div
+                        className="text-[10px] text-gray-500"
+                        title="Cost basis as % of portfolio — what you originally allocated to this position"
+                      >
+                        {fmtPct(h.pctCostPort)} cost
+                      </div>
+                      <div className="text-[10px] text-gray-400">{fmtPct(h.pctStrat)} of strat</div>
                     </td>
                     <td className="px-2 py-1.5 text-gray-700">
                       <div>{fmtDate(h.earliest_chain_tx_date)}</div>
@@ -607,18 +619,6 @@ const LongStockPanel = () => {
       </div>
     </section>
   );
-};
-
-const SyncedAgo = ({ iso }) => {
-  const t = new Date(iso).getTime();
-  const ms = Date.now() - t;
-  const m = Math.floor(ms / 60000);
-  if (m < 1) return <>just now</>;
-  if (m < 60) return <>{m}m ago</>;
-  const h = Math.floor(m / 60);
-  if (h < 24) return <>{h}h ago</>;
-  const d = Math.floor(h / 24);
-  return <>{d}d ago</>;
 };
 
 const Stat = ({ label, value, hint }) => (

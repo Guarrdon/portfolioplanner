@@ -151,17 +151,6 @@ const SortableTh = ({ label, sortKey, currentKey, currentDir, onSort, align = 'l
   );
 };
 
-const SyncedAgo = ({ iso }) => {
-  const t = new Date(iso).getTime();
-  const ms = Date.now() - t;
-  const m = Math.floor(ms / 60000);
-  if (m < 1) return <>just now</>;
-  if (m < 60) return <>{m}m ago</>;
-  const h = Math.floor(m / 60);
-  if (h < 24) return <>{h}h ago</>;
-  const d = Math.floor(h / 24);
-  return <>{d}d ago</>;
-};
 
 const Stat = ({ label, value, hint }) => (
   <div>
@@ -326,12 +315,9 @@ const BoxSpreadsPanel = () => {
     <section className="mt-4 bg-white border border-gray-200 rounded">
       <div className="px-3 py-1.5 border-b border-gray-200 flex items-center justify-between text-[11px] text-gray-500">
         <span>
-          {data?.last_synced ? <>Synced <SyncedAgo iso={data.last_synced} /> · cached</> : 'No sync timestamp'}
-          {benchmark?.rate_pct != null && (
-            <span className="ml-2 text-gray-500">
-              · benchmark {fmtPct(benchmark.rate_pct)} ({benchmark.series_id}, {benchmark.rate_date})
-            </span>
-          )}
+          {benchmark?.rate_pct != null
+            ? <>benchmark {fmtPct(benchmark.rate_pct)} ({benchmark.series_id}, {benchmark.rate_date})</>
+            : ''}
         </span>
         <div className="flex items-center gap-1">
           <button
