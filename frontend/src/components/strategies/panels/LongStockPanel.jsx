@@ -24,6 +24,7 @@ import {
   ChevronUp, ChevronDown, RefreshCw,
 } from 'lucide-react';
 import { fetchLongStockHoldings } from '../../../services/tags';
+import { useSelectedAccountHash } from '../../../hooks/useSelectedAccount';
 
 const CONC_WARN = 10;
 const CONC_DANGER = 20;
@@ -152,6 +153,7 @@ const SortableTh = ({ label, sortKey, currentKey, currentDir, onSort, align = 'l
 const LongStockPanel = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const accountHash = useSelectedAccountHash();
   const [sortKey, setSortKey] = useState('mv');
   const [sortDir, setSortDir] = useState('desc');
   const [legendOpen, setLegendOpen] = useState(false);
@@ -160,8 +162,8 @@ const LongStockPanel = () => {
   // Infinity means switching between strategy panels doesn't refetch.
   // Manual Refresh button below invalidates when the user wants fresh.
   const { data, isLoading, error, isFetching } = useQuery({
-    queryKey: ['long-stock-holdings'],
-    queryFn: fetchLongStockHoldings,
+    queryKey: ['long-stock-holdings', accountHash],
+    queryFn: () => fetchLongStockHoldings(accountHash),
     staleTime: Infinity,
     gcTime: Infinity,
   });
@@ -257,12 +259,17 @@ const LongStockPanel = () => {
   const totals = useMemo(() => {
     let cost = 0, value = 0, pnl = 0, day = 0, realized = 0;
     let dayKnown = false, realizedKnown = false;
+    let heldMin = null, heldMax = null;
     for (const h of enriched) {
       cost += h.cost_basis || 0;
       value += h.market_value || 0;
       pnl += h.unrealized_pnl || 0;
       if (h.current_day_pnl != null) { day += h.current_day_pnl; dayKnown = true; }
       if (h.realized_pnl != null) { realized += h.realized_pnl; realizedKnown = true; }
+      if (h.heldDays != null) {
+        if (heldMin === null || h.heldDays < heldMin) heldMin = h.heldDays;
+        if (heldMax === null || h.heldDays > heldMax) heldMax = h.heldDays;
+      }
     }
     const pnlPct = cost > 0 ? (pnl / cost) * 100 : null;
     const denom = value - day;
@@ -275,6 +282,7 @@ const LongStockPanel = () => {
       day, dayPct, dayKnown,
       realized, realizedKnown,
       pctOfPort, pctCostOfPort,
+      heldMin, heldMax,
     };
   }, [enriched, portfolioMv]);
 
@@ -602,6 +610,41 @@ const LongStockPanel = () => {
                 );
               })}
             </tbody>
+            <tfoot className="bg-gray-50 border-t border-gray-300 font-medium text-gray-800">
+              <tr>
+                <td className="px-3 py-2 text-left">{totals.count} positions</td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2 text-right">{fmtMoney(totals.value)}</td>
+                <td className={`px-2 py-2 text-right ${pnlClass(totals.pnl)}`}>
+                  <div>{fmtMoney(totals.pnl, true)}</div>
+                  {totals.pnlPct != null && (
+                    <div className="text-[10px] opacity-75">{fmtPct(totals.pnlPct, true, 1)}</div>
+                  )}
+                </td>
+                <td className={`px-2 py-2 text-right ${pnlClass(totals.dayKnown ? totals.day : null)}`}>
+                  {totals.dayKnown ? fmtMoney(totals.day, true) : '—'}
+                </td>
+                <td className={`px-2 py-2 text-right ${pnlClass(totals.realizedKnown ? totals.realized : null)}`}>
+                  {totals.realizedKnown ? fmtMoney(totals.realized, true) : '—'}
+                </td>
+                <td className="px-2 py-2"></td>
+                <td className={`px-2 py-2 text-right ${concentrationClass(totals.pctOfPort)}`}>
+                  {fmtPct(totals.pctOfPort)}
+                </td>
+                <td className="px-2 py-2 text-left text-gray-600">
+                  {totals.heldMin != null && totals.heldMax != null
+                    ? (totals.heldMin === totals.heldMax
+                        ? `${totals.heldMin}d`
+                        : `${totals.heldMin}–${totals.heldMax}d`)
+                    : '—'}
+                </td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       )}

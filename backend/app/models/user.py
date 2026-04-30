@@ -90,6 +90,12 @@ class UserSchwabAccount(Base):
     liquidation_value = Column(Float, default=0.0)
     buying_power = Column(Float, default=0.0)  # Stock buying power (with margin)
     buying_power_options = Column(Float, default=0.0)  # Options buying power (cash-based)
+    # Schwab's `initialBalances.liquidationValue` from the most recent sync —
+    # the account-level start-of-day equity. Used for "Today's P&L" because
+    # summing per-position `currentDayProfitLoss` over-counts (intraday
+    # realized P&L, new-position effects). The honest day delta is
+    # `liquidation_value - prior_close_liquidation_value`.
+    prior_close_liquidation_value = Column(Float, default=0.0)
     
     # Sync configuration
     sync_enabled = Column(Boolean, default=True)

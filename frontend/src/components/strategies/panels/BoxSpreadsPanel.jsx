@@ -20,6 +20,7 @@ import {
   Calculator,
 } from 'lucide-react';
 import { fetchBoxSpreadsHoldings } from '../../../services/tags';
+import { useSelectedAccountHash } from '../../../hooks/useSelectedAccount';
 
 // Targeting calculator config. Pure client-side — given a base rate and
 // DTE, what credit (short box) or debit (long box) to target across a
@@ -164,6 +165,7 @@ const Stat = ({ label, value, hint }) => (
 
 const BoxSpreadsPanel = () => {
   const queryClient = useQueryClient();
+  const accountHash = useSelectedAccountHash();
   const [sortKey, setSortKey] = useState('dte');
   const [sortDir, setSortDir] = useState('asc');
   const [legendOpen, setLegendOpen] = useState(false);
@@ -176,8 +178,8 @@ const BoxSpreadsPanel = () => {
   const [userEditedRate, setUserEditedRate] = useState(false);
 
   const { data, isLoading, error, isFetching } = useQuery({
-    queryKey: ['box-spreads-holdings'],
-    queryFn: fetchBoxSpreadsHoldings,
+    queryKey: ['box-spreads-holdings', accountHash],
+    queryFn: () => fetchBoxSpreadsHoldings(accountHash),
     staleTime: Infinity,
     gcTime: Infinity,
   });
@@ -195,6 +197,50 @@ const BoxSpreadsPanel = () => {
   const holdings = useMemo(() => data?.holdings || [], [data]);
   const exposure = data?.exposure || {};
   const benchmark = data?.benchmark;
+
+  // Footer aggregates over the whole holdings set (sort-independent).
+  const totals = useMemo(() => {
+    let longCount = 0, shortCount = 0;
+    let contracts = 0;
+    let longFace = 0, shortFace = 0;
+    let netOpen = 0, mark = 0, pnl = 0;
+    let dailyCarry = 0;
+    let pctPort = 0;
+    let dteMin = null, dteMax = null;
+    let heldMin = null, heldMax = null;
+    let weightedRateNum = 0, weightedRateDen = 0;
+    for (const h of holdings) {
+      if (h.direction === 'long') longCount += 1;
+      else if (h.direction === 'short') shortCount += 1;
+      contracts += Math.abs(Number(h.contracts) || 0);
+      const face = Number(h.face_value) || 0;
+      if (h.direction === 'long') longFace += face;
+      else if (h.direction === 'short') shortFace += face;
+      netOpen += Number(h.net_at_open) || 0;
+      mark += Number(h.current_value) || 0;
+      pnl += Number(h.row_total_pnl) || 0;
+      dailyCarry += Number(h.daily_carry) || 0;
+      pctPort += Number(h.pct_port) || 0;
+      if (h.dte != null) {
+        if (dteMin === null || h.dte < dteMin) dteMin = h.dte;
+        if (dteMax === null || h.dte > dteMax) dteMax = h.dte;
+      }
+      if (h.days_held != null) {
+        if (heldMin === null || h.days_held < heldMin) heldMin = h.days_held;
+        if (heldMax === null || h.days_held > heldMax) heldMax = h.days_held;
+      }
+      if (h.implied_rate_pct != null && face > 0) {
+        weightedRateNum += h.implied_rate_pct * face;
+        weightedRateDen += face;
+      }
+    }
+    const weightedRate = weightedRateDen > 0 ? weightedRateNum / weightedRateDen : null;
+    return {
+      count: holdings.length, longCount, shortCount, contracts,
+      longFace, shortFace, netOpen, mark, pnl, dailyCarry, pctPort,
+      dteMin, dteMax, heldMin, heldMax, weightedRate,
+    };
+  }, [holdings]);
 
   // Sync calc rate to benchmark when it first arrives (or refreshes),
   // unless the user has manually overridden the value.
@@ -764,6 +810,64 @@ const BoxSpreadsPanel = () => {
                 </tr>
               ))}
             </tbody>
+            <tfoot className="bg-gray-50 border-t border-gray-300 font-medium text-gray-800">
+              <tr>
+                <td className="px-3 py-2 text-left">
+                  {totals.count} box{totals.count === 1 ? '' : 'es'}
+                  {totals.count > 0 && (
+                    <span className="text-[10px] text-gray-500 ml-1">
+                      ({totals.longCount}L / {totals.shortCount}S)
+                    </span>
+                  )}
+                </td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2 text-right text-gray-700">{fmtInt(totals.contracts)}</td>
+                <td className="px-2 py-2 text-right text-gray-900">
+                  <div>{fmtMoney0(totals.longFace + totals.shortFace)}</div>
+                  {totals.longCount > 0 && totals.shortCount > 0 && (
+                    <div className="text-[10px] text-gray-500">
+                      L {fmtMoney0(totals.longFace)} / S {fmtMoney0(totals.shortFace)}
+                    </div>
+                  )}
+                </td>
+                <td className={`px-2 py-2 text-right ${pnlClass(totals.netOpen)}`}>
+                  {fmtMoney0(totals.netOpen, true)}
+                </td>
+                <td className={`px-2 py-2 text-right ${pnlClass(totals.mark)}`}>
+                  {fmtMoney0(totals.mark, true)}
+                </td>
+                <td className="px-2 py-2 text-right text-gray-700">
+                  {totals.weightedRate != null ? fmtPct(totals.weightedRate) : '—'}
+                </td>
+                <td className="px-2 py-2"></td>
+                <td className={`px-2 py-2 text-right ${pnlClass(totals.dailyCarry)}`}>
+                  {fmtMoney(totals.dailyCarry, true)}
+                </td>
+                <td className="px-2 py-2 text-right text-gray-700">
+                  {totals.dteMin != null && totals.dteMax != null
+                    ? (totals.dteMin === totals.dteMax
+                        ? `${totals.dteMin}d`
+                        : `${totals.dteMin}–${totals.dteMax}d`)
+                    : '—'}
+                </td>
+                <td className="px-2 py-2 text-right text-gray-700">
+                  {totals.heldMin != null && totals.heldMax != null
+                    ? (totals.heldMin === totals.heldMax
+                        ? `${totals.heldMin}d`
+                        : `${totals.heldMin}–${totals.heldMax}d`)
+                    : '—'}
+                </td>
+                <td className={`px-2 py-2 text-right ${pnlClass(totals.pnl)}`}>
+                  {fmtMoney0(totals.pnl, true)}
+                </td>
+                <td className="px-2 py-2 text-right text-gray-700">{fmtPct(totals.pctPort)}</td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       )}

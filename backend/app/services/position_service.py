@@ -263,7 +263,10 @@ def sync_schwab_positions(
                 cash_balance=account.get("cash_balance", 0.0),
                 liquidation_value=account.get("liquidation_value", 0.0),
                 buying_power=account.get("buying_power", 0.0),
-                buying_power_options=account.get("buying_power_options", 0.0)
+                buying_power_options=account.get("buying_power_options", 0.0),
+                prior_close_liquidation_value=account.get(
+                    "prior_close_liquidation_value", 0.0,
+                ),
             )
             db.add(db_account)
         else:
@@ -274,6 +277,9 @@ def sync_schwab_positions(
             db_account.liquidation_value = account.get("liquidation_value", 0.0)
             db_account.buying_power = account.get("buying_power", 0.0)
             db_account.buying_power_options = account.get("buying_power_options", 0.0)
+            db_account.prior_close_liquidation_value = account.get(
+                "prior_close_liquidation_value", 0.0,
+            )
         
         db_account.last_synced = datetime.utcnow()
     

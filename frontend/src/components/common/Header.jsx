@@ -1,26 +1,9 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
 import { LayoutDashboard, Building2 } from 'lucide-react';
 import ProfileMenu from './ProfileMenu';
 import AccountSyncButton from '../schwab/AccountSyncButton';
-import { fetchActualPositions } from '../../services/schwab';
-import { LAST_ACCOUNT_KEY } from '../schwab/AccountPicker';
-
-// Both children read the same React Query data via the same key, so this
-// is one network call shared across the badge, the sync button, and any
-// page that also asks for `schwab-accounts-landing`.
-function useSelectedAccount() {
-  const remembered =
-    typeof window !== 'undefined' ? localStorage.getItem(LAST_ACCOUNT_KEY) : null;
-  const { data } = useQuery({
-    queryKey: ['schwab-accounts-landing'],
-    queryFn: () => fetchActualPositions(),
-  });
-  const accounts = data?.accounts || [];
-  const selected = remembered ? accounts.find((a) => a.account_hash === remembered) : null;
-  return selected;
-}
+import { useSelectedAccount } from '../../hooks/useSelectedAccount';
 
 function SelectedAccountBadge() {
   const selected = useSelectedAccount();

@@ -26,6 +26,7 @@ import {
   fetchDividendsHoldings,
   setDividendClassification,
 } from '../../../services/tags';
+import { useSelectedAccountHash } from '../../../hooks/useSelectedAccount';
 
 const CONC_WARN = 10;
 const CONC_DANGER = 20;
@@ -136,13 +137,15 @@ const SortableTh = ({ label, sortKey, currentKey, currentDir, onSort, align = 'l
 const DividendsPanel = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const accountHash = useSelectedAccountHash();
+  const dividendsKey = useMemo(() => ['dividends-holdings', accountHash], [accountHash]);
   const [sortKey, setSortKey] = useState('ttm_income');
   const [sortDir, setSortDir] = useState('desc');
   const [legendOpen, setLegendOpen] = useState(false);
 
   const { data, isLoading, error, isFetching } = useQuery({
-    queryKey: ['dividends-holdings'],
-    queryFn: fetchDividendsHoldings,
+    queryKey: dividendsKey,
+    queryFn: () => fetchDividendsHoldings(accountHash),
     staleTime: Infinity,
     gcTime: Infinity,
   });
@@ -156,13 +159,27 @@ const DividendsPanel = () => {
   const holdings = useMemo(() => data?.holdings || [], [data]);
   const aggregates = data?.aggregates || {};
 
+  // Footer aggregates not already in `aggregates`: total payouts (count of
+  // TTM payments across all rows) and the most recent dividend date.
+  const footer = useMemo(() => {
+    let payouts = 0;
+    let lastPaid = null;
+    let pctPortSum = 0;
+    for (const h of holdings) {
+      payouts += Number(h.ttm_payment_count) || 0;
+      if (h.last_paid && (!lastPaid || h.last_paid > lastPaid)) lastPaid = h.last_paid;
+      pctPortSum += Number(h.pct_port_mv) || 0;
+    }
+    return { payouts, lastPaid, pctPortSum };
+  }, [holdings]);
+
   const classMutation = useMutation({
     mutationFn: ({ symbol, qualified }) =>
       setDividendClassification(symbol, { qualified }),
     onMutate: async ({ symbol, qualified }) => {
-      await queryClient.cancelQueries({ queryKey: ['dividends-holdings'] });
-      const prev = queryClient.getQueryData(['dividends-holdings']);
-      queryClient.setQueryData(['dividends-holdings'], (old) => {
+      await queryClient.cancelQueries({ queryKey: dividendsKey });
+      const prev = queryClient.getQueryData(dividendsKey);
+      queryClient.setQueryData(dividendsKey, (old) => {
         if (!old) return old;
         return {
           ...old,
@@ -174,10 +191,10 @@ const DividendsPanel = () => {
       return { prev };
     },
     onError: (_e, _v, ctx) => {
-      if (ctx?.prev) queryClient.setQueryData(['dividends-holdings'], ctx.prev);
+      if (ctx?.prev) queryClient.setQueryData(dividendsKey, ctx.prev);
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['dividends-holdings'] });
+      queryClient.invalidateQueries({ queryKey: dividendsKey });
     },
   });
 
@@ -241,7 +258,7 @@ const DividendsPanel = () => {
   };
 
   const onRefresh = () => {
-    queryClient.invalidateQueries({ queryKey: ['dividends-holdings'] });
+    queryClient.invalidateQueries({ queryKey: dividendsKey });
   };
 
   const goToTicker = (underlying) => {
@@ -605,6 +622,52 @@ const DividendsPanel = () => {
                 );
               })}
             </tbody>
+            <tfoot className="bg-gray-50 border-t border-gray-300 font-medium text-gray-800">
+              <tr>
+                <td className="px-3 py-2 text-left">{sorted.length} tickers</td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2 text-right">
+                  <div>{fmtMoney(aggregates.total_market_value || 0)}</div>
+                  <div className="text-[10px] text-gray-500">
+                    {fmtMoney(aggregates.total_cost_basis || 0)} cost
+                  </div>
+                </td>
+                <td className={`px-2 py-2 text-right ${
+                  (aggregates.total_unrealized_pnl || 0) >= 0 ? 'text-emerald-700' : 'text-red-700'
+                }`}>
+                  {fmtMoney(aggregates.total_unrealized_pnl || 0, true)}
+                </td>
+                <td className="px-2 py-2 text-right">
+                  <div className="text-emerald-700">{fmtMoney(aggregates.ttm_income_total || 0)}</div>
+                  <div className="text-[10px] text-gray-500">
+                    {fmtMoney(aggregates.total_all_time_income || 0)} all-time
+                  </div>
+                </td>
+                <td className={`px-2 py-2 text-right ${
+                  (aggregates.total_net_return || 0) >= 0 ? 'text-emerald-700' : 'text-red-700'
+                }`}>
+                  <div>{fmtMoney(aggregates.total_net_return || 0, true)}</div>
+                  {aggregates.total_net_return_pct != null && (
+                    <div className="text-[10px] opacity-75">
+                      {fmtPct(aggregates.total_net_return_pct, 1)}
+                    </div>
+                  )}
+                </td>
+                <td className="px-2 py-2 text-right text-gray-700">
+                  {aggregates.weighted_ttm_yield_pct != null
+                    ? fmtPct(aggregates.weighted_ttm_yield_pct)
+                    : '—'}
+                </td>
+                <td className="px-2 py-2 text-right text-gray-700">{footer.payouts}</td>
+                <td className="px-2 py-2 text-left text-gray-700">{fmtDate(footer.lastPaid)}</td>
+                <td className={`px-2 py-2 text-right ${concentrationClass(footer.pctPortSum)}`}>
+                  {fmtPct(footer.pctPortSum, 1)}
+                </td>
+                <td className="px-2 py-2"></td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       )}

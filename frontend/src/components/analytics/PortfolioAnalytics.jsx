@@ -11,7 +11,7 @@
  *
  * Route: /analysis/portfolio
  */
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -23,16 +23,7 @@ import {
 } from 'lucide-react';
 import { fetchActualPositions } from '../../services/schwab';
 import { STRATEGY_BY_KEY, strategyTypeToClass } from '../../strategies/registry';
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-const LOOKBACK_OPTIONS = [
-  { key: '30d', label: '30 days', days: 30 },
-  { key: '90d', label: '90 days', days: 90 },
-  { key: '180d', label: '180 days', days: 180 },
-  { key: '365d', label: '365 days', days: 365 },
-  { key: 'all', label: 'All time', days: null },
-];
+import { useSelectedAccountHash } from '../../hooks/useSelectedAccount';
 
 const STRATEGY_COLORS = {
   long_stock: '#0ea5e9',
@@ -95,48 +86,80 @@ const Kpi = ({ label, value, sub, valueClass }) => (
   </div>
 );
 
-const daysSince = (iso) => {
-  if (!iso) return null;
-  const d = new Date(iso.length === 10 ? iso + 'T00:00:00' : iso);
-  if (isNaN(d.getTime())) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Math.floor((today.getTime() - d.getTime()) / DAY_MS);
-};
-
 export default function PortfolioAnalytics() {
-  const [lookbackKey, setLookbackKey] = useState('365d');
-  const lookback = LOOKBACK_OPTIONS.find((o) => o.key === lookbackKey) || LOOKBACK_OPTIONS[3];
+  const accountHash = useSelectedAccountHash();
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['schwab-actual-positions'],
     queryFn: () => fetchActualPositions(),
   });
 
-  const accounts = useMemo(() => data?.accounts || [], [data]);
-  const positions = useMemo(() => data?.positions || [], [data]);
-
-  // Lookback filter: positions opened within `lookback.days` (or all).
-  const filteredPositions = useMemo(() => {
-    if (lookback.days === null) return positions;
-    return positions.filter((p) => {
-      const held = daysSince(p.entry_date);
-      return held === null || held <= lookback.days;
-    });
-  }, [positions, lookback.days]);
+  // Account scope mirrors the header badge. When set, every aggregate
+  // and chart on this page collapses to the selected account.
+  const allAccounts = useMemo(() => data?.accounts || [], [data]);
+  const allPositions = useMemo(() => data?.positions || [], [data]);
+  const accounts = useMemo(
+    () => (accountHash ? allAccounts.filter((a) => a.account_hash === accountHash) : allAccounts),
+    [allAccounts, accountHash],
+  );
+  const positions = useMemo(
+    () => (accountHash ? allPositions.filter((p) => p.account_id === accountHash) : allPositions),
+    [allPositions, accountHash],
+  );
+  // Naming preserved (filteredPositions) so downstream memos don't have
+  // to change. Page used to filter by an entry-date lookback selector,
+  // but the control was confusing without a daily-snapshot timeline to
+  // hang it on. Removed; analytics now reflect all current positions.
+  const filteredPositions = positions;
 
   const totals = useMemo(() => {
+    // Account-level numbers — these are independent of the lookback
+    // window because they describe the *account*, not the in-window
+    // position cohort.
+    //   • liquidation = total net worth (Schwab's "Liquidation value").
+    //   • today       = Schwab's account-level day P&L (current minus
+    //                   start-of-day liquidation), with a fallback to the
+    //                   per-position currentDayProfitLoss sum until each
+    //                   account is re-synced under the new code.
+    const liquidation = accounts.reduce(
+      (s, a) => s + (Number(a.liquidation_value) || 0), 0,
+    );
+    const today = accounts.reduce(
+      (s, a) => s + (Number(a.current_day_pnl) || 0), 0,
+    );
+    const cash = accounts.reduce(
+      (s, a) => s + (Number(a.cash_balance) || 0), 0,
+    );
+
+    // Position-cohort numbers — filtered by the lookback window.
+    //   • costGross   = Σ|cost_basis|. Gross capital deployed; the right
+    //                   denominator for "% return" when the portfolio mixes
+    //                   longs and shorts (Σ cost_basis cancels signs).
+    //   • unrealized  = Σ unrealized_pnl. Already signed correctly per
+    //                   Schwab; positive = winning regardless of long/short.
+    const costGross = filteredPositions.reduce(
+      (s, p) => s + Math.abs(Number(p.cost_basis) || 0), 0,
+    );
     const cost = filteredPositions.reduce((s, p) => s + (Number(p.cost_basis) || 0), 0);
-    const value = filteredPositions.reduce((s, p) => s + (Number(p.current_value) || 0), 0);
-    const unrealized = filteredPositions.reduce((s, p) => s + (Number(p.unrealized_pnl) || 0), 0);
-    const winners = filteredPositions.filter((p) => (Number(p.unrealized_pnl) || 0) > 0).length;
-    const losers = filteredPositions.filter((p) => (Number(p.unrealized_pnl) || 0) < 0).length;
-    const flat = filteredPositions.length - winners - losers;
-    const winRate = filteredPositions.length > 0 ? (winners / filteredPositions.length) * 100 : 0;
-    const costAbs = Math.abs(cost);
-    const unrealizedPct = costAbs > 0 ? (unrealized / costAbs) * 100 : 0;
-    return { cost, value, unrealized, unrealizedPct, winners, losers, flat, winRate };
-  }, [filteredPositions]);
+    const unrealized = filteredPositions.reduce(
+      (s, p) => s + (Number(p.unrealized_pnl) || 0), 0,
+    );
+    // Win rate excludes box spreads — they're synthetic financing whose
+    // mark-to-market noise isn't a directional bet, so labeling them
+    // "winners" or "losers" muddies the metric.
+    const directional = filteredPositions.filter((p) => p.strategy_type !== 'box_spread');
+    const winners = directional.filter((p) => (Number(p.unrealized_pnl) || 0) > 0).length;
+    const losers = directional.filter((p) => (Number(p.unrealized_pnl) || 0) < 0).length;
+    const flat = directional.length - winners - losers;
+    const winRate = directional.length > 0 ? (winners / directional.length) * 100 : 0;
+    const unrealizedPct = costGross > 0 ? (unrealized / costGross) * 100 : 0;
+    const todayPct = liquidation !== 0 ? (today / Math.abs(liquidation)) * 100 : 0;
+    return {
+      liquidation, cash, today, todayPct,
+      cost, costGross, unrealized, unrealizedPct,
+      winners, losers, flat, winRate,
+    };
+  }, [filteredPositions, accounts]);
 
   // Strategy allocation by current value. Box spreads are excluded —
   // synthetic financing, 4 legs net to ~$0 in current_value, doesn't
@@ -192,23 +215,28 @@ export default function PortfolioAnalytics() {
       .sort((a, b) => b.value - a.value);
   }, [accounts, filteredPositions]);
 
-  // Top concentration: largest positions by absolute current_value.
+  // Top concentration: largest positions by absolute current_value, with
+  // % expressed against liquidation value (net worth) — not against the
+  // sum of |current_value|. The latter inflates the denominator with
+  // short-option market values that already net out in liquidation, so
+  // every percentage looks artificially small for option-heavy accounts.
   const topConcentration = useMemo(() => {
-    const portfolioValue = filteredPositions.reduce(
-      (s, p) => s + Math.abs(Number(p.current_value) || 0),
-      0
-    );
-    return [...filteredPositions]
+    const denom = totals.liquidation > 0 ? totals.liquidation : null;
+    // Box spreads are synthetic financing — their |current_value| is
+    // ~$0 (long+short legs cancel) so they sort to the bottom anyway,
+    // and conceptually they aren't "concentration" in the equity sense.
+    return filteredPositions
+      .filter((p) => p.strategy_type !== 'box_spread')
       .map((p) => ({
         symbol: p.symbol,
         strategy: classKey(p),
         value: Math.abs(Number(p.current_value) || 0),
         pnl: Number(p.unrealized_pnl) || 0,
-        pct: portfolioValue > 0 ? (Math.abs(Number(p.current_value) || 0) / portfolioValue) * 100 : 0,
+        pct: denom ? (Math.abs(Number(p.current_value) || 0) / denom) * 100 : 0,
       }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 10);
-  }, [filteredPositions]);
+  }, [filteredPositions, totals.liquidation]);
 
   if (isLoading) return <div className="p-6 text-gray-500">Loading analytics…</div>;
   if (isError) {
@@ -221,40 +249,26 @@ export default function PortfolioAnalytics() {
 
   return (
     <div className="p-2 space-y-6">
-      {/* Header + lookback selector */}
+      {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Portfolio Analytics</h1>
           <p className="text-xs text-gray-500 mt-0.5">
-            {filteredPositions.length} of {positions.length} position
-            {positions.length === 1 ? '' : 's'} in window · {accounts.length} account
-            {accounts.length === 1 ? '' : 's'}
+            {accountHash && accounts[0]
+              ? `Account ${accounts[0].account_number}`
+              : `${allAccounts.length} account${allAccounts.length === 1 ? '' : 's'}`}
+            {' · '}{positions.length} position{positions.length === 1 ? '' : 's'}
           </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500">Lookback</span>
-          <div className="inline-flex rounded-md border border-gray-200 overflow-hidden bg-white">
-            {LOOKBACK_OPTIONS.map((o) => (
-              <button
-                key={o.key}
-                type="button"
-                onClick={() => setLookbackKey(o.key)}
-                className={`px-2.5 py-1 text-xs ${
-                  lookbackKey === o.key
-                    ? 'bg-indigo-600 text-white'
-                    : 'text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
         </div>
       </div>
 
       {/* KPI row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Kpi label="Market value" value={fmtMoney(totals.value)} sub={`Cost ${fmtMoney(Math.abs(totals.cost))}`} />
+        <Kpi
+          label="Liquidation value"
+          value={fmtMoney(totals.liquidation)}
+          sub={`Cash ${fmtMoney(totals.cash)} · Cost ${fmtMoney(totals.costGross)}`}
+        />
         <Kpi
           label="Unrealized P&L"
           value={fmtMoney(totals.unrealized)}
@@ -262,11 +276,16 @@ export default function PortfolioAnalytics() {
           valueClass={pnlColor(totals.unrealized)}
         />
         <Kpi
+          label="Today's P&L"
+          value={fmtMoney(totals.today)}
+          sub={fmtPct(totals.todayPct)}
+          valueClass={pnlColor(totals.today)}
+        />
+        <Kpi
           label="Win rate"
           value={`${totals.winRate.toFixed(0)}%`}
           sub={`${totals.winners} winners · ${totals.losers} losers${totals.flat ? ` · ${totals.flat} flat` : ''}`}
         />
-        <Kpi label="Positions in window" value={filteredPositions.length} />
       </div>
 
       {/* Allocation + P&L by strategy */}

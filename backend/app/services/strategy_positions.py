@@ -44,9 +44,17 @@ from app.services.benchmark_rates import get_latest_rate_with_meta
 from app.core.strategy_classes import is_valid_strategy_class
 
 
-def _bucket_synced_positions(user_id: str, db: Session) -> Dict[str, Any]:
+def _bucket_synced_positions(
+    user_id: str,
+    db: Session,
+    account_hash: Optional[str] = None,
+) -> Dict[str, Any]:
     """Read active synced positions from the local cache and bucket by
     (underlying, account_hash). No live Schwab calls.
+
+    When `account_hash` is set, only positions belonging to that account
+    are loaded — every downstream aggregate computed off the bucket dict
+    is automatically scoped to that account.
 
     Position metrics are computed from PositionLeg data (premium = avg open
     price, current_price, quantity) rather than position-level aggregates,
@@ -69,15 +77,14 @@ def _bucket_synced_positions(user_id: str, db: Session) -> Dict[str, Any]:
       }}
       most_recent_sync: datetime | None
     """
-    rows = (
-        db.query(Position)
-        .filter(
-            Position.user_id == user_id,
-            Position.flavor == "actual",
-            Position.status == "active",
-        )
-        .all()
+    q = db.query(Position).filter(
+        Position.user_id == user_id,
+        Position.flavor == "actual",
+        Position.status == "active",
     )
+    if account_hash:
+        q = q.filter(Position.account_id == account_hash)
+    rows = q.all()
 
     # Sync timestamps are surfaced per-account by the header sync button.
     # The strategy panels don't need a global timestamp, so we don't compute
@@ -196,15 +203,22 @@ def _bucket_synced_positions(user_id: str, db: Session) -> Dict[str, Any]:
     return {"buckets": buckets, "most_recent_sync": most_recent_sync}
 
 
-def _portfolio_liquidation_value(user_id: str, db: Session) -> float:
-    rows = (
-        db.query(UserSchwabAccount)
-        .filter(
-            UserSchwabAccount.user_id == user_id,
-            UserSchwabAccount.sync_enabled == True,  # noqa: E712
-        )
-        .all()
+def _portfolio_liquidation_value(
+    user_id: str,
+    db: Session,
+    account_hash: Optional[str] = None,
+) -> float:
+    """Sum of liquidation values across the user's sync-enabled Schwab
+    accounts. When `account_hash` is set, returns just that one account's
+    LV so % port denominators on per-account strategy views stay coherent.
+    """
+    q = db.query(UserSchwabAccount).filter(
+        UserSchwabAccount.user_id == user_id,
+        UserSchwabAccount.sync_enabled == True,  # noqa: E712
     )
+    if account_hash:
+        q = q.filter(UserSchwabAccount.account_hash == account_hash)
+    rows = q.all()
     return sum(float(r.liquidation_value or 0) for r in rows)
 
 
@@ -264,9 +278,12 @@ def fetch_strategy_positions(
     user_id: str,
     db: Session,
     strategy_class: str,
+    account_hash: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Return tags + tagged transaction-positions (with their transactions
-    and a live-price map) for one strategy class."""
+    and a live-price map) for one strategy class. When `account_hash` is
+    set, transaction payloads are restricted to that account so tagged
+    chains whose transactions belong elsewhere don't surface."""
     if not is_valid_strategy_class(strategy_class):
         raise ValueError(f"unknown strategy_class: {strategy_class}")
 
@@ -344,10 +361,15 @@ def fetch_strategy_positions(
     # 5) Pull cached raw payloads in one shot
     payload_by_id: Dict[str, Dict[str, Any]] = {}
     if all_tx_ids:
-        cached = db.query(SchwabTransactionCache).filter(
+        # When account-scoped, drop payloads from other accounts so tagged
+        # chains whose transactions belong elsewhere don't bleed in.
+        cached_q = db.query(SchwabTransactionCache).filter(
             SchwabTransactionCache.user_id == user_id,
             SchwabTransactionCache.schwab_transaction_id.in_(list(all_tx_ids)),
-        ).all()
+        )
+        if account_hash:
+            cached_q = cached_q.filter(SchwabTransactionCache.account_hash == account_hash)
+        cached = cached_q.all()
         payload_by_id = {r.schwab_transaction_id: r.raw_payload for r in cached}
 
     # 6) Normalize per position
@@ -457,6 +479,7 @@ def _chain_buy_sell_for_underlying(
 def fetch_long_stock_holdings(
     user_id: str,
     db: Session,
+    account_hash: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Live-first Long Stock view.
 
@@ -511,10 +534,15 @@ def fetch_long_stock_holdings(
     # 4) Pull cached payloads
     payload_by_id: Dict[str, Dict[str, Any]] = {}
     if all_tx_ids:
-        cached = db.query(SchwabTransactionCache).filter(
+        # When account-scoped, drop payloads from other accounts so tagged
+        # chains whose transactions belong elsewhere don't bleed in.
+        cached_q = db.query(SchwabTransactionCache).filter(
             SchwabTransactionCache.user_id == user_id,
             SchwabTransactionCache.schwab_transaction_id.in_(list(all_tx_ids)),
-        ).all()
+        )
+        if account_hash:
+            cached_q = cached_q.filter(SchwabTransactionCache.account_hash == account_hash)
+        cached = cached_q.all()
         payload_by_id = {r.schwab_transaction_id: r.raw_payload for r in cached}
 
     # 5) Normalize per chain; index chains by underlying they touch
@@ -561,10 +589,10 @@ def fetch_long_stock_holdings(
 
     # 6) Source of truth: synced active positions from local cache (no
     #    live Schwab calls — the user explicitly chose cache-only loads).
-    snap = _bucket_synced_positions(user_id, db)
+    snap = _bucket_synced_positions(user_id, db, account_hash=account_hash)
     buckets = snap["buckets"]
     last_synced = snap["most_recent_sync"]
-    portfolio_lv = _portfolio_liquidation_value(user_id, db)
+    portfolio_lv = _portfolio_liquidation_value(user_id, db, account_hash=account_hash)
 
     holdings: List[Dict[str, Any]] = []
     for (sym, ah), b in buckets.items():
@@ -776,6 +804,7 @@ def _chain_legs_summary(recs: List[Dict[str, Any]]) -> Dict[str, Any]:
 def fetch_covered_calls_holdings(
     user_id: str,
     db: Session,
+    account_hash: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Group-driven Covered Calls view.
 
@@ -828,10 +857,15 @@ def fetch_covered_calls_holdings(
     # Cached payloads
     payload_by_id: Dict[str, Dict[str, Any]] = {}
     if all_tx_ids:
-        cached = db.query(SchwabTransactionCache).filter(
+        # When account-scoped, drop payloads from other accounts so tagged
+        # chains whose transactions belong elsewhere don't bleed in.
+        cached_q = db.query(SchwabTransactionCache).filter(
             SchwabTransactionCache.user_id == user_id,
             SchwabTransactionCache.schwab_transaction_id.in_(list(all_tx_ids)),
-        ).all()
+        )
+        if account_hash:
+            cached_q = cached_q.filter(SchwabTransactionCache.account_hash == account_hash)
+        cached = cached_q.all()
         payload_by_id = {r.schwab_transaction_id: r.raw_payload for r in cached}
 
     # transaction_position rows (for name / account / etc.)
@@ -846,9 +880,9 @@ def fetch_covered_calls_holdings(
     # Live snapshot: lookup tables for current prices + greeks. We only
     # consult these to price the chain's legs; we do not iterate Schwab
     # buckets to find positions.
-    snap = _bucket_synced_positions(user_id, db)
+    snap = _bucket_synced_positions(user_id, db, account_hash=account_hash)
     last_synced = snap["most_recent_sync"]
-    portfolio_lv = _portfolio_liquidation_value(user_id, db)
+    portfolio_lv = _portfolio_liquidation_value(user_id, db, account_hash=account_hash)
 
     live_stock_by_und: Dict[str, Dict[str, Any]] = {}
     live_option_by_sym: Dict[str, Dict[str, Any]] = {}
@@ -1091,6 +1125,7 @@ def _classify_vertical_action(
 def fetch_verticals_holdings(
     user_id: str,
     db: Session,
+    account_hash: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Group-driven Verticals view.
 
@@ -1138,10 +1173,15 @@ def fetch_verticals_holdings(
 
     payload_by_id: Dict[str, Dict[str, Any]] = {}
     if all_tx_ids:
-        cached = db.query(SchwabTransactionCache).filter(
+        # When account-scoped, drop payloads from other accounts so tagged
+        # chains whose transactions belong elsewhere don't bleed in.
+        cached_q = db.query(SchwabTransactionCache).filter(
             SchwabTransactionCache.user_id == user_id,
             SchwabTransactionCache.schwab_transaction_id.in_(list(all_tx_ids)),
-        ).all()
+        )
+        if account_hash:
+            cached_q = cached_q.filter(SchwabTransactionCache.account_hash == account_hash)
+        cached = cached_q.all()
         payload_by_id = {r.schwab_transaction_id: r.raw_payload for r in cached}
 
     pos_rows: List[TransactionPosition] = []
@@ -1152,9 +1192,9 @@ def fetch_verticals_holdings(
         ).all()
     pos_by_id = {p.id: p for p in pos_rows}
 
-    snap = _bucket_synced_positions(user_id, db)
+    snap = _bucket_synced_positions(user_id, db, account_hash=account_hash)
     last_synced = snap["most_recent_sync"]
-    portfolio_lv = _portfolio_liquidation_value(user_id, db)
+    portfolio_lv = _portfolio_liquidation_value(user_id, db, account_hash=account_hash)
     live_stock_by_und, live_option_by_sym = _build_live_lookups(snap["buckets"])
 
     today = datetime.utcnow().date()
@@ -1428,6 +1468,7 @@ def _opening_date_for_legs(recs: List[Dict[str, Any]], leg_symbols: set):
 def fetch_single_leg_holdings(
     user_id: str,
     db: Session,
+    account_hash: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Group-driven Single-Leg (short premium) view.
 
@@ -1475,10 +1516,15 @@ def fetch_single_leg_holdings(
 
     payload_by_id: Dict[str, Dict[str, Any]] = {}
     if all_tx_ids:
-        cached = db.query(SchwabTransactionCache).filter(
+        # When account-scoped, drop payloads from other accounts so tagged
+        # chains whose transactions belong elsewhere don't bleed in.
+        cached_q = db.query(SchwabTransactionCache).filter(
             SchwabTransactionCache.user_id == user_id,
             SchwabTransactionCache.schwab_transaction_id.in_(list(all_tx_ids)),
-        ).all()
+        )
+        if account_hash:
+            cached_q = cached_q.filter(SchwabTransactionCache.account_hash == account_hash)
+        cached = cached_q.all()
         payload_by_id = {r.schwab_transaction_id: r.raw_payload for r in cached}
 
     pos_rows: List[TransactionPosition] = []
@@ -1489,9 +1535,9 @@ def fetch_single_leg_holdings(
         ).all()
     pos_by_id = {p.id: p for p in pos_rows}
 
-    snap = _bucket_synced_positions(user_id, db)
+    snap = _bucket_synced_positions(user_id, db, account_hash=account_hash)
     last_synced = snap["most_recent_sync"]
-    portfolio_lv = _portfolio_liquidation_value(user_id, db)
+    portfolio_lv = _portfolio_liquidation_value(user_id, db, account_hash=account_hash)
     live_stock_by_und, live_option_by_sym = _build_live_lookups(snap["buckets"])
 
     today = datetime.utcnow().date()
@@ -1980,6 +2026,7 @@ def _earliest_opening_date(recs: List[Dict[str, Any]], leg_symbols: set):
 def fetch_big_options_holdings(
     user_id: str,
     db: Session,
+    account_hash: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Group-driven Big Options view.
 
@@ -2024,10 +2071,15 @@ def fetch_big_options_holdings(
 
     payload_by_id: Dict[str, Dict[str, Any]] = {}
     if all_tx_ids:
-        cached = db.query(SchwabTransactionCache).filter(
+        # When account-scoped, drop payloads from other accounts so tagged
+        # chains whose transactions belong elsewhere don't bleed in.
+        cached_q = db.query(SchwabTransactionCache).filter(
             SchwabTransactionCache.user_id == user_id,
             SchwabTransactionCache.schwab_transaction_id.in_(list(all_tx_ids)),
-        ).all()
+        )
+        if account_hash:
+            cached_q = cached_q.filter(SchwabTransactionCache.account_hash == account_hash)
+        cached = cached_q.all()
         payload_by_id = {r.schwab_transaction_id: r.raw_payload for r in cached}
 
     pos_rows: List[TransactionPosition] = []
@@ -2038,9 +2090,9 @@ def fetch_big_options_holdings(
         ).all()
     pos_by_id = {p.id: p for p in pos_rows}
 
-    snap = _bucket_synced_positions(user_id, db)
+    snap = _bucket_synced_positions(user_id, db, account_hash=account_hash)
     last_synced = snap["most_recent_sync"]
-    portfolio_lv = _portfolio_liquidation_value(user_id, db)
+    portfolio_lv = _portfolio_liquidation_value(user_id, db, account_hash=account_hash)
     live_stock_by_und, live_option_by_sym = _build_live_lookups(snap["buckets"])
 
     today = datetime.utcnow().date()
@@ -2442,6 +2494,7 @@ def _classify_box_status(*, dte: Optional[int]) -> str:
 def fetch_box_spreads_holdings(
     user_id: str,
     db: Session,
+    account_hash: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Group-driven Box Spreads view.
 
@@ -2497,10 +2550,15 @@ def fetch_box_spreads_holdings(
 
     payload_by_id: Dict[str, Dict[str, Any]] = {}
     if all_tx_ids:
-        cached = db.query(SchwabTransactionCache).filter(
+        # When account-scoped, drop payloads from other accounts so tagged
+        # chains whose transactions belong elsewhere don't bleed in.
+        cached_q = db.query(SchwabTransactionCache).filter(
             SchwabTransactionCache.user_id == user_id,
             SchwabTransactionCache.schwab_transaction_id.in_(list(all_tx_ids)),
-        ).all()
+        )
+        if account_hash:
+            cached_q = cached_q.filter(SchwabTransactionCache.account_hash == account_hash)
+        cached = cached_q.all()
         payload_by_id = {r.schwab_transaction_id: r.raw_payload for r in cached}
 
     pos_rows: List[TransactionPosition] = []
@@ -2511,9 +2569,9 @@ def fetch_box_spreads_holdings(
         ).all()
     pos_by_id = {p.id: p for p in pos_rows}
 
-    snap = _bucket_synced_positions(user_id, db)
+    snap = _bucket_synced_positions(user_id, db, account_hash=account_hash)
     last_synced = snap["most_recent_sync"]
-    portfolio_lv = _portfolio_liquidation_value(user_id, db)
+    portfolio_lv = _portfolio_liquidation_value(user_id, db, account_hash=account_hash)
     _, live_option_by_sym = _build_live_lookups(snap["buckets"])
 
     # Benchmark rate (3-month T-bill from FRED, 24h cached).
@@ -2959,6 +3017,7 @@ def _vehicle_yield_pct(
 def fetch_cash_mgmt_holdings(
     user_id: str,
     db: Session,
+    account_hash: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Cash Mgmt view — diversification across low-yield vehicles plus
     the cost-of-carry from box-spread short liabilities.
@@ -3031,10 +3090,15 @@ def fetch_cash_mgmt_holdings(
             all_tx_ids.add(a.schwab_transaction_id)
     payload_by_id: Dict[str, Dict[str, Any]] = {}
     if all_tx_ids:
-        cached = db.query(SchwabTransactionCache).filter(
+        # When account-scoped, drop payloads from other accounts so tagged
+        # chains whose transactions belong elsewhere don't bleed in.
+        cached_q = db.query(SchwabTransactionCache).filter(
             SchwabTransactionCache.user_id == user_id,
             SchwabTransactionCache.schwab_transaction_id.in_(list(all_tx_ids)),
-        ).all()
+        )
+        if account_hash:
+            cached_q = cached_q.filter(SchwabTransactionCache.account_hash == account_hash)
+        cached = cached_q.all()
         payload_by_id = {r.schwab_transaction_id: r.raw_payload for r in cached}
 
     # Per-chain: set of underlyings this chain references.
@@ -3051,10 +3115,10 @@ def fetch_cash_mgmt_holdings(
         chain_underlyings[pid] = _underlyings_touched_by_chain(recs)
 
     # 3) Live source of truth: synced positions for tagged-chain symbols.
-    snap = _bucket_synced_positions(user_id, db)
+    snap = _bucket_synced_positions(user_id, db, account_hash=account_hash)
     buckets = snap["buckets"]
     last_synced = snap["most_recent_sync"]
-    portfolio_lv = _portfolio_liquidation_value(user_id, db)
+    portfolio_lv = _portfolio_liquidation_value(user_id, db, account_hash=account_hash)
 
     # Index live stock positions by underlying — cash vehicles are
     # always stock-side (ETFs, MMFs treated as mutual funds). Aggregate
@@ -3421,10 +3485,13 @@ def _score_dividend_to_ticker(div_desc: str, name_strings: List[str]) -> float:
     """Score how well a dividend description matches one ticker's known
     company-name strings.
 
-    Combines two signals:
+    Combines three signals:
       1. Significant-token overlap, weighted by token length (longer tokens
-         are more distinctive — "MAGFT" matters more than "ETF").
-      2. SequenceMatcher.ratio() on normalized full strings, as a
+         are more distinctive — "MAGFT" matters more than "ETF"). Tokens
+         whose consonant-skeletons match (Schwab's vowel-stripped trade
+         abbreviations vs the full names in dividend rows) count as shared.
+      2. Prefix overlap (3-char) for short partial matches.
+      3. SequenceMatcher.ratio() on normalized full strings, as a
          tiebreaker for cases where token sets are similar.
     """
     if not div_desc or not name_strings:
@@ -3440,8 +3507,29 @@ def _score_dividend_to_ticker(div_desc: str, name_strings: List[str]) -> float:
         if not name_tokens:
             continue
         shared = div_tokens & name_tokens
+        # Skeleton-shared: tokens that match once vowels are stripped on
+        # both sides, e.g. "GRANITESHARES" ↔ "GRNTSHS". Required prefix
+        # length 5 on both skeletons keeps short coincidences out.
+        # Count each div-token at most once (toward the longer side).
+        skeleton_credit = 0
+        used_name_tokens: set = set()
+        for dt in div_tokens - shared:
+            dsk = _consonant_skeleton(dt)
+            if len(dsk) < 5:
+                continue
+            for nt in name_tokens - shared - used_name_tokens:
+                nsk = _consonant_skeleton(nt)
+                if len(nsk) < 5:
+                    continue
+                if dsk.startswith(nsk[:5]) or nsk.startswith(dsk[:5]):
+                    # Credit the longer of the two against the larger
+                    # denominator — same shape as the exact-shared
+                    # contribution below.
+                    skeleton_credit += max(len(dt), len(nt))
+                    used_name_tokens.add(nt)
+                    break
         token_score = (
-            sum(len(t) for t in shared)
+            (sum(len(t) for t in shared) + skeleton_credit)
             / max(div_token_len, sum(len(t) for t in name_tokens))
         )
         # Prefix overlap (3-char): catches cases like MAGFT vs MAGNIFICENT.
@@ -3523,9 +3611,19 @@ def _identify_dividend_payer(
             best_ticker = None
             best_score = 0.0
             for ticker, names in ticker_name_index.items():
-                # Filter: at least one known name must start with the same
-                # significant token as the dividend description.
-                if not any(_first_significant_token(n) == div_first for n in names):
+                # Gate: at least one known name's first significant token
+                # must be either an exact match for the dividend's first
+                # token, OR a consonant-skeleton match (handles Schwab's
+                # vowel-stripped trade descriptions like "GRNTSHS YLDBST
+                # NVDA" vs the dividend-side "GRANITESHARES YIELDBOOSTNVDA
+                # ETF"). Without this gate, common tokens like "BITCOIN"
+                # produce false positives.
+                gate = any(
+                    _first_significant_token(n) == div_first
+                    or _tokens_skeleton_compatible(div_first, _first_significant_token(n) or "")
+                    for n in names
+                )
+                if not gate:
                     continue
                 s = _score_dividend_to_ticker(description, names)
                 if s > best_score:
@@ -3542,11 +3640,36 @@ def _first_significant_token(s: str) -> Optional[str]:
     return toks[0] if toks else None
 
 
+def _consonant_skeleton(s: str) -> str:
+    """Strip vowels (A/E/I/O/U) — Schwab's trade-side descriptions use
+    vowel-stripped abbreviations like "GRNTSHS YLDBST NVDA" while the
+    dividend-side description uses the full name ("GRANITESHARES
+    YIELDBOOSTNVDA ETF"). Comparing skeletons recovers the link.
+    """
+    return "".join(c for c in (s or "").upper() if c.isalnum() and c not in "AEIOU")
+
+
+def _tokens_skeleton_compatible(div_first: str, name_first: str) -> bool:
+    """True when two first-tokens look like the same word in Schwab's two
+    abbreviation styles. Either skeleton must be a prefix of the other for
+    at least 5 chars — long enough to avoid coincidental hits like
+    "BTC" vs "BITCOIN" picking up wrong tickers.
+    """
+    if not div_first or not name_first:
+        return False
+    a = _consonant_skeleton(div_first)
+    b = _consonant_skeleton(name_first)
+    if len(a) < 5 or len(b) < 5:
+        return False
+    return a.startswith(b[:5]) or b.startswith(a[:5])
+
+
 def _dividend_payments_for_user(
     user_id: str,
     db: Session,
     since: Optional[datetime] = None,
     candidate_symbols: Optional[List[str]] = None,
+    account_hash: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Return dividend / distribution payments from cached Schwab
     transactions. Each entry: {symbol, account_hash, date, amount,
@@ -3555,12 +3678,17 @@ def _dividend_payments_for_user(
     `candidate_symbols` is the user's tagged-ticker universe. We build a
     name index from that universe's trade transactions and use it for
     fuzzy matching, since dividend payloads carry only company names.
+
+    `account_hash`, if provided, scopes the cache rows we read to a single
+    account so per-account dividend totals are honest.
     """
     name_index = _build_ticker_name_index(user_id, db, candidate_symbols or [])
 
     q = db.query(SchwabTransactionCache).filter(
         SchwabTransactionCache.user_id == user_id,
     )
+    if account_hash:
+        q = q.filter(SchwabTransactionCache.account_hash == account_hash)
     if since is not None:
         q = q.filter(SchwabTransactionCache.trade_date >= since)
     rows = q.all()
@@ -3601,6 +3729,7 @@ def _dividend_payments_for_user(
 def fetch_dividends_holdings(
     user_id: str,
     db: Session,
+    account_hash: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Past-first Dividends view.
 
@@ -3670,10 +3799,15 @@ def fetch_dividends_holdings(
     all_needed_tx_ids = annotation_tx_ids | set(tx_ids_direct)
     payload_by_id: Dict[str, Dict[str, Any]] = {}
     if all_needed_tx_ids:
-        cached = db.query(SchwabTransactionCache).filter(
+        # Account-scope: a chain tagged via transactions in another account
+        # contributes nothing to this account's view.
+        cached_q = db.query(SchwabTransactionCache).filter(
             SchwabTransactionCache.user_id == user_id,
             SchwabTransactionCache.schwab_transaction_id.in_(list(all_needed_tx_ids)),
-        ).all()
+        )
+        if account_hash:
+            cached_q = cached_q.filter(SchwabTransactionCache.account_hash == account_hash)
+        cached = cached_q.all()
         payload_by_id = {r.schwab_transaction_id: r.raw_payload for r in cached}
 
     # Helper: pull every plausible underlying from a normalized record. We
@@ -3735,10 +3869,10 @@ def fetch_dividends_holdings(
 
     # 3) Live stock holdings (synced positions) — for shares / MV / current
     # context per underlying.
-    snap = _bucket_synced_positions(user_id, db)
+    snap = _bucket_synced_positions(user_id, db, account_hash=account_hash)
     buckets = snap["buckets"]
     last_synced = snap["most_recent_sync"]
-    portfolio_lv = _portfolio_liquidation_value(user_id, db)
+    portfolio_lv = _portfolio_liquidation_value(user_id, db, account_hash=account_hash)
 
     # underlying → list[(account_hash, bucket)]
     live_by_underlying: Dict[str, List[tuple]] = {}
@@ -3754,6 +3888,7 @@ def fetch_dividends_holdings(
     # only mention the symbol in the description (YMAG-style ETFs).
     payments = _dividend_payments_for_user(
         user_id, db, since=None, candidate_symbols=tagged_underlyings,
+        account_hash=account_hash,
     )
 
     # symbol → list of payment records
@@ -3781,6 +3916,12 @@ def fetch_dividends_holdings(
 
     for sym in tagged_underlyings:
         live_rows = live_by_underlying.get(sym, [])
+        sym_payments_raw = payments_by_sym.get(sym, [])
+        # When scoped to one account, hide tickers the user tagged for
+        # dividends but neither holds nor was paid on in this account —
+        # otherwise the panel reads as a long list of zero rows.
+        if account_hash and not live_rows and not sym_payments_raw:
+            continue
         # Sum across accounts so the user sees one row per ticker.
         shares = sum((b.get("stock") or {}).get("quantity", 0.0) for _ah, b in live_rows)
         market_value = sum((b.get("stock") or {}).get("market_value", 0.0) for _ah, b in live_rows)

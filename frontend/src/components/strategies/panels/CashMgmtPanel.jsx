@@ -25,6 +25,7 @@ import {
   TrendingUp, TrendingDown, AlertTriangle, Calendar, Coins,
 } from 'lucide-react';
 import { fetchCashMgmtHoldings } from '../../../services/tags';
+import { useSelectedAccountHash } from '../../../hooks/useSelectedAccount';
 
 // Concentration threshold: any single vehicle above this share of total
 // cash earns a "concentrated" warning chip. The whole point of the page
@@ -147,13 +148,14 @@ const Stat = ({ label, value, hint }) => (
 
 const CashMgmtPanel = () => {
   const queryClient = useQueryClient();
+  const accountHash = useSelectedAccountHash();
   const [sortKey, setSortKey] = useState('mv');
   const [sortDir, setSortDir] = useState('desc');
   const [legendOpen, setLegendOpen] = useState(false);
 
   const { data, isLoading, error, isFetching } = useQuery({
-    queryKey: ['cash-mgmt-holdings'],
-    queryFn: fetchCashMgmtHoldings,
+    queryKey: ['cash-mgmt-holdings', accountHash],
+    queryFn: () => fetchCashMgmtHoldings(accountHash),
     staleTime: Infinity,
     gcTime: Infinity,
   });
@@ -169,6 +171,28 @@ const CashMgmtPanel = () => {
   }, [data]);
 
   const holdings = useMemo(() => data?.holdings || [], [data]);
+
+  // Footer totals — sum directly from rows so the values match what the
+  // user sees in the table (rounding/aliasing-aware).
+  const footer = useMemo(() => {
+    let mv = 0, income = 0, pctCash = 0, pctPort = 0, unreal = 0;
+    let yieldNum = 0, yieldDen = 0;
+    for (const h of holdings) {
+      mv += Number(h.market_value) || 0;
+      income += Number(h.annual_income) || 0;
+      pctCash += Number(h.pct_cash) || 0;
+      pctPort += Number(h.pct_port) || 0;
+      unreal += Number(h.unrealized_pnl) || 0;
+      if (h.est_yield_pct != null && (h.market_value || 0) > 0) {
+        yieldNum += h.est_yield_pct * h.market_value;
+        yieldDen += h.market_value;
+      }
+    }
+    return {
+      count: holdings.length, mv, income, pctCash, pctPort, unreal,
+      yieldWeighted: yieldDen > 0 ? yieldNum / yieldDen : null,
+    };
+  }, [holdings]);
   const liabilities = data?.liabilities || [];
   const ladder = data?.ladder || [];
   const aggs = data?.aggregates || {};
@@ -556,6 +580,31 @@ const CashMgmtPanel = () => {
                 </tr>
               ))}
             </tbody>
+            <tfoot className="bg-gray-50 border-t border-gray-300 font-medium text-gray-800">
+              <tr>
+                <td className="px-3 py-2 text-left">{footer.count} row{footer.count === 1 ? '' : 's'}</td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2 text-right text-gray-900">{fmtMoney0(footer.mv)}</td>
+                <td className="px-2 py-2 text-right text-emerald-700">
+                  {footer.yieldWeighted != null ? fmtPct(footer.yieldWeighted) : '—'}
+                </td>
+                <td className="px-2 py-2 text-right text-emerald-700">
+                  {fmtMoney0(footer.income)}
+                </td>
+                <td className="px-2 py-2 text-right text-gray-700">
+                  {fmtPct(footer.pctCash, false, 0)}
+                </td>
+                <td className="px-2 py-2 text-right text-gray-700">{fmtPct(footer.pctPort)}</td>
+                <td className={`px-2 py-2 text-right ${pnlClass(footer.unreal)}`}>
+                  {fmtMoney(footer.unreal, true)}
+                </td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       )}

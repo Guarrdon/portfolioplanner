@@ -21,6 +21,7 @@ import {
 import { fetchActualPositions } from '../../services/schwab';
 import { fetchPositionFlags } from '../../services/positionFlags';
 import { STRATEGY_BY_KEY, strategyTypeToClass } from '../../strategies/registry';
+import { useSelectedAccountHash } from '../../hooks/useSelectedAccount';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -113,6 +114,8 @@ const strategyLabel = (key) => {
 const classKey = (p) => strategyTypeToClass(p.strategy_type) || 'unclassified';
 
 export default function Dashboard() {
+  const accountHash = useSelectedAccountHash();
+
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['schwab-actual-positions'],
     queryFn: () => fetchActualPositions(),
@@ -123,28 +126,64 @@ export default function Dashboard() {
     queryFn: fetchPositionFlags,
   });
 
-  const accounts = useMemo(() => data?.accounts || [], [data]);
-  const positions = useMemo(() => data?.positions || [], [data]);
+  // When the header badge selects a single account, every aggregate on
+  // this page collapses to that account: positions, accounts, KPIs,
+  // allocation charts, expirations, flag counts.
+  const allAccounts = useMemo(() => data?.accounts || [], [data]);
+  const allPositions = useMemo(() => data?.positions || [], [data]);
+  const accounts = useMemo(
+    () => (accountHash ? allAccounts.filter((a) => a.account_hash === accountHash) : allAccounts),
+    [allAccounts, accountHash],
+  );
+  const positions = useMemo(
+    () => (accountHash ? allPositions.filter((p) => p.account_id === accountHash) : allPositions),
+    [allPositions, accountHash],
+  );
   const flags = useMemo(() => flagsData?.flags || flagsData || [], [flagsData]);
+  // Flags are keyed by position_signature; positions expose
+  // schwab_position_signature. Build the in-scope set so we can drop
+  // flags for positions that belong to other accounts when filtered.
+  const signaturesInScope = useMemo(
+    () => new Set(positions.map((p) => p.schwab_position_signature).filter(Boolean)),
+    [positions],
+  );
 
   const totals = useMemo(() => {
     const liquidation = accounts.reduce((s, a) => s + (Number(a.liquidation_value) || 0), 0);
     const cash = accounts.reduce((s, a) => s + (Number(a.cash_balance) || 0), 0);
     const buyingPower = accounts.reduce((s, a) => s + (Number(a.buying_power) || 0), 0);
+    // Gross capital deployed = sum of |cost_basis|. Naive sum cancels long
+    // debits against short credits and box-spread legs, leaving a tiny
+    // (sometimes near-zero) denominator that makes Unrealized % meaningless
+    // for any portfolio with shorts.
+    const costGross = positions.reduce((s, p) => s + Math.abs(Number(p.cost_basis) || 0), 0);
     const cost = positions.reduce((s, p) => s + (Number(p.cost_basis) || 0), 0);
     const value = positions.reduce((s, p) => s + (Number(p.current_value) || 0), 0);
     const unrealized = positions.reduce((s, p) => s + (Number(p.unrealized_pnl) || 0), 0);
-    const today = positions.reduce((s, p) => s + (Number(p.current_day_pnl) || 0), 0);
-    const costAbs = Math.abs(cost);
-    const unrealizedPct = costAbs > 0 ? (unrealized / costAbs) * 100 : 0;
+    // Day P&L comes from the account-level liquidation delta Schwab
+    // tracks (liquidation_value − initialBalances.liquidationValue at the
+    // last sync). Summing per-position currentDayProfitLoss double-counts
+    // intraday closes / new-position effects and didn't reconcile to
+    // Schwab's own dashboard.
+    const today = accounts.reduce((s, a) => s + (Number(a.current_day_pnl) || 0), 0);
+    const unrealizedPct = costGross > 0 ? (unrealized / costGross) * 100 : 0;
     const todayPct = liquidation !== 0 ? (today / Math.abs(liquidation)) * 100 : 0;
-    return { liquidation, cash, buyingPower, cost, value, unrealized, unrealizedPct, today, todayPct };
+    return {
+      liquidation, cash, buyingPower, cost, costGross, value,
+      unrealized, unrealizedPct, today, todayPct,
+    };
   }, [accounts, positions]);
 
   const flaggedCount = useMemo(() => {
     if (!Array.isArray(flags)) return 0;
-    return flags.filter((f) => f && (f.is_flagged || f.flagged)).length;
-  }, [flags]);
+    return flags.filter((f) => {
+      if (!f || !(f.is_flagged || f.flagged)) return false;
+      if (!accountHash) return true;
+      return f.position_signature
+        ? signaturesInScope.has(f.position_signature)
+        : false;
+    }).length;
+  }, [flags, accountHash, signaturesInScope]);
 
   // Allocation by strategy_class (mapped from auto-detected strategy_type).
   // Box spreads are excluded — they're synthetic financing whose 4 legs net
@@ -170,23 +209,20 @@ export default function Dashboard() {
     [positions]
   );
 
-  // Allocation by account.
+  // Allocation by account = each account's liquidation value (net worth).
+  // We deliberately don't sum |current_value| of positions — that double-
+  // counts box-spread legs and over-weights option-heavy accounts whose
+  // long+short legs already net out in liquidation.
   const accountAllocation = useMemo(() => {
-    const byHash = new Map(accounts.map((a) => [a.account_hash, a]));
-    const buckets = new Map();
-    for (const p of positions) {
-      const key = p.account_id;
-      const v = Math.abs(Number(p.current_value) || 0);
-      buckets.set(key, (buckets.get(key) || 0) + v);
-    }
-    return Array.from(buckets.entries())
-      .map(([hash, value]) => ({
-        hash,
-        name: byHash.get(hash)?.account_number || hash.slice(0, 6),
-        value,
+    return accounts
+      .map((a) => ({
+        hash: a.account_hash,
+        name: a.account_number || (a.account_hash || '').slice(0, 6),
+        value: Number(a.liquidation_value) || 0,
       }))
+      .filter((d) => d.value > 0)
       .sort((a, b) => b.value - a.value);
-  }, [accounts, positions]);
+  }, [accounts]);
 
   // Upcoming expirations within 30 days, bucketed by day.
   const upcomingExpirations = useMemo(() => {
@@ -219,8 +255,10 @@ export default function Dashboard() {
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Dashboard</h1>
           <p className="text-xs text-gray-500 mt-0.5">
-            Snapshot across {accounts.length} account{accounts.length === 1 ? '' : 's'} ·{' '}
-            {positions.length} position{positions.length === 1 ? '' : 's'}
+            {accountHash && accounts[0]
+              ? `Account ${accounts[0].account_number}`
+              : `Snapshot across ${allAccounts.length} account${allAccounts.length === 1 ? '' : 's'}`}
+            {' · '}{positions.length} position{positions.length === 1 ? '' : 's'}
           </p>
         </div>
       </div>
@@ -237,7 +275,7 @@ export default function Dashboard() {
         <Kpi
           label="Buying power"
           value={fmtMoney(totals.buyingPower)}
-          sub={`Cost basis ${fmtMoney(Math.abs(totals.cost))}`}
+          sub={`Cost basis ${fmtMoney(totals.costGross)}`}
           icon={TrendingUp}
           accent="sky"
         />

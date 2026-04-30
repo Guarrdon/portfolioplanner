@@ -47,12 +47,18 @@ export const fetchStrategyPositions = async (strategyClass) => {
   return response.data;
 };
 
+// Holdings fetchers accept an optional accountHash. When set, the backend
+// scopes positions, payments, and aggregates to that one account; null/
+// undefined preserves the cross-account view.
+const holdingsParams = (accountHash) =>
+  accountHash ? { params: { account_hash: accountHash } } : undefined;
+
 /**
  * Fetch live-first Long Stock holdings — one row per active Schwab stock
  * position tagged into a long_stock Group, with chain history attached.
  */
-export const fetchLongStockHoldings = async () => {
-  const response = await api.get('/tags/strategy/long_stock/holdings');
+export const fetchLongStockHoldings = async (accountHash = null) => {
+  const response = await api.get('/tags/strategy/long_stock/holdings', holdingsParams(accountHash));
   return response.data;
 };
 
@@ -60,8 +66,8 @@ export const fetchLongStockHoldings = async () => {
  * Fetch live-first Covered Calls holdings — one row per short-call leg
  * paired with its underlying long stock holding.
  */
-export const fetchCoveredCallsHoldings = async () => {
-  const response = await api.get('/tags/strategy/covered_calls/holdings');
+export const fetchCoveredCallsHoldings = async (accountHash = null) => {
+  const response = await api.get('/tags/strategy/covered_calls/holdings', holdingsParams(accountHash));
   return response.data;
 };
 
@@ -69,8 +75,8 @@ export const fetchCoveredCallsHoldings = async () => {
  * Fetch group-driven Verticals holdings — one row per tagged
  * transaction_position whose open legs form a 2-leg balanced spread.
  */
-export const fetchVerticalsHoldings = async () => {
-  const response = await api.get('/tags/strategy/verticals/holdings');
+export const fetchVerticalsHoldings = async (accountHash = null) => {
+  const response = await api.get('/tags/strategy/verticals/holdings', holdingsParams(accountHash));
   return response.data;
 };
 
@@ -79,8 +85,8 @@ export const fetchVerticalsHoldings = async () => {
  * sold calls, short straddles, short strangles. Excludes long premium
  * and any chain with a long leg.
  */
-export const fetchSingleLegHoldings = async () => {
-  const response = await api.get('/tags/strategy/single_leg/holdings');
+export const fetchSingleLegHoldings = async (accountHash = null) => {
+  const response = await api.get('/tags/strategy/single_leg/holdings', holdingsParams(accountHash));
   return response.data;
 };
 
@@ -89,8 +95,8 @@ export const fetchSingleLegHoldings = async () => {
  * long puts, long straddles, long strangles. Lottery-style plays;
  * payload includes catalyst proximity, trim history, hit-rate stats.
  */
-export const fetchBigOptionsHoldings = async () => {
-  const response = await api.get('/tags/strategy/big_options/holdings');
+export const fetchBigOptionsHoldings = async (accountHash = null) => {
+  const response = await api.get('/tags/strategy/big_options/holdings', holdingsParams(accountHash));
   return response.data;
 };
 
@@ -99,8 +105,8 @@ export const fetchBigOptionsHoldings = async () => {
  * as synthetic loans. Includes FRED 3-mo T-bill benchmark and
  * account-exposure aggregates (face value settling 30d / 90d / all).
  */
-export const fetchBoxSpreadsHoldings = async () => {
-  const response = await api.get('/tags/strategy/box_spreads/holdings');
+export const fetchBoxSpreadsHoldings = async (accountHash = null) => {
+  const response = await api.get('/tags/strategy/box_spreads/holdings', holdingsParams(accountHash));
   return response.data;
 };
 
@@ -109,8 +115,8 @@ export const fetchBoxSpreadsHoldings = async () => {
  * ETFs, short-bond ETFs, account sweep) + box-spread short liabilities,
  * with net-carry aggregates and FRED 1-mo / 3-mo benchmarks.
  */
-export const fetchCashMgmtHoldings = async () => {
-  const response = await api.get('/tags/strategy/cash_mgmt/holdings');
+export const fetchCashMgmtHoldings = async (accountHash = null) => {
+  const response = await api.get('/tags/strategy/cash_mgmt/holdings', holdingsParams(accountHash));
   return response.data;
 };
 
@@ -119,8 +125,8 @@ export const fetchCashMgmtHoldings = async () => {
  * underlying with TTM dividends received, count of payouts, and the user-
  * set qualified flag (or "unset" → panel shows "verify").
  */
-export const fetchDividendsHoldings = async () => {
-  const response = await api.get('/tags/strategy/dividends/holdings');
+export const fetchDividendsHoldings = async (accountHash = null) => {
+  const response = await api.get('/tags/strategy/dividends/holdings', holdingsParams(accountHash));
   return response.data;
 };
 

@@ -18,6 +18,7 @@ import {
   ChevronUp, ChevronDown, RefreshCw, Calendar, TrendingUp, Scissors,
 } from 'lucide-react';
 import { fetchBigOptionsHoldings } from '../../../services/tags';
+import { useSelectedAccountHash } from '../../../hooks/useSelectedAccount';
 
 // Legend content. Lives next to the chip/badge color maps below so a
 // future edit to the chip set hits the legend in the same patch.
@@ -173,13 +174,14 @@ const daysFromIso = (iso) => {
 const BigOptionsPanel = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const accountHash = useSelectedAccountHash();
   const [sortKey, setSortKey] = useState('multiple');
   const [sortDir, setSortDir] = useState('desc');
   const [legendOpen, setLegendOpen] = useState(false);
 
   const { data, isLoading, error, isFetching } = useQuery({
-    queryKey: ['big-options-holdings'],
-    queryFn: fetchBigOptionsHoldings,
+    queryKey: ['big-options-holdings', accountHash],
+    queryFn: () => fetchBigOptionsHoldings(accountHash),
     staleTime: Infinity,
     gcTime: Infinity,
   });
@@ -241,6 +243,11 @@ const BigOptionsPanel = () => {
 
   const totals = useMemo(() => {
     let cost = 0, value = 0, pnl = 0;
+    let contracts = 0;
+    let theta = 0; let thetaKnown = false;
+    let dteMin = null, dteMax = null;
+    let heldMin = null, heldMax = null;
+    let pctPort = 0;
     let oversizedSoft = 0, oversizedHard = 0;
     let bigWinners = 0;  // multiple >= 2x
     let inSweetSpot = 0, inThetaCliff = 0;
@@ -248,6 +255,17 @@ const BigOptionsPanel = () => {
       cost += h.cost_paid || 0;
       value += h.current_value || 0;
       pnl += h.row_total_pnl || 0;
+      contracts += Math.abs(Number(h.contracts) || 0);
+      if (h.theta_per_day != null) { theta += h.theta_per_day; thetaKnown = true; }
+      if (h.min_dte != null) {
+        if (dteMin === null || h.min_dte < dteMin) dteMin = h.min_dte;
+        if (dteMax === null || h.min_dte > dteMax) dteMax = h.min_dte;
+      }
+      if (h.days_held != null) {
+        if (heldMin === null || h.days_held < heldMin) heldMin = h.days_held;
+        if (heldMax === null || h.days_held > heldMax) heldMax = h.days_held;
+      }
+      pctPort += Number(h.pct_port) || 0;
       if (h.oversized === 'soft') oversizedSoft += 1;
       if (h.oversized === 'hard') oversizedHard += 1;
       if ((h.multiple || 0) >= 2) bigWinners += 1;
@@ -258,6 +276,7 @@ const BigOptionsPanel = () => {
     return {
       count: holdings.length, cost, value, pnl, overallMultiple,
       oversizedSoft, oversizedHard, bigWinners, inSweetSpot, inThetaCliff,
+      contracts, theta, thetaKnown, dteMin, dteMax, heldMin, heldMax, pctPort,
     };
   }, [holdings]);
 
@@ -741,6 +760,51 @@ const BigOptionsPanel = () => {
                 );
               })}
             </tbody>
+            <tfoot className="bg-gray-50 border-t border-gray-300 font-medium text-gray-800">
+              <tr>
+                <td className="px-3 py-2 text-left">{totals.count} positions</td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2 text-right text-gray-700">
+                  {totals.dteMin != null && totals.dteMax != null
+                    ? (totals.dteMin === totals.dteMax
+                        ? `${totals.dteMin}d`
+                        : `${totals.dteMin}–${totals.dteMax}d`)
+                    : '—'}
+                </td>
+                <td className="px-2 py-2 text-right text-gray-700">{fmtInt(totals.contracts)}</td>
+                <td className="px-2 py-2 text-right text-gray-700">{fmtMoney(totals.cost)}</td>
+                <td className="px-2 py-2 text-right text-gray-700">{fmtMoney(totals.value)}</td>
+                <td className="px-2 py-2 text-right text-gray-700">
+                  {totals.overallMultiple != null ? `${totals.overallMultiple.toFixed(2)}×` : '—'}
+                </td>
+                <td className={`px-2 py-2 text-right ${pnlClass(totals.pnl)}`}>
+                  {fmtMoney(totals.pnl, true)}
+                </td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2 text-right text-gray-700">
+                  {totals.thetaKnown ? fmtMoney0(totals.theta) : '—'}
+                </td>
+                <td className="px-2 py-2 text-right text-gray-700">
+                  {totals.heldMin != null && totals.heldMax != null
+                    ? (totals.heldMin === totals.heldMax
+                        ? `${totals.heldMin}d`
+                        : `${totals.heldMin}–${totals.heldMax}d`)
+                    : '—'}
+                </td>
+                <td className={`px-2 py-2 text-right ${concentrationClass(totals.pctPort)}`}>
+                  {fmtPct(totals.pctPort)}
+                </td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       )}

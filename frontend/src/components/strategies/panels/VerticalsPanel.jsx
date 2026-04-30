@@ -20,6 +20,7 @@ import {
   ChevronUp, ChevronDown, RefreshCw, Zap,
 } from 'lucide-react';
 import { fetchVerticalsHoldings } from '../../../services/tags';
+import { useSelectedAccountHash } from '../../../hooks/useSelectedAccount';
 
 // Legend lives next to the chip color maps below. Only non-obvious items.
 const LEGEND_BADGES = [
@@ -153,13 +154,14 @@ const Stat = ({ label, value, hint }) => (
 const VerticalsPanel = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const accountHash = useSelectedAccountHash();
   const [sortKey, setSortKey] = useState('action');
   const [sortDir, setSortDir] = useState('desc');
   const [legendOpen, setLegendOpen] = useState(false);
 
   const { data, isLoading, error, isFetching } = useQuery({
-    queryKey: ['verticals-holdings'],
-    queryFn: fetchVerticalsHoldings,
+    queryKey: ['verticals-holdings', accountHash],
+    queryFn: () => fetchVerticalsHoldings(accountHash),
     staleTime: Infinity,
     gcTime: Infinity,
   });
@@ -234,6 +236,8 @@ const VerticalsPanel = () => {
     let dayKnown = false;
     let creditCount = 0, debitCount = 0;
     let totalMaxProfit = 0;
+    let dteMin = null, dteMax = null;
+    let dollarsPerDay = 0; let dollarsPerDayKnown = false;
     for (const h of enriched) {
       netPremium += h.net_at_open || 0;
       captured += h.unrealized_pnl || 0;
@@ -242,6 +246,11 @@ const VerticalsPanel = () => {
       totalPnl += h.unrealized_pnl || 0;
       if (h.day_pnl != null) { day += h.day_pnl; dayKnown = true; }
       if (h.is_credit) creditCount += 1; else debitCount += 1;
+      if (h.dte != null) {
+        if (dteMin === null || h.dte < dteMin) dteMin = h.dte;
+        if (dteMax === null || h.dte > dteMax) dteMax = h.dte;
+      }
+      if (h.dollars_per_day != null) { dollarsPerDay += h.dollars_per_day; dollarsPerDayKnown = true; }
     }
     const capturePct = totalMaxProfit > 0 ? (captured / totalMaxProfit) * 100 : null;
     const pctOfPort = portfolioMv > 0 ? (maxRisk / portfolioMv) * 100 : null;
@@ -249,6 +258,7 @@ const VerticalsPanel = () => {
       count: enriched.length, creditCount, debitCount,
       netPremium, captured, capturePct,
       maxRisk, totalPnl, day, dayKnown, pctOfPort,
+      dteMin, dteMax, dollarsPerDay, dollarsPerDayKnown,
     };
   }, [enriched, portfolioMv]);
 
@@ -575,6 +585,55 @@ const VerticalsPanel = () => {
                 );
               })}
             </tbody>
+            <tfoot className="bg-gray-50 border-t border-gray-300 font-medium text-gray-800">
+              <tr>
+                <td className="px-3 py-2 text-left">
+                  {totals.count} spread{totals.count === 1 ? '' : 's'}
+                  {totals.count > 0 && (
+                    <span className="text-[10px] text-gray-500 ml-1">
+                      ({totals.creditCount}cr / {totals.debitCount}db)
+                    </span>
+                  )}
+                </td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className={`px-2 py-2 text-right ${pnlClass(totals.netPremium)}`}>
+                  {fmtMoney(totals.netPremium, true)}
+                </td>
+                <td className={`px-2 py-2 text-right ${pnlClass(totals.captured)}`}>
+                  <div>{fmtMoney(totals.captured, true)}</div>
+                  {totals.capturePct != null && (
+                    <div className="text-[10px]">{fmtPct(totals.capturePct, true)}</div>
+                  )}
+                </td>
+                <td className={`px-2 py-2 text-right ${pnlClass(totals.totalPnl)}`}>
+                  {fmtMoney(totals.totalPnl, true)}
+                </td>
+                <td className="px-2 py-2 text-right text-red-700">
+                  {fmtMoney(totals.maxRisk)}
+                </td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2 text-right text-gray-700">
+                  {totals.dteMin != null && totals.dteMax != null
+                    ? (totals.dteMin === totals.dteMax
+                        ? `${totals.dteMin}d`
+                        : `${totals.dteMin}–${totals.dteMax}d`)
+                    : '—'}
+                </td>
+                <td className="px-2 py-2 text-right text-gray-700">
+                  {totals.dollarsPerDayKnown ? fmtMoney(totals.dollarsPerDay) : '—'}
+                </td>
+                <td className={`px-2 py-2 text-right ${concentrationClass(totals.pctOfPort)}`}>
+                  {fmtPct(totals.pctOfPort)}
+                </td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       )}

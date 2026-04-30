@@ -128,6 +128,11 @@ class AccountInfo(BaseModel):
     liquidation_value: Optional[float] = 0.0
     buying_power: Optional[float] = 0.0  # Stock buying power
     buying_power_options: Optional[float] = 0.0  # Options buying power
+    # Account-level day P&L = liquidation_value − initialBalances.liquidation
+    # at the most recent sync. This is the honest "today's P&L" per Schwab's
+    # own dashboard; summing per-position currentDayProfitLoss over-counts.
+    current_day_pnl: Optional[float] = 0.0
+    prior_close_liquidation_value: Optional[float] = 0.0
     last_synced: Optional[str] = None  # ISO timestamp of most recent positions sync
 
     class Config:

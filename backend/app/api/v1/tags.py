@@ -1,7 +1,7 @@
 """Tag (custom group) API endpoints."""
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 
 from app.core.database import get_db
 from app.schemas.tag import (
@@ -120,41 +120,65 @@ def get_strategy_positions(strategy_class: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
+# Strategy holdings endpoints accept an optional ?account_hash=... to scope
+# positions, payments, and aggregates to a single account. Omitted = the
+# original cross-account aggregate view.
+_ACCOUNT_HASH_Q = Query(
+    None,
+    description="Schwab account_hash to scope holdings to a single account",
+)
+
+
 @router.get("/strategy/long_stock/holdings", response_model=LongStockHoldingsResponse)
-def get_long_stock_holdings(db: Session = Depends(get_db)):
+def get_long_stock_holdings(
+    db: Session = Depends(get_db),
+    account_hash: Optional[str] = _ACCOUNT_HASH_Q,
+):
     """Long Stock holdings, live-first. One row per active Schwab stock
     position (per account) tagged into a long_stock Group, with chain
     history attached as overlay and reconciliation status computed."""
     return strategy_positions_service.fetch_long_stock_holdings(
         user_id=_TEST_USER_ID,
         db=db,
+        account_hash=account_hash,
     )
 
 
 @router.get("/strategy/covered_calls/holdings", response_model=CoveredCallsHoldingsResponse)
-def get_covered_calls_holdings(db: Session = Depends(get_db)):
+def get_covered_calls_holdings(
+    db: Session = Depends(get_db),
+    account_hash: Optional[str] = _ACCOUNT_HASH_Q,
+):
     """Covered Calls holdings, live-first. One row per short-call leg
     paired with its underlying long stock; laddered calls each get their
     own row sharing stock context."""
     return strategy_positions_service.fetch_covered_calls_holdings(
         user_id=_TEST_USER_ID,
         db=db,
+        account_hash=account_hash,
     )
 
 
 @router.get("/strategy/verticals/holdings", response_model=VerticalsHoldingsResponse)
-def get_verticals_holdings(db: Session = Depends(get_db)):
+def get_verticals_holdings(
+    db: Session = Depends(get_db),
+    account_hash: Optional[str] = _ACCOUNT_HASH_Q,
+):
     """Verticals holdings, group-driven. One row per tagged
     transaction_position whose currently-open legs form a balanced
     same-type/same-expiration two-leg spread."""
     return strategy_positions_service.fetch_verticals_holdings(
         user_id=_TEST_USER_ID,
         db=db,
+        account_hash=account_hash,
     )
 
 
 @router.get("/strategy/single_leg/holdings", response_model=SingleLegHoldingsResponse)
-def get_single_leg_holdings(db: Session = Depends(get_db)):
+def get_single_leg_holdings(
+    db: Session = Depends(get_db),
+    account_hash: Optional[str] = _ACCOUNT_HASH_Q,
+):
     """Single-Leg short-premium holdings, group-driven. One row per tagged
     transaction_position whose currently-open legs are 1-2 short option
     legs (no longs, no stock). Covers sold puts, sold calls, short
@@ -162,11 +186,15 @@ def get_single_leg_holdings(db: Session = Depends(get_db)):
     return strategy_positions_service.fetch_single_leg_holdings(
         user_id=_TEST_USER_ID,
         db=db,
+        account_hash=account_hash,
     )
 
 
 @router.get("/strategy/big_options/holdings", response_model=BigOptionsHoldingsResponse)
-def get_big_options_holdings(db: Session = Depends(get_db)):
+def get_big_options_holdings(
+    db: Session = Depends(get_db),
+    account_hash: Optional[str] = _ACCOUNT_HASH_Q,
+):
     """Big Options long-premium holdings, group-driven. Lottery-style
     plays: long calls, long puts, long straddles, long strangles. Includes
     earnings/catalyst proximity, trim history, concentration warnings,
@@ -174,11 +202,15 @@ def get_big_options_holdings(db: Session = Depends(get_db)):
     return strategy_positions_service.fetch_big_options_holdings(
         user_id=_TEST_USER_ID,
         db=db,
+        account_hash=account_hash,
     )
 
 
 @router.get("/strategy/box_spreads/holdings", response_model=BoxSpreadsHoldingsResponse)
-def get_box_spreads_holdings(db: Session = Depends(get_db)):
+def get_box_spreads_holdings(
+    db: Session = Depends(get_db),
+    account_hash: Optional[str] = _ACCOUNT_HASH_Q,
+):
     """Box Spreads holdings, group-driven. 4-leg balanced boxes acting
     as synthetic loans. Long boxes earn implied yield; short boxes pay
     an implied rate (typical SPX margin financing). Includes FRED 3-mo
@@ -187,11 +219,15 @@ def get_box_spreads_holdings(db: Session = Depends(get_db)):
     return strategy_positions_service.fetch_box_spreads_holdings(
         user_id=_TEST_USER_ID,
         db=db,
+        account_hash=account_hash,
     )
 
 
 @router.get("/strategy/cash_mgmt/holdings", response_model=CashMgmtHoldingsResponse)
-def get_cash_mgmt_holdings(db: Session = Depends(get_db)):
+def get_cash_mgmt_holdings(
+    db: Session = Depends(get_db),
+    account_hash: Optional[str] = _ACCOUNT_HASH_Q,
+):
     """Cash Mgmt holdings — diversification across low-yield vehicles
     (MMFs, treasury ETFs, short-bond ETFs, account sweep) plus the
     cost-of-carry from box-spread short liabilities. Net carry is the
@@ -200,11 +236,15 @@ def get_cash_mgmt_holdings(db: Session = Depends(get_db)):
     return strategy_positions_service.fetch_cash_mgmt_holdings(
         user_id=_TEST_USER_ID,
         db=db,
+        account_hash=account_hash,
     )
 
 
 @router.get("/strategy/dividends/holdings", response_model=DividendsHoldingsResponse)
-def get_dividends_holdings(db: Session = Depends(get_db)):
+def get_dividends_holdings(
+    db: Session = Depends(get_db),
+    account_hash: Optional[str] = _ACCOUNT_HASH_Q,
+):
     """Dividends holdings — past-first income view. One row per tagged
     underlying. TTM income comes from cached Schwab DIVIDEND_OR_INTEREST
     transactions whose payer matches a tagged ticker; we don't project
@@ -213,6 +253,7 @@ def get_dividends_holdings(db: Session = Depends(get_db)):
     return strategy_positions_service.fetch_dividends_holdings(
         user_id=_TEST_USER_ID,
         db=db,
+        account_hash=account_hash,
     )
 
 

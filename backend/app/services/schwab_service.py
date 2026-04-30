@@ -149,7 +149,8 @@ def fetch_account_data(user_id: str, db: Session, account_ids: Optional[List[str
             
             # Extract account info including balances
             current_balances = securities_account.get("currentBalances", {})
-            
+            initial_balances = securities_account.get("initialBalances", {})
+
             account_info = {
                 "hash_value": account_hash,
                 "account_number": securities_account.get("accountNumber"),
@@ -157,7 +158,14 @@ def fetch_account_data(user_id: str, db: Session, account_ids: Optional[List[str
                 "cash_balance": current_balances.get("cashBalance", 0.0),
                 "liquidation_value": current_balances.get("liquidationValue", 0.0),
                 "buying_power": current_balances.get("buyingPower", 0.0),  # Stock buying power (with margin)
-                "buying_power_options": current_balances.get("availableFunds", 0.0)  # Options buying power (cash)
+                "buying_power_options": current_balances.get("availableFunds", 0.0),  # Options buying power (cash)
+                # Start-of-day equity per Schwab — used to compute the
+                # account-level day P&L. Falls back to current liquidation
+                # if Schwab omits it (would yield a 0 day P&L, conservative).
+                "prior_close_liquidation_value": initial_balances.get(
+                    "liquidationValue",
+                    current_balances.get("liquidationValue", 0.0),
+                ),
             }
             account_info_list.append(account_info)
             

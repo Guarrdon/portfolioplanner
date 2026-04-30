@@ -23,6 +23,7 @@ import {
   ChevronUp, ChevronDown, RefreshCw, RotateCw,
 } from 'lucide-react';
 import { fetchCoveredCallsHoldings } from '../../../services/tags';
+import { useSelectedAccountHash } from '../../../hooks/useSelectedAccount';
 
 const CONC_WARN = 10;
 const CONC_DANGER = 20;
@@ -153,13 +154,14 @@ const SortableTh = ({ label, sortKey, currentKey, currentDir, onSort, align = 'l
 const CoveredCallsPanel = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const accountHash = useSelectedAccountHash();
   const [sortKey, setSortKey] = useState('dte');
   const [sortDir, setSortDir] = useState('asc');
   const [legendOpen, setLegendOpen] = useState(false);
 
   const { data, isLoading, error, isFetching } = useQuery({
-    queryKey: ['covered-calls-holdings'],
-    queryFn: fetchCoveredCallsHoldings,
+    queryKey: ['covered-calls-holdings', accountHash],
+    queryFn: () => fetchCoveredCallsHoldings(accountHash),
     staleTime: Infinity,
     gcTime: Infinity,
   });
@@ -302,6 +304,10 @@ const CoveredCallsPanel = () => {
     let stockMv = 0, stockUnreal = 0, premium = 0, currentClose = 0;
     let callUnreal = 0, day = 0;
     let dayKnown = false;
+    let assignmentPnl = 0; let assignmentKnown = false;
+    let dollarsPerDay = 0; let dollarsPerDayKnown = false;
+    let annYieldWeightSum = 0; let annYieldBasisSum = 0;
+    let dteMin = null, dteMax = null;
     const seenStock = new Set();
     for (const h of enriched) {
       const k = `${h.underlying}|${h.account_hash || ''}`;
@@ -316,10 +322,23 @@ const CoveredCallsPanel = () => {
       currentClose += h.close_cost || 0;
       callUnreal += h.call_unrealized_pnl || 0;
       if (h.call_current_day_pnl != null) { day += h.call_current_day_pnl; dayKnown = true; }
+      if (h.assignmentPnl != null) { assignmentPnl += h.assignmentPnl; assignmentKnown = true; }
+      if (h.dollarsPerDay != null) { dollarsPerDay += h.dollarsPerDay; dollarsPerDayKnown = true; }
+      if (h.annYield != null) {
+        const basis = (h.sharesCovered || 0) * (h.stock_avg_cost || 0);
+        annYieldWeightSum += h.annYield * basis;
+        annYieldBasisSum += basis;
+      }
+      if (h.call_dte != null) {
+        if (dteMin === null || h.call_dte < dteMin) dteMin = h.call_dte;
+        if (dteMax === null || h.call_dte > dteMax) dteMax = h.call_dte;
+      }
     }
     const capturePct = premium > 0 ? (callUnreal / premium) * 100 : null;
     const totalPnl = stockUnreal + callUnreal;
     const pctOfPort = portfolioMv > 0 ? (stockMv / portfolioMv) * 100 : null;
+    const annYieldWeighted = annYieldBasisSum > 0
+      ? annYieldWeightSum / annYieldBasisSum : null;
     return {
       setups: seenStock.size,
       legs: enriched.length,
@@ -328,6 +347,10 @@ const CoveredCallsPanel = () => {
       totalPnl,
       day, dayKnown,
       pctOfPort,
+      assignmentPnl, assignmentKnown,
+      dollarsPerDay, dollarsPerDayKnown,
+      annYieldWeighted,
+      dteMin, dteMax,
     };
   }, [enriched, portfolioMv]);
 
@@ -689,6 +712,57 @@ const CoveredCallsPanel = () => {
                 </tr>
               ))}
             </tbody>
+            <tfoot className="bg-gray-50 border-t border-gray-300 font-medium text-gray-800">
+              <tr>
+                <td className="px-3 py-2 text-left">{totals.setups} setup{totals.setups === 1 ? '' : 's'}</td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2 text-right">{fmtMoney(totals.stockMv)}</td>
+                <td className={`px-2 py-2 text-right ${pnlClass(totals.stockUnreal)}`}>
+                  {fmtMoney(totals.stockUnreal, true)}
+                </td>
+                <td className="px-2 py-2 text-right text-gray-700">
+                  <div>{fmtMoney(totals.premium)}</div>
+                  <div className="text-[10px] text-gray-500">left {fmtMoney(totals.currentClose)}</div>
+                </td>
+                <td className={`px-2 py-2 text-right ${pnlClass(totals.callUnreal)}`}>
+                  <div>{fmtMoney(totals.callUnreal, true)}</div>
+                  {totals.capturePct != null && (
+                    <div className="text-[10px]">{fmtPct(totals.capturePct, true)}</div>
+                  )}
+                </td>
+                <td className={`px-2 py-2 text-right ${pnlClass(totals.totalPnl)}`}>
+                  {fmtMoney(totals.totalPnl, true)}
+                </td>
+                <td className="px-2 py-2 text-right text-gray-700">
+                  {totals.annYieldWeighted != null ? fmtPct(totals.annYieldWeighted) : '—'}
+                </td>
+                <td className={`px-2 py-2 text-right ${
+                  totals.assignmentKnown ? pnlClass(totals.assignmentPnl) : 'text-gray-500'
+                }`}>
+                  {totals.assignmentKnown ? fmtMoney(totals.assignmentPnl, true) : '—'}
+                </td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2 text-right text-gray-700">
+                  {totals.dteMin != null && totals.dteMax != null
+                    ? (totals.dteMin === totals.dteMax
+                        ? `${totals.dteMin}d`
+                        : `${totals.dteMin}–${totals.dteMax}d`)
+                    : '—'}
+                </td>
+                <td className="px-2 py-2 text-right text-gray-700">
+                  {totals.dollarsPerDayKnown ? fmtMoney(totals.dollarsPerDay) : '—'}
+                </td>
+                <td className={`px-2 py-2 text-right ${concentrationClass(totals.pctOfPort)}`}>
+                  {fmtPct(totals.pctOfPort)}
+                </td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       )}

@@ -22,6 +22,7 @@ import {
   ChevronUp, ChevronDown, RefreshCw, Zap, Eye,
 } from 'lucide-react';
 import { fetchSingleLegHoldings } from '../../../services/tags';
+import { useSelectedAccountHash } from '../../../hooks/useSelectedAccount';
 
 // Legend lives next to the chip color maps below so future chip-set
 // changes hit the legend in the same patch. Only non-obvious items.
@@ -165,13 +166,14 @@ const Stat = ({ label, value, hint }) => (
 const SingleLegPanel = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const accountHash = useSelectedAccountHash();
   const [sortKey, setSortKey] = useState('action');
   const [sortDir, setSortDir] = useState('desc');
   const [legendOpen, setLegendOpen] = useState(false);
 
   const { data, isLoading, error, isFetching } = useQuery({
-    queryKey: ['single-leg-holdings'],
-    queryFn: fetchSingleLegHoldings,
+    queryKey: ['single-leg-holdings', accountHash],
+    queryFn: () => fetchSingleLegHoldings(accountHash),
     staleTime: Infinity,
     gcTime: Infinity,
   });
@@ -272,6 +274,10 @@ const SingleLegPanel = () => {
     let count = 0, premium = 0, closeCost = 0, captured = 0, unreal = 0;
     let day = 0, dayKnown = false;
     let capital = 0;
+    let theta = 0; let thetaKnown = false;
+    let dteMin = null, dteMax = null;
+    let maxLoss = 0; let maxLossKnown = false;
+    let annualWeightedSum = 0; let annualWeightSum = 0;
     let actionCounts = { 'Assignment risk': 0, 'Review': 0, 'Take it': 0, 'Hold': 0 };
     let typeCounts = { 'Short Put': 0, 'Short Call': 0, 'Short Straddle': 0, 'Short Strangle': 0 };
     for (const h of enriched) {
@@ -282,14 +288,27 @@ const SingleLegPanel = () => {
       unreal += h.unrealized_pnl || 0;
       capital += h.capital_at_risk || 0;
       if (h.day_pnl != null) { day += h.day_pnl; dayKnown = true; }
+      if (h.dollars_per_day != null) { theta += h.dollars_per_day; thetaKnown = true; }
+      if (h.dte != null) {
+        if (dteMin === null || h.dte < dteMin) dteMin = h.dte;
+        if (dteMax === null || h.dte > dteMax) dteMax = h.dte;
+      }
+      if (h.max_loss != null) { maxLoss += h.max_loss; maxLossKnown = true; }
+      if (h.annualized_return_pct != null && (h.capital_at_risk || 0) > 0) {
+        annualWeightedSum += h.annualized_return_pct * h.capital_at_risk;
+        annualWeightSum += h.capital_at_risk;
+      }
       if (actionCounts[h.action] != null) actionCounts[h.action] += 1;
       if (typeCounts[h.type] != null) typeCounts[h.type] += 1;
     }
     const capturePct = premium > 0 ? (captured / premium) * 100 : null;
     const pctPort = portfolioMv > 0 && (capital + 0) > 0 ? (capital / portfolioMv) * 100 : null;
+    const annualWeighted = annualWeightSum > 0
+      ? annualWeightedSum / annualWeightSum : null;
     return {
       count, premium, closeCost, captured, capturePct, unreal,
       day, dayKnown, capital, pctPort, actionCounts, typeCounts,
+      theta, thetaKnown, dteMin, dteMax, maxLoss, maxLossKnown, annualWeighted,
     };
   }, [enriched, portfolioMv]);
 
@@ -728,6 +747,51 @@ const SingleLegPanel = () => {
                 );
               })}
             </tbody>
+            <tfoot className="bg-gray-50 border-t border-gray-300 font-medium text-gray-800">
+              <tr>
+                <td className="px-3 py-2 text-left">{totals.count} positions</td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2 text-right text-gray-700">{fmtMoney(totals.premium)}</td>
+                <td className="px-2 py-2 text-right text-gray-700">{fmtMoney(totals.closeCost)}</td>
+                <td className={`px-2 py-2 text-right ${pnlClass(totals.captured)}`}>
+                  <div>{fmtMoney(totals.captured, true)}</div>
+                  {totals.capturePct != null && (
+                    <div className="text-[10px]">{fmtPct(totals.capturePct, true)}</div>
+                  )}
+                </td>
+                <td className={`px-2 py-2 text-right ${pnlClass(totals.unreal)}`}>
+                  {fmtMoney(totals.unreal, true)}
+                </td>
+                <td className="px-2 py-2 text-right text-gray-700">
+                  {totals.dteMin != null && totals.dteMax != null
+                    ? (totals.dteMin === totals.dteMax
+                        ? `${totals.dteMin}d`
+                        : `${totals.dteMin}–${totals.dteMax}d`)
+                    : '—'}
+                </td>
+                <td className="px-2 py-2 text-right text-gray-700">
+                  {totals.thetaKnown ? fmtMoney(totals.theta) : '—'}
+                </td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2 text-right text-red-700">
+                  {totals.maxLossKnown ? fmtMoney(totals.maxLoss) : '—'}
+                </td>
+                <td className="px-2 py-2 text-right text-gray-700">
+                  {totals.annualWeighted != null ? fmtPct(totals.annualWeighted) : '—'}
+                </td>
+                <td className={`px-2 py-2 text-right ${concentrationClass(totals.pctPort)}`}>
+                  {fmtPct(totals.pctPort)}
+                </td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+                <td className="px-2 py-2"></td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       )}

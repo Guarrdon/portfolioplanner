@@ -114,6 +114,26 @@ def get_actual_positions(
         from app.services.underlying_quotes import read_cached_quotes
         underlying_quotes = read_cached_quotes(test_user_id, db, underlyings)
 
+    # Per-account day P&L. Preferred source is Schwab's account-level
+    # delta (current liquidation − initialBalances.liquidationValue), which
+    # matches their dashboard. When `prior_close_liquidation_value` is
+    # missing (account hasn't been re-synced since the field was added),
+    # fall back to summing per-position currentDayProfitLoss for that
+    # account so the KPI doesn't read $0 forever.
+    day_pnl_by_account: dict = {}
+    for acc in accounts:
+        prior = float(acc.prior_close_liquidation_value or 0)
+        if prior > 0:
+            day_pnl_by_account[acc.account_hash] = (
+                float(acc.liquidation_value or 0) - prior
+            )
+        else:
+            day_pnl_by_account[acc.account_hash] = sum(
+                float(p.current_day_pnl or 0)
+                for p in positions
+                if p.account_id == acc.account_hash
+            )
+
     return PositionListResponse(
         total=len(positions),
         positions=positions,
@@ -125,6 +145,8 @@ def get_actual_positions(
             "liquidation_value": acc.liquidation_value,
             "buying_power": acc.buying_power,
             "buying_power_options": acc.buying_power_options,
+            "prior_close_liquidation_value": acc.prior_close_liquidation_value,
+            "current_day_pnl": day_pnl_by_account.get(acc.account_hash, 0.0),
             "last_synced": acc.last_synced.isoformat() if acc.last_synced else None,
         } for acc in accounts],
         underlying_quotes=underlying_quotes,
